@@ -1,119 +1,408 @@
 const state = {
   bootstrap: null,
   mapInitialized: false,
-  kakaoMap: null
+  kakaoMap: null,
+  gps: { lat: null, lng: null, status: 'pending' },
+  currentStep: 1,
+  photoDataUrl: '',
+  selectedStoreType: ''
 };
 
+// ── DOM refs ──
 const surveyForm = document.querySelector('#survey-form');
+const formStepContainer = document.querySelector('#form-step-container');
+const stepIndicator = document.querySelector('#step-indicator');
+const successView = document.querySelector('#success-view');
 const submissionList = document.querySelector('#submission-list');
-const adminSummary = document.querySelector('#admin-summary');
-const tabs = [...document.querySelectorAll('.tab')];
+const adminStats = document.querySelector('#admin-stats');
+const adminFilter = document.querySelector('#admin-filter');
+const gpsStatusEl = document.querySelector('#gps-status');
+const statusResearcher = document.querySelector('#status-researcher');
+const navTabs = [...document.querySelectorAll('.nav-tab')];
 const panels = [...document.querySelectorAll('.panel')];
 
-tabs.forEach((button) => {
+// ── Navigation ──
+navTabs.forEach((button) => {
   button.addEventListener('click', () => {
-    tabs.forEach((item) => item.classList.toggle('is-active', item === button));
-    panels.forEach((panel) => panel.classList.toggle('is-active', panel.id === button.dataset.tab));
-    if (button.dataset.tab === 'map') {
-      initMap();
-    }
+    navTabs.forEach((t) => t.classList.toggle('is-active', t === button));
+    panels.forEach((p) => p.classList.toggle('is-active', p.id === button.dataset.tab));
+    if (button.dataset.tab === 'map') initMap();
   });
 });
 
+// ── GPS ──
+function initGps() {
+  if (!navigator.geolocation) {
+    state.gps.status = 'unavailable';
+    updateGpsStatus();
+    return;
+  }
+  state.gps.status = 'pending';
+  updateGpsStatus();
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      state.gps.lat = pos.coords.latitude;
+      state.gps.lng = pos.coords.longitude;
+      state.gps.status = 'ready';
+      updateGpsStatus();
+    },
+    () => {
+      state.gps.status = 'unavailable';
+      updateGpsStatus();
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+function updateGpsStatus() {
+  const labels = {
+    pending: '\u{1F4CD} 위치 확인 중...',
+    ready: '\u{1F4CD} 위치 확인됨',
+    unavailable: '\u26A0\uFE0F 위치 사용 불가'
+  };
+  gpsStatusEl.textContent = labels[state.gps.status] || '';
+}
+
+// ── localStorage helpers ──
+function saveLocal(key, value) {
+  try { localStorage.setItem('kwangdong_' + key, value); } catch {}
+}
+function loadLocal(key) {
+  try { return localStorage.getItem('kwangdong_' + key) || ''; } catch { return ''; }
+}
+
+// ── Price field naming ──
 function priceFieldName(productId, size) {
   return `${productId}__${size}`;
 }
 
-function renderForm(bootstrap) {
-  surveyForm.innerHTML = '';
-  surveyForm.innerHTML = `
-    <div>
-      <h2>시장조사 등록</h2>
-      <p class="hint">스마트폰에서 빠르게 조사 내용을 입력하세요. 저장하면 담당 지역이 자동 배정됩니다.</p>
-    </div>
-    <div class="grid two">
-      <div class="field"><label>조사자 이름<input name="researcherName" required /></label></div>
-      <div class="field"><label>거주 지역<select name="residenceArea">${bootstrap.areas.map((area) => `<option value="${area}">${area}</option>`).join('')}</select></label></div>
-    </div>
-    <div class="grid two">
-      <div class="field"><label>조사 지역<input name="region" required placeholder="예: 강남" /></label></div>
-      <div class="field"><label>거래처 / 조사유형<select name="storeType">${bootstrap.storeTypeTemplates.map((item) => `<option value="${item.label}">${item.label}</option>`).join('')}</select></label></div>
-    </div>
-    <div class="template-chips">${bootstrap.storeTypeTemplates.map((item) => `<button type="button" class="chip" data-store-template="${item.id}">${item.label}</button>`).join('')}</div>
-    <div class="grid two">
-      <div class="field"><label>점포명<input name="storeName" required /></label></div>
-      <div class="field"><label>POS 대수<input name="posCount" type="number" min="0" value="1" /></label></div>
-    </div>
-    <div class="field"><label>진열 위치<input name="displayLocation" placeholder="예: 계산대 앞 / 냉장고 / 매대" /></label></div>
-    <div class="field"><label>점포 사진<input name="photo" type="file" accept="image/*" capture="environment" /></label></div>
-    <div class="field"><label>메모<textarea name="notes" rows="3" placeholder="프로모션, 품절, 경쟁사 특이사항 등을 적어주세요"></textarea></label></div>
-    <div class="stack">
-      <div>
-        <h3>제품별 가격 입력</h3>
-        <p class="small">판매하지 않는 제품은 비워두고, 최소 1개 이상의 가격을 입력해주세요.</p>
+// ── Step indicator ──
+function renderStepIndicator() {
+  const steps = [
+    { num: 1, label: '기본정보' },
+    { num: 2, label: '가격입력' },
+    { num: 3, label: '사진/메모' }
+  ];
+  stepIndicator.innerHTML = steps.map((s, i) => {
+    const cls = s.num === state.currentStep ? 'is-active' : (s.num < state.currentStep ? 'is-done' : '');
+    const arrow = i < steps.length - 1 ? '<span class="step-arrow">\u2192</span>' : '';
+    return `<span class="step ${cls}"><span class="step-num">${s.num < state.currentStep ? '\u2713' : s.num}</span>${s.label}</span>${arrow}`;
+  }).join('');
+}
+
+// ── Multi-step form rendering ──
+function renderForm(config) {
+  state.currentStep = 1;
+  state.photoDataUrl = '';
+  state.selectedStoreType = config.storeTypeTemplates[0]?.label || '';
+  surveyForm.classList.remove('hidden');
+  successView.classList.add('hidden');
+  renderStepIndicator();
+  renderCurrentStep(config);
+
+  // Update status bar researcher name
+  const savedName = loadLocal('researcherName');
+  if (savedName) statusResearcher.textContent = savedName;
+}
+
+function renderCurrentStep(config) {
+  if (state.currentStep === 1) renderStep1(config);
+  else if (state.currentStep === 2) renderStep2(config);
+  else if (state.currentStep === 3) renderStep3(config);
+  renderStepIndicator();
+}
+
+function renderStep1(config) {
+  const savedName = loadLocal('researcherName');
+  const savedResidence = loadLocal('residenceArea');
+
+  formStepContainer.innerHTML = `
+    <div class="card stack">
+      <div class="field">
+        <label>조사자 이름</label>
+        <input name="researcherName" required value="${escapeHtml(savedName)}" placeholder="이름을 입력하세요" />
       </div>
-      <div class="matrix">
-        ${bootstrap.products.map((product) => `
-          <div class="matrix-row stack">
-            <strong>${product.label}</strong>
-            <span class="small">${product.brand}</span>
-            ${product.sizes.map((size) => `<label class="field"><span>${size}</span><input inputmode="numeric" name="${priceFieldName(product.id, size)}" placeholder="₩" /></label>`).join('')}
-          </div>
-        `).join('')}
+      <div class="field">
+        <label>거주 지역</label>
+        <select name="residenceArea">
+          ${config.areas.map((area) => `<option value="${area}" ${area === savedResidence ? 'selected' : ''}>${area}</option>`).join('')}
+        </select>
       </div>
-    </div>
-    <div class="actions">
-      <button type="submit" class="tab is-active">조사 저장</button>
-      <span id="submit-status" class="small"></span>
+      <div class="field">
+        <label>조사 지역</label>
+        <button type="button" class="gps-btn" id="gps-fill-btn">
+          \u{1F4CD} 현재 위치 사용
+        </button>
+        <input name="region" required placeholder="예: 강남" id="region-input" />
+      </div>
+      <div class="field">
+        <label>거래처 유형</label>
+        <div class="store-type-grid">
+          ${config.storeTypeTemplates.map((t) => `<button type="button" class="store-type-btn ${t.label === state.selectedStoreType ? 'is-active' : ''}" data-store-type="${t.id}" data-label="${t.label}" data-pos="${t.defaultPosCount}">${t.label}</button>`).join('')}
+        </div>
+        <input type="hidden" name="storeType" value="${escapeHtml(state.selectedStoreType)}" />
+      </div>
+      <div class="field">
+        <label>점포명</label>
+        <input name="storeName" required placeholder="점포명을 입력하세요" />
+      </div>
+      <div class="field">
+        <label>POS 대수</label>
+        <div class="stepper">
+          <button type="button" id="pos-dec">&minus;</button>
+          <span class="stepper-value" id="pos-display">1</span>
+          <button type="button" id="pos-inc">+</button>
+        </div>
+        <input type="hidden" name="posCount" value="1" id="pos-input" />
+      </div>
+      <div class="field">
+        <label>진열 위치</label>
+        <input name="displayLocation" placeholder="예: 계산대 앞 / 냉장고 / 매대" />
+      </div>
+      <div class="form-nav">
+        <button type="button" class="btn btn-primary" id="next-step1">다음 \u2192</button>
+      </div>
     </div>
   `;
 
-  const storeTypeField = surveyForm.querySelector('[name="storeType"]');
-  const posCountField = surveyForm.querySelector('[name="posCount"]');
-  surveyForm.querySelectorAll('[data-store-template]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const template = bootstrap.storeTypeTemplates.find((item) => item.id === button.dataset.storeTemplate);
-      if (!template) return;
-      storeTypeField.value = template.label;
-      posCountField.value = template.defaultPosCount;
+  // GPS fill button
+  const gpsFillBtn = formStepContainer.querySelector('#gps-fill-btn');
+  const regionInput = formStepContainer.querySelector('#region-input');
+  gpsFillBtn.addEventListener('click', async () => {
+    if (state.gps.status !== 'ready') {
+      showToast('GPS 위치를 확인할 수 없습니다.', 'error');
+      return;
+    }
+    gpsFillBtn.classList.add('is-loading');
+    gpsFillBtn.textContent = '\u{1F4CD} 위치 확인 중...';
+    try {
+      const res = await fetch(`/api/reverse-geocode?lat=${state.gps.lat}&lng=${state.gps.lng}`);
+      const data = await res.json();
+      if (data.address) {
+        regionInput.value = data.address;
+        gpsFillBtn.textContent = '\u{1F4CD} 위치 입력 완료';
+      } else {
+        gpsFillBtn.textContent = '\u{1F4CD} 주소를 찾을 수 없습니다';
+      }
+    } catch {
+      gpsFillBtn.textContent = '\u{1F4CD} 위치 확인 실패';
+    }
+    gpsFillBtn.classList.remove('is-loading');
+  });
+
+  // Store type buttons
+  formStepContainer.querySelectorAll('.store-type-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      formStepContainer.querySelectorAll('.store-type-btn').forEach((b) => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      state.selectedStoreType = btn.dataset.label;
+      formStepContainer.querySelector('[name="storeType"]').value = btn.dataset.label;
+      const posInput = formStepContainer.querySelector('#pos-input');
+      const posDisplay = formStepContainer.querySelector('#pos-display');
+      posInput.value = btn.dataset.pos;
+      posDisplay.textContent = btn.dataset.pos;
     });
   });
 
-  surveyForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const status = surveyForm.querySelector('#submit-status');
-    status.textContent = '저장 중...';
-    const formData = new FormData(surveyForm);
-    const photoFile = formData.get('photo');
-    const photoDataUrl = photoFile && photoFile.size ? await fileToDataUrl(photoFile) : '';
-    const prices = [];
-    for (const product of bootstrap.products) {
-      for (const size of product.sizes) {
-        const name = priceFieldName(product.id, size);
-        const price = formData.get(name);
-        if (price) {
-          prices.push({ productId: product.id, productLabel: product.label, size, price });
-        }
+  // POS stepper
+  const posInput = formStepContainer.querySelector('#pos-input');
+  const posDisplay = formStepContainer.querySelector('#pos-display');
+  formStepContainer.querySelector('#pos-dec').addEventListener('click', () => {
+    const v = Math.max(0, Number(posInput.value) - 1);
+    posInput.value = v;
+    posDisplay.textContent = v;
+  });
+  formStepContainer.querySelector('#pos-inc').addEventListener('click', () => {
+    const v = Number(posInput.value) + 1;
+    posInput.value = v;
+    posDisplay.textContent = v;
+  });
+
+  // Next button
+  formStepContainer.querySelector('#next-step1').addEventListener('click', () => {
+    const name = formStepContainer.querySelector('[name="researcherName"]').value.trim();
+    const region = formStepContainer.querySelector('[name="region"]').value.trim();
+    const storeName = formStepContainer.querySelector('[name="storeName"]').value.trim();
+    if (!name || !region || !storeName) {
+      showToast('필수 항목을 입력해주세요.', 'error');
+      return;
+    }
+    saveLocal('researcherName', name);
+    saveLocal('residenceArea', formStepContainer.querySelector('[name="residenceArea"]').value);
+    statusResearcher.textContent = name;
+    state.currentStep = 2;
+    renderCurrentStep(state.bootstrap);
+  });
+}
+
+function renderStep2(config) {
+  formStepContainer.innerHTML = `
+    <div class="card stack">
+      <div>
+        <h3>제품별 가격 입력</h3>
+        <p class="small">판매하지 않는 제품은 비워두세요. 최소 1개 이상의 가격을 입력해주세요.</p>
+      </div>
+      <div class="stack" id="product-list">
+        ${config.products.map((product, idx) => `
+          <div class="product-accordion ${idx === 0 ? 'is-open' : ''}" data-product="${product.id}">
+            <div class="product-header">
+              <div>
+                <span class="product-name">${product.label}</span>
+                <span class="product-brand">${product.brand}</span>
+              </div>
+              <span class="accordion-arrow">\u25BC</span>
+            </div>
+            <div class="product-body">
+              ${product.sizes.map((size) => `
+                <div class="price-field">
+                  <span class="size-label">${size}</span>
+                  <input inputmode="numeric" name="${priceFieldName(product.id, size)}" placeholder="\u20A9 가격" />
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="form-nav">
+        <button type="button" class="btn btn-secondary" id="prev-step2">\u2190 이전</button>
+        <button type="button" class="btn btn-primary" id="next-step2">다음 \u2192</button>
+      </div>
+    </div>
+  `;
+
+  // Accordion toggle
+  formStepContainer.querySelectorAll('.product-header').forEach((header) => {
+    header.addEventListener('click', () => {
+      header.closest('.product-accordion').classList.toggle('is-open');
+    });
+  });
+
+  formStepContainer.querySelector('#prev-step2').addEventListener('click', () => {
+    state.currentStep = 1;
+    renderCurrentStep(config);
+  });
+
+  formStepContainer.querySelector('#next-step2').addEventListener('click', () => {
+    // Check at least one price entered
+    const inputs = formStepContainer.querySelectorAll('.price-field input');
+    const hasPrice = [...inputs].some((i) => i.value.trim() !== '');
+    if (!hasPrice) {
+      showToast('최소 1개 이상의 가격을 입력해주세요.', 'error');
+      return;
+    }
+    state.currentStep = 3;
+    renderCurrentStep(config);
+  });
+}
+
+function renderStep3(config) {
+  formStepContainer.innerHTML = `
+    <div class="card stack">
+      <div>
+        <h3>사진 & 메모</h3>
+      </div>
+      <div class="field">
+        <label>점포 사진</label>
+        <div id="photo-area">
+          <label class="camera-btn" id="camera-btn">
+            <span class="camera-icon">\u{1F4F7}</span>
+            <span>사진 촬영 / 선택</span>
+            <input type="file" name="photo" accept="image/*" capture="environment" id="photo-input" />
+          </label>
+        </div>
+      </div>
+      <div class="field">
+        <label>메모</label>
+        <textarea name="notes" rows="4" placeholder="프로모션, 품절, 경쟁사 특이사항 등을 적어주세요"></textarea>
+      </div>
+      <div class="form-nav">
+        <button type="button" class="btn btn-secondary" id="prev-step3">\u2190 이전</button>
+      </div>
+      <button type="button" class="btn-submit" id="submit-btn">\u{1F4EE} 조사 저장</button>
+      <div id="submit-status" class="small text-center"></div>
+    </div>
+  `;
+
+  // Photo preview
+  const photoInput = formStepContainer.querySelector('#photo-input');
+  const photoArea = formStepContainer.querySelector('#photo-area');
+  photoInput.addEventListener('change', async () => {
+    const file = photoInput.files[0];
+    if (!file) return;
+    state.photoDataUrl = await fileToDataUrl(file);
+    photoArea.innerHTML = `
+      <div class="photo-preview-container">
+        <img class="photo-preview" src="${state.photoDataUrl}" alt="미리보기" />
+        <button type="button" class="photo-remove" id="photo-remove">\u2715</button>
+      </div>
+    `;
+    photoArea.querySelector('#photo-remove').addEventListener('click', () => {
+      state.photoDataUrl = '';
+      photoArea.innerHTML = `
+        <label class="camera-btn">
+          <span class="camera-icon">\u{1F4F7}</span>
+          <span>사진 촬영 / 선택</span>
+          <input type="file" name="photo" accept="image/*" capture="environment" />
+        </label>
+      `;
+    });
+  });
+
+  formStepContainer.querySelector('#prev-step3').addEventListener('click', () => {
+    state.currentStep = 2;
+    renderCurrentStep(config);
+  });
+
+  formStepContainer.querySelector('#submit-btn').addEventListener('click', () => {
+    handleSubmit(config);
+  });
+}
+
+async function handleSubmit(config) {
+  const submitBtn = formStepContainer.querySelector('#submit-btn');
+  const statusEl = formStepContainer.querySelector('#submit-status');
+  submitBtn.disabled = true;
+  statusEl.textContent = '저장 중...';
+
+  // Collect all form data across steps - read from hidden inputs + localStorage
+  const formData = new FormData(surveyForm);
+  const prices = [];
+  for (const product of config.products) {
+    for (const size of product.sizes) {
+      const name = priceFieldName(product.id, size);
+      const price = formData.get(name);
+      if (price) {
+        prices.push({ productId: product.id, productLabel: product.label, size, price });
       }
     }
+  }
 
-    const payload = {
-      researcher: {
-        name: formData.get('researcherName'),
-        residenceArea: formData.get('residenceArea')
-      },
-      survey: {
-        region: formData.get('region'),
-        storeType: formData.get('storeType'),
-        storeName: formData.get('storeName'),
-        posCount: formData.get('posCount'),
-        displayLocation: formData.get('displayLocation')
-      },
-      notes: formData.get('notes'),
-      photoDataUrl,
-      prices
-    };
+  // We need data from step 1 which is no longer in DOM; use localStorage + hidden fields
+  // Re-read from localStorage for step-1 fields
+  const payload = {
+    researcher: {
+      name: loadLocal('researcherName'),
+      residenceArea: loadLocal('residenceArea')
+    },
+    survey: {
+      region: loadLocal('_step1_region'),
+      storeType: loadLocal('_step1_storeType'),
+      storeName: loadLocal('_step1_storeName'),
+      posCount: loadLocal('_step1_posCount'),
+      displayLocation: loadLocal('_step1_displayLocation')
+    },
+    notes: formData.get('notes') || '',
+    photoDataUrl: state.photoDataUrl,
+    prices
+  };
 
+  // Include GPS coordinates in payload if available
+  if (state.gps.status === 'ready') {
+    payload.gpsLat = state.gps.lat;
+    payload.gpsLng = state.gps.lng;
+  }
+
+  try {
     const response = await fetch('/api/submissions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -121,43 +410,115 @@ function renderForm(bootstrap) {
     });
     const result = await response.json();
     if (!response.ok) {
-      status.textContent = result.error || '저장에 실패했습니다.';
+      statusEl.textContent = result.error || '저장에 실패했습니다.';
+      submitBtn.disabled = false;
       return;
     }
-    status.textContent = `저장되었습니다. 배정 지역: ${result.assignment.currentArea}`;
-    surveyForm.reset();
-    await bootstrap();
+    showSuccess(result);
+    await loadBootstrap();
+  } catch (err) {
+    statusEl.textContent = '네트워크 오류가 발생했습니다.';
+    submitBtn.disabled = false;
+  }
+}
+
+function showSuccess(result) {
+  surveyForm.classList.add('hidden');
+  stepIndicator.innerHTML = '';
+  successView.classList.remove('hidden');
+  successView.innerHTML = `
+    <div class="success-card">
+      <div class="success-icon">\u2705</div>
+      <h3>저장 완료!</h3>
+      <div class="assigned-area">배정 지역: ${escapeHtml(result.assignment.currentArea)}</div>
+      <div class="success-actions">
+        <button type="button" class="btn btn-primary" id="new-survey">새 조사 시작</button>
+        <button type="button" class="btn btn-secondary" id="view-history">조사 이력 보기</button>
+      </div>
+    </div>
+  `;
+  successView.querySelector('#new-survey').addEventListener('click', () => {
+    renderForm(state.bootstrap);
+  });
+  successView.querySelector('#view-history').addEventListener('click', () => {
+    navTabs.forEach((t) => t.classList.toggle('is-active', t.dataset.tab === 'admin'));
+    panels.forEach((p) => p.classList.toggle('is-active', p.id === 'admin'));
   });
 }
 
-function renderAdmin(bootstrap) {
-  const counts = bootstrap.submissions.reduce((acc, submission) => {
-    const key = submission.assignment.currentArea;
+// ── Admin panel ──
+function renderAdmin(config) {
+  const submissions = config.submissions || [];
+  const total = submissions.length;
+  const today = new Date().toDateString();
+  const todayCount = submissions.filter((s) => new Date(s.createdAt).toDateString() === today).length;
+  const areaCounts = submissions.reduce((acc, s) => {
+    const key = s.assignment.currentArea;
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
 
-  adminSummary.innerHTML = bootstrap.areas.map((area) => `
-    <div class="summary-tile">
-      <span class="small">${area}</span>
-      <strong>${counts[area] || 0}</strong>
+  adminStats.innerHTML = `
+    <div class="stat-card">
+      <span class="stat-value">${total}</span>
+      <span class="stat-label">총 조사 수</span>
     </div>
-  `).join('');
+    <div class="stat-card">
+      <span class="stat-value">${todayCount}</span>
+      <span class="stat-label">오늘 조사</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-value">${Object.keys(areaCounts).length}</span>
+      <span class="stat-label">활성 지역</span>
+    </div>
+  `;
 
-  submissionList.innerHTML = bootstrap.submissions.length
-    ? bootstrap.submissions.map((submission) => `
-      <article class="submission-card stack">
-        <div class="actions">
-          <strong>${submission.survey.storeName}</strong>
-          <span class="small">${new Date(submission.createdAt).toLocaleString()}</span>
+  // Filters
+  const researchers = [...new Set(submissions.map((s) => s.researcher.name))];
+  adminFilter.innerHTML = `
+    <input type="text" id="filter-name" placeholder="조사자 이름 검색" />
+    <select id="filter-area">
+      <option value="">전체 지역</option>
+      ${config.areas.map((a) => `<option value="${a}">${a}</option>`).join('')}
+    </select>
+  `;
+  const filterName = adminFilter.querySelector('#filter-name');
+  const filterArea = adminFilter.querySelector('#filter-area');
+  const doFilter = () => renderSubmissionList(config, submissions, filterName.value, filterArea.value);
+  filterName.addEventListener('input', doFilter);
+  filterArea.addEventListener('change', doFilter);
+
+  renderSubmissionList(config, submissions, '', '');
+}
+
+function renderSubmissionList(config, submissions, nameFilter, areaFilter) {
+  let filtered = submissions;
+  if (nameFilter) {
+    const q = nameFilter.toLowerCase();
+    filtered = filtered.filter((s) => s.researcher.name.toLowerCase().includes(q));
+  }
+  if (areaFilter) {
+    filtered = filtered.filter((s) => s.assignment.currentArea === areaFilter);
+  }
+
+  submissionList.innerHTML = filtered.length
+    ? filtered.map((sub) => `
+      <article class="submission-card">
+        <div class="sub-header">
+          <span class="store-name">${escapeHtml(sub.survey.storeName)}</span>
+          <span class="sub-date">${new Date(sub.createdAt).toLocaleDateString('ko-KR')}</span>
         </div>
-        <div class="small">${submission.researcher.name} · ${submission.researcher.residenceArea} → <strong>${submission.assignment.currentArea}</strong></div>
-        <div class="small">${submission.survey.region} · ${submission.survey.storeType} · POS ${submission.survey.posCount}</div>
-        <div class="small">Prices: ${submission.prices.map((price) => `${price.productLabel} ${price.size} ₩${price.price}`).join(', ')}</div>
-        ${submission.photo ? `<img class="photo-preview" src="${submission.photo.url}" alt="${submission.survey.storeName}" />` : ''}
-        <div class="actions">
-          <select data-submission-id="${submission.id}">${bootstrap.areas.map((area) => `<option value="${area}" ${area === submission.assignment.currentArea ? 'selected' : ''}>${area}</option>`).join('')}</select>
-          <button data-action="override" data-submission-id="${submission.id}">지역 변경</button>
+        <div class="sub-meta">
+          ${escapeHtml(sub.researcher.name)} \u00B7 ${escapeHtml(sub.researcher.residenceArea)} \u2192 <strong>${escapeHtml(sub.assignment.currentArea)}</strong>
+        </div>
+        <div class="sub-meta">${escapeHtml(sub.survey.region)} \u00B7 ${escapeHtml(sub.survey.storeType)} \u00B7 POS ${sub.survey.posCount}</div>
+        <div class="sub-prices">${sub.prices.map((p) => `${p.productLabel} ${p.size} \u20A9${p.price}`).join(', ')}</div>
+        ${sub.photo ? `<img class="sub-photo" src="${sub.photo.url}" alt="${escapeHtml(sub.survey.storeName)}" />` : ''}
+        <div class="sub-actions">
+          <select data-submission-id="${sub.id}">
+            ${config.areas.map((a) => `<option value="${a}" ${a === sub.assignment.currentArea ? 'selected' : ''}>${a}</option>`).join('')}
+          </select>
+          <button data-action="override" data-submission-id="${sub.id}">지역 변경</button>
         </div>
       </article>
     `).join('')
@@ -177,10 +538,16 @@ function renderAdmin(bootstrap) {
         })
       });
       if (response.ok) {
-        await bootstrap();
+        await loadBootstrap();
       }
     });
   });
+}
+
+// ── Helpers ──
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 async function fileToDataUrl(file) {
@@ -192,6 +559,17 @@ async function fileToDataUrl(file) {
   });
 }
 
+function showToast(message, type) {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type || 'success'}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+// ── Map ──
 const MARKER_COLORS = [
   '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
   '#1abc9c', '#e67e22', '#34495e', '#d35400', '#c0392b'
@@ -219,7 +597,6 @@ function createMarkerImage(color) {
 
 async function initMap() {
   if (!state.bootstrap) return;
-
   const container = document.getElementById('map-container');
 
   function createMap() {
@@ -240,18 +617,15 @@ async function initMap() {
     container.innerHTML = '<p style="padding:20px;color:#888;">카카오맵을 불러올 수 없습니다.</p>';
     return;
   }
-
   if (typeof kakao.maps.LatLng === 'undefined') {
     container.innerHTML = '<p style="padding:20px;color:#888;">카카오맵 로딩 중...</p>';
     kakao.maps.load(createMap);
     return;
   }
-
   createMap();
 }
 
 async function renderMapData() {
-
   const map = state.kakaoMap;
   const submissions = state.bootstrap.submissions;
 
@@ -277,18 +651,13 @@ async function renderMapData() {
     bounds.extend(position);
     hasMarkers = true;
 
-    const marker = new kakao.maps.Marker({
-      map,
-      position,
-      image: createMarkerImage(color)
-    });
-
+    const marker = new kakao.maps.Marker({ map, position, image: createMarkerImage(color) });
     const priceCount = sub.prices ? sub.prices.length : 0;
     const date = new Date(sub.createdAt).toLocaleDateString('ko-KR');
     const content = `<div style="padding:8px 12px;font-size:13px;line-height:1.6;max-width:220px;">
       <strong>${sub.survey.storeName}</strong><br/>
-      ${sub.researcher.name} · ${date}<br/>
-      ${sub.survey.storeType} · 가격 ${priceCount}건
+      ${sub.researcher.name} \u00B7 ${date}<br/>
+      ${sub.survey.storeType} \u00B7 가격 ${priceCount}건
     </div>`;
 
     const infoWindow = new kakao.maps.InfoWindow({ content });
@@ -299,31 +668,43 @@ async function renderMapData() {
     });
   });
 
-  if (hasMarkers) {
-    map.setBounds(bounds);
-  }
+  if (hasMarkers) map.setBounds(bounds);
 
-  // Render legend
   const legend = document.getElementById('map-legend');
   legend.innerHTML = Object.entries(researcherColorMap).map(([name, color]) =>
     `<div class="legend-item"><span class="legend-dot" style="background:${color}"></span>${name}</div>`
   ).join('');
 
-  // Render coverage stats
   const coverageStats = document.getElementById('coverage-stats');
   if (statsData.areas && statsData.areas.length) {
     coverageStats.innerHTML = statsData.areas.map((a, i) => {
       const bg = MARKER_COLORS[i % MARKER_COLORS.length];
-      return `<div class="summary-tile"><span class="coverage-badge" style="background:${bg}">${a.area}</span><strong>${a.count}건</strong></div>`;
+      return `<div class="summary-tile"><span class="coverage-badge" style="background:${bg}">${a.area}</span><strong>${a.count || a.submissionCount || 0}건</strong></div>`;
     }).join('');
   }
 }
 
-async function bootstrap() {
+// ── Bootstrap ──
+async function loadBootstrap() {
   const response = await fetch('/api/bootstrap');
   state.bootstrap = await response.json();
   renderForm(state.bootstrap);
   renderAdmin(state.bootstrap);
 }
 
-bootstrap();
+// Save step 1 field values to localStorage before navigating away
+surveyForm.addEventListener('click', (e) => {
+  if (e.target.id === 'next-step1') {
+    // Save step 1 fields to localStorage for later retrieval during submit
+    const container = formStepContainer;
+    saveLocal('_step1_region', container.querySelector('[name="region"]')?.value || '');
+    saveLocal('_step1_storeType', container.querySelector('[name="storeType"]')?.value || '');
+    saveLocal('_step1_storeName', container.querySelector('[name="storeName"]')?.value || '');
+    saveLocal('_step1_posCount', container.querySelector('[name="posCount"]')?.value || '1');
+    saveLocal('_step1_displayLocation', container.querySelector('[name="displayLocation"]')?.value || '');
+  }
+});
+
+// ── Init ──
+initGps();
+loadBootstrap();

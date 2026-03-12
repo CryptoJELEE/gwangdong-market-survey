@@ -2,11 +2,17 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>광동제약 시장조사</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <div class="status-bar">
+      <span class="gps-status" id="gps-status">위치 확인 중...</span>
+      <span class="researcher-name" id="status-researcher"></span>
+    </div>
+
     <main class="shell">
       <header class="hero">
         <p class="eyebrow">광동제약</p>
@@ -14,23 +20,22 @@
         <p class="subhead">현장 조사 입력, 관리자 검토, 자동 지역 배정을 한 번에 처리합니다.</p>
       </header>
 
-      <nav class="tabs">
-        <button class="tab is-active" data-tab="survey">조사 입력</button>
-        <button class="tab" data-tab="admin">관리자</button>
-        <button class="tab" data-tab="map">지도</button>
-      </nav>
-
       <section id="survey" class="panel is-active">
-        <form id="survey-form" class="card stack"></form>
+        <div id="step-indicator" class="step-indicator"></div>
+        <form id="survey-form">
+          <div id="form-step-container"></div>
+        </form>
+        <div id="success-view" class="card hidden"></div>
       </section>
 
       <section id="admin" class="panel">
         <div class="card stack">
-          <div>
-            <h2>조사 이력</h2>
-            <p class="hint">최근 조사 결과와 사진을 확인하고 필요하면 담당 지역을 조정할 수 있습니다.</p>
+          <div class="admin-header">
+            <h2>조사 현황</h2>
+            <p class="hint">조사 결과를 확인하고 담당 지역을 조정할 수 있습니다.</p>
           </div>
-          <div id="admin-summary" class="summary-grid"></div>
+          <div id="admin-stats" class="stat-cards"></div>
+          <div id="admin-filter" class="filter-bar"></div>
           <div id="submission-list" class="stack"></div>
         </div>
       </section>
@@ -41,12 +46,28 @@
             <h2>조사 현황 지도</h2>
             <p class="hint">조사 완료 점포와 조사자 거주지를 지도에서 확인합니다.</p>
           </div>
-          <div id="map-container" style="width:100%;height:500px;border-radius:8px;"></div>
+          <div id="map-container" style="width:100%;height:500px;border-radius:10px;"></div>
           <div id="map-legend" class="map-legend"></div>
           <div id="coverage-stats" class="summary-grid"></div>
         </div>
       </section>
     </main>
+
+    <nav class="bottom-nav">
+      <button class="nav-tab is-active" data-tab="survey">
+        <span class="nav-icon">&#x1F4DD;</span>
+        <span>조사</span>
+      </button>
+      <button class="nav-tab" data-tab="admin">
+        <span class="nav-icon">&#x1F4CA;</span>
+        <span>현황</span>
+      </button>
+      <button class="nav-tab" data-tab="map">
+        <span class="nav-icon">&#x1F5FA;</span>
+        <span>지도</span>
+      </button>
+    </nav>
+
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=cd597c4c6f2cb58323e670a8bcef366b&autoload=false&libraries=services,clusterer"></script>
     <script type="module" src="/app.js"></script>
   </body>

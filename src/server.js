@@ -127,6 +127,10 @@ export function createApp(config = loadConfig(), options = {}) {
         await serveStatic(response, path.resolve('src/client/styles.css'));
         return;
       }
+      if (request.method === 'GET' && (url.pathname === '/favicon.svg' || url.pathname === '/favicon.ico')) {
+        await serveStatic(response, path.resolve('src/client/favicon.svg'));
+        return;
+      }
       if (request.method === 'GET' && url.pathname.startsWith('/uploads/')) {
         await serveStatic(response, path.resolve(config.uploadsDir, url.pathname.replace('/uploads/', '')));
         return;
@@ -150,6 +154,27 @@ export function createApp(config = loadConfig(), options = {}) {
         const query = url.searchParams.get('query') || '';
         const result = await geocoder.geocode(query);
         json(response, 200, result);
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/reverse-geocode') {
+        const lat = url.searchParams.get('lat');
+        const lng = url.searchParams.get('lng');
+        if (!lat || !lng) {
+          json(response, 400, { error: 'lat and lng are required.' });
+          return;
+        }
+        const kakaoUrl = `https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${lng}&y=${lat}`;
+        const fetchFn = options.fetchImpl || fetch;
+        const kakaoRes = await fetchFn(kakaoUrl, {
+          headers: { Authorization: `KakaoAK ${config.kakaoRestApiKey}` }
+        });
+        const kakaoData = await kakaoRes.json();
+        const doc = kakaoData.documents && kakaoData.documents[0];
+        const address = doc
+          ? (doc.road_address ? doc.road_address.address_name : doc.address.address_name)
+          : '';
+        json(response, 200, { address, lat: Number(lat), lng: Number(lng) });
         return;
       }
 
