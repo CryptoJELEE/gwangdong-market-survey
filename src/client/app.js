@@ -322,11 +322,6 @@ function renderStep2(config) {
 
   formStepContainer.querySelector('#next-step2').addEventListener('click', () => {
     const inputs = formStepContainer.querySelectorAll('.price-field input');
-    const hasPrice = [...inputs].some((i) => i.value.trim() !== '');
-    if (!hasPrice) {
-      showToast('최소 1개 이상의 가격을 입력해주세요.', 'error');
-      return;
-    }
     savePrices();
     state.currentStep = 3;
     renderCurrentStep(config);

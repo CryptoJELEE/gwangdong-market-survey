@@ -23,9 +23,6 @@ function validateSubmission(body, config) {
   }
 
   const prices = (body.prices || []).filter((item) => item.price !== '' && item.price !== null && item.price !== undefined);
-  if (!prices.length) {
-    throw new Error('At least one product price is required.');
-  }
 
   return {
     researcher: {

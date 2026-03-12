@@ -127,7 +127,7 @@ test('bootstrap reflects admin token configuration', async (t) => {
   assert.ok(Array.isArray(payload.products));
 });
 
-test('submission API rejects payloads without product prices', async (t) => {
+test('submission API accepts payloads without product prices', async (t) => {
   const { baseUrl } = await createTestServer(t);
 
   const response = await fetch(`${baseUrl}/api/submissions`, {
@@ -144,9 +144,9 @@ test('submission API rejects payloads without product prices', async (t) => {
     })
   });
 
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 201);
   const payload = await response.json();
-  assert.match(payload.error, /At least one product price is required/);
+  assert.deepStrictEqual(payload.prices, []);
 });
 
 test('root document is served for the mobile app shell', async (t) => {
