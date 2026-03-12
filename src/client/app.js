@@ -14,7 +14,6 @@ const formStepContainer = document.querySelector('#form-step-container');
 const stepIndicator = document.querySelector('#step-indicator');
 const successView = document.querySelector('#success-view');
 const submissionList = document.querySelector('#submission-list');
-const adminStats = document.querySelector('#admin-stats');
 const adminFilter = document.querySelector('#admin-filter');
 const gpsStatusEl = document.querySelector('#gps-status');
 const statusResearcher = document.querySelector('#status-researcher');
@@ -26,7 +25,7 @@ navTabs.forEach((button) => {
   button.addEventListener('click', () => {
     navTabs.forEach((t) => t.classList.toggle('is-active', t === button));
     panels.forEach((p) => p.classList.toggle('is-active', p.id === button.dataset.tab));
-    if (button.dataset.tab === 'map') initMap();
+    if (button.dataset.tab === 'dashboard') initMap();
   });
 });
 
@@ -100,7 +99,6 @@ function renderForm(config) {
   renderStepIndicator();
   renderCurrentStep(config);
 
-  // Update status bar researcher name
   const savedName = loadLocal('researcherName');
   if (savedName) statusResearcher.textContent = savedName;
 }
@@ -171,7 +169,6 @@ function renderStep1(config) {
     </div>
   `;
 
-  // GPS fill button
   const gpsFillBtn = formStepContainer.querySelector('#gps-fill-btn');
   const regionInput = formStepContainer.querySelector('#region-input');
   gpsFillBtn.addEventListener('click', async () => {
@@ -196,7 +193,6 @@ function renderStep1(config) {
     gpsFillBtn.classList.remove('is-loading');
   });
 
-  // Store type buttons
   formStepContainer.querySelectorAll('.store-type-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       formStepContainer.querySelectorAll('.store-type-btn').forEach((b) => b.classList.remove('is-active'));
@@ -210,7 +206,6 @@ function renderStep1(config) {
     });
   });
 
-  // POS stepper
   const posInput = formStepContainer.querySelector('#pos-input');
   const posDisplay = formStepContainer.querySelector('#pos-display');
   formStepContainer.querySelector('#pos-dec').addEventListener('click', () => {
@@ -224,7 +219,6 @@ function renderStep1(config) {
     posDisplay.textContent = v;
   });
 
-  // Next button
   formStepContainer.querySelector('#next-step1').addEventListener('click', () => {
     const name = formStepContainer.querySelector('[name="researcherName"]').value.trim();
     const region = formStepContainer.querySelector('[name="region"]').value.trim();
@@ -238,7 +232,6 @@ function renderStep1(config) {
     const posCount = formStepContainer.querySelector('[name="posCount"]')?.value || '1';
     const displayLocation = formStepContainer.querySelector('[name="displayLocation"]')?.value || '';
 
-    // Save to both state AND localStorage for redundancy
     state.step1Data = { researcherName: name, residenceArea, region, storeType, storeName, posCount, displayLocation };
     saveLocal('researcherName', name);
     saveLocal('residenceArea', residenceArea);
@@ -288,7 +281,6 @@ function renderStep2(config) {
     </div>
   `;
 
-  // Accordion toggle
   formStepContainer.querySelectorAll('.product-header').forEach((header) => {
     header.addEventListener('click', () => {
       header.closest('.product-accordion').classList.toggle('is-open');
@@ -321,7 +313,6 @@ function renderStep2(config) {
   });
 
   formStepContainer.querySelector('#next-step2').addEventListener('click', () => {
-    const inputs = formStepContainer.querySelectorAll('.price-field input');
     savePrices();
     state.currentStep = 3;
     renderCurrentStep(config);
@@ -356,7 +347,6 @@ function renderStep3(config) {
     </div>
   `;
 
-  // Photo preview
   const photoInput = formStepContainer.querySelector('#photo-input');
   const photoArea = formStepContainer.querySelector('#photo-area');
   photoInput.addEventListener('change', async () => {
@@ -398,7 +388,6 @@ async function handleSubmit(config) {
   submitBtn.disabled = true;
   statusEl.textContent = '저장 중...';
 
-  // Collect all form data across steps - read from hidden inputs + localStorage
   const formData = new FormData(surveyForm);
   const prices = [];
   for (const product of config.products) {
@@ -411,7 +400,6 @@ async function handleSubmit(config) {
     }
   }
 
-  // Read from both state.formData cache AND localStorage as fallback
   const s = state.step1Data || {};
   const payload = {
     researcher: {
@@ -430,7 +418,6 @@ async function handleSubmit(config) {
     prices
   };
 
-  // Include GPS coordinates in payload if available
   if (state.gps.status === 'ready') {
     payload.gpsLat = state.gps.lat;
     payload.gpsLng = state.gps.lng;
@@ -475,49 +462,215 @@ function showSuccess(result) {
     renderForm(state.bootstrap);
   });
   successView.querySelector('#view-history').addEventListener('click', () => {
-    navTabs.forEach((t) => t.classList.toggle('is-active', t.dataset.tab === 'admin'));
-    panels.forEach((p) => p.classList.toggle('is-active', p.id === 'admin'));
+    navTabs.forEach((t) => t.classList.toggle('is-active', t.dataset.tab === 'dashboard'));
+    panels.forEach((p) => p.classList.toggle('is-active', p.id === 'dashboard'));
+    initMap();
   });
 }
 
-// ── Admin panel ──
-function renderAdmin(config) {
-  const submissions = config.submissions || [];
-  const total = submissions.length;
-  const today = new Date().toDateString();
-  const todayCount = submissions.filter((s) => new Date(s.createdAt).toDateString() === today).length;
-  const areaCounts = submissions.reduce((acc, s) => {
-    const key = s.assignment.currentArea;
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
+// ── Dashboard stats helpers ──
+function calcProductStats(submissions, products) {
+  const totalStores = submissions.length;
+  if (!totalStores) return [];
 
-  adminStats.innerHTML = `
-    <div class="stat-card">
-      <span class="stat-value">${total}</span>
-      <span class="stat-label">총 기록 수</span>
-    </div>
-    <div class="stat-card">
-      <span class="stat-value">${todayCount}</span>
-      <span class="stat-label">오늘 기록</span>
-    </div>
-    <div class="stat-card">
-      <span class="stat-value">${Object.keys(areaCounts).length}</span>
-      <span class="stat-label">활성 지역</span>
-    </div>
+  return products.map((product) => {
+    const storesWithProduct = submissions.filter((sub) =>
+      sub.prices && sub.prices.some((p) => p.productId === product.id)
+    );
+    const discoveryRate = totalStores > 0 ? storesWithProduct.length / totalStores : 0;
+
+    const sizeStats = {};
+    product.sizes.forEach((size) => {
+      const pricesForSize = [];
+      storesWithProduct.forEach((sub) => {
+        sub.prices.forEach((p) => {
+          if (p.productId === product.id && p.size === size && p.price) {
+            const num = Number(String(p.price).replace(/[^0-9]/g, ''));
+            if (num > 0) pricesForSize.push(num);
+          }
+        });
+      });
+      if (pricesForSize.length > 0) {
+        sizeStats[size] = {
+          avg: Math.round(pricesForSize.reduce((a, b) => a + b, 0) / pricesForSize.length),
+          min: Math.min(...pricesForSize),
+          max: Math.max(...pricesForSize),
+          count: pricesForSize.length
+        };
+      }
+    });
+
+    return {
+      id: product.id,
+      label: product.label,
+      brand: product.brand,
+      discoveryRate,
+      storeCount: storesWithProduct.length,
+      totalStores,
+      sizeStats
+    };
+  }).sort((a, b) => b.discoveryRate - a.discoveryRate);
+}
+
+function calcAreaStats(submissions, areas) {
+  const areaMap = {};
+  areas.forEach((a) => { areaMap[a] = { name: a, count: 0, products: {} }; });
+
+  submissions.forEach((sub) => {
+    const area = sub.assignment?.currentArea;
+    if (!area) return;
+    if (!areaMap[area]) areaMap[area] = { name: area, count: 0, products: {} };
+    areaMap[area].count++;
+    if (sub.prices) {
+      sub.prices.forEach((p) => {
+        areaMap[area].products[p.productLabel] = (areaMap[area].products[p.productLabel] || 0) + 1;
+      });
+    }
+  });
+
+  return Object.values(areaMap).map((a) => {
+    const sorted = Object.entries(a.products).sort((x, y) => y[1] - x[1]);
+    return { ...a, topProduct: sorted[0] ? sorted[0][0] : '-' };
+  });
+}
+
+function calcTodayCount(submissions) {
+  const today = new Date().toDateString();
+  return submissions.filter((s) => new Date(s.createdAt).toDateString() === today).length;
+}
+
+function calcRecentActivity(submissions, limit) {
+  const sorted = [...submissions].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return sorted.slice(0, limit).map((sub) => {
+    const priceCount = sub.prices ? sub.prices.length : 0;
+    return {
+      name: sub.researcher.name,
+      storeName: sub.survey.storeName,
+      storeType: sub.survey.storeType,
+      priceCount,
+      createdAt: sub.createdAt
+    };
+  });
+}
+
+function relativeTime(dateStr) {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diff = now - then;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '방금';
+  if (mins < 60) return `${mins}분 전`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return '어제';
+  return `${days}일 전`;
+}
+
+// ── Dashboard rendering ──
+function renderDashboard(config) {
+  const submissions = config.submissions || [];
+  const products = config.products || [];
+  const areas = config.areas || [];
+  const total = submissions.length;
+  const todayCount = calcTodayCount(submissions);
+  const uniqueResearchers = new Set(submissions.map((s) => s.researcher.name)).size;
+  const coveredAreas = new Set(submissions.map((s) => s.assignment?.currentArea).filter(Boolean)).size;
+
+  // 1. Quick Stats
+  document.querySelector('#quick-stats').innerHTML = `
+    <div class="quick-stat"><span class="qs-icon">🏃</span><span class="qs-value">${total}</span><span class="qs-label">총 기록</span></div>
+    <div class="quick-stat"><span class="qs-icon">📅</span><span class="qs-value">${todayCount}</span><span class="qs-label">오늘</span></div>
+    <div class="quick-stat"><span class="qs-icon">👤</span><span class="qs-value">${uniqueResearchers}</span><span class="qs-label">조사자</span></div>
+    <div class="quick-stat"><span class="qs-icon">📍</span><span class="qs-value">${coveredAreas}/${areas.length}</span><span class="qs-label">지역</span></div>
   `;
 
-  // Filters
-  const researchers = [...new Set(submissions.map((s) => s.researcher.name))];
-  adminFilter.innerHTML = `
+  // 3. Product Leaderboard
+  const productStats = calcProductStats(submissions, products);
+  const medals = ['🥇', '🥈', '🥉'];
+  const leaderboard = document.querySelector('#product-leaderboard');
+  leaderboard.innerHTML = `
+    <h2>제품 현황판 🏆</h2>
+    ${productStats.length === 0 ? '<p class="small">아직 데이터가 없어요.</p>' : productStats.map((ps, i) => {
+      const pct = Math.round(ps.discoveryRate * 100);
+      const medal = i < 3 ? medals[i] : '';
+      const isIonKick = ps.id === 'ion-kick';
+      const barColor = isIonKick ? 'var(--gold)' : 'var(--primary)';
+      const cardClass = isIonKick ? 'product-stat-card is-highlight' : 'product-stat-card';
+      const sizesHtml = Object.entries(ps.sizeStats).map(([size, stats]) =>
+        `<div class="ps-size"><span class="ps-size-label">${size}</span> 평균 ₩${stats.avg.toLocaleString()} <span class="ps-range">(₩${stats.min.toLocaleString()}~₩${stats.max.toLocaleString()})</span></div>`
+      ).join('');
+      return `
+        <div class="${cardClass}">
+          <div class="ps-header">
+            <span class="ps-name">${medal} ${ps.label}</span>
+            <span class="ps-rate">발견률 ${pct}%</span>
+          </div>
+          <div class="ps-bar-track">
+            <div class="ps-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+          </div>
+          <div class="ps-detail">${ps.storeCount}/${ps.totalStores}개 매장</div>
+          ${sizesHtml ? `<div class="ps-sizes">${sizesHtml}</div>` : ''}
+        </div>
+      `;
+    }).join('')}
+  `;
+
+  // 4. Area Stats
+  const areaStats = calcAreaStats(submissions, areas);
+  const areaGrid = document.querySelector('#area-stats-grid');
+  if (areaStats.some((a) => a.count > 0)) {
+    areaGrid.innerHTML = `
+      <div class="card stack">
+        <h2>지역별 현황 📍</h2>
+        <div class="area-cards">
+          ${areaStats.map((a) => `
+            <div class="area-card">
+              <div class="area-name">${escapeHtml(a.name)}</div>
+              <div class="area-count">${a.count}건</div>
+              <div class="area-top">인기 제품: <strong>${escapeHtml(a.topProduct)}</strong></div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } else {
+    areaGrid.innerHTML = '';
+  }
+
+  // 5. Recent Activity
+  const recent = calcRecentActivity(submissions, 5);
+  const activityEl = document.querySelector('#recent-activity');
+  if (recent.length > 0) {
+    activityEl.innerHTML = `
+      <h2>최근 활동 🕐</h2>
+      <div class="activity-feed">
+        ${recent.map((r) => `
+          <div class="activity-item">
+            <div class="activity-dot"></div>
+            <div class="activity-text">
+              <strong>${escapeHtml(r.name)}</strong>님이 ${escapeHtml(r.storeName)}에서 ${r.priceCount}개 제품 기록
+              <span class="activity-time">${relativeTime(r.createdAt)}</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } else {
+    activityEl.innerHTML = '<h2>최근 활동 🕐</h2><p class="small">아직 활동이 없어요.</p>';
+  }
+
+  // 6. Submission list with filters
+  const filterEl = adminFilter;
+  filterEl.innerHTML = `
     <input type="text" id="filter-name" placeholder="이름 검색" />
     <select id="filter-area">
       <option value="">전체 지역</option>
-      ${config.areas.map((a) => `<option value="${a}">${a}</option>`).join('')}
+      ${areas.map((a) => `<option value="${a}">${a}</option>`).join('')}
     </select>
   `;
-  const filterName = adminFilter.querySelector('#filter-name');
-  const filterArea = adminFilter.querySelector('#filter-area');
+  const filterName = filterEl.querySelector('#filter-name');
+  const filterArea = filterEl.querySelector('#filter-area');
   const doFilter = () => renderSubmissionList(config, submissions, filterName.value, filterArea.value);
   filterName.addEventListener('input', doFilter);
   filterArea.addEventListener('change', doFilter);
@@ -663,14 +816,6 @@ async function renderMapData() {
   const map = state.kakaoMap;
   const submissions = state.bootstrap.submissions;
 
-  let statsData;
-  try {
-    const res = await fetch('/api/survey-stats');
-    statsData = await res.json();
-  } catch {
-    statsData = { areas: [], totalSubmissions: 0 };
-  }
-
   const bounds = new kakao.maps.LatLngBounds();
   let hasMarkers = false;
   const openInfoWindow = { current: null };
@@ -708,14 +853,6 @@ async function renderMapData() {
   legend.innerHTML = Object.entries(researcherColorMap).map(([name, color]) =>
     `<div class="legend-item"><span class="legend-dot" style="background:${color}"></span>${name}</div>`
   ).join('');
-
-  const coverageStats = document.getElementById('coverage-stats');
-  if (statsData.areas && statsData.areas.length) {
-    coverageStats.innerHTML = statsData.areas.map((a, i) => {
-      const bg = MARKER_COLORS[i % MARKER_COLORS.length];
-      return `<div class="summary-tile"><span class="coverage-badge" style="background:${bg}">${a.area}</span><strong>${a.count || a.submissionCount || 0}건</strong></div>`;
-    }).join('');
-  }
 }
 
 // ── Bootstrap ──
@@ -723,13 +860,12 @@ async function loadBootstrap() {
   const response = await fetch('/api/bootstrap');
   state.bootstrap = await response.json();
   renderForm(state.bootstrap);
-  renderAdmin(state.bootstrap);
+  renderDashboard(state.bootstrap);
 }
 
 // Save step 1 field values to localStorage before navigating away
 surveyForm.addEventListener('click', (e) => {
   if (e.target.id === 'next-step1') {
-    // Save step 1 fields to localStorage for later retrieval during submit
     const container = formStepContainer;
     saveLocal('_step1_region', container.querySelector('[name="region"]')?.value || '');
     saveLocal('_step1_storeType', container.querySelector('[name="storeType"]')?.value || '');

@@ -28,27 +28,31 @@
         <div id="success-view" class="card hidden"></div>
       </section>
 
-      <section id="admin" class="panel">
-        <div class="card stack">
-          <div class="admin-header">
-            <h2>현장 기록 모아보기 📊</h2>
-            <p class="hint">기록을 확인하고 담당 지역을 조정할 수 있어요.</p>
-          </div>
-          <div id="admin-stats" class="stat-cards"></div>
-          <div id="admin-filter" class="filter-bar"></div>
-          <div id="submission-list" class="stack"></div>
-        </div>
-      </section>
+      <section id="dashboard" class="panel">
+        <div id="quick-stats" class="quick-stats"></div>
 
-      <section id="map" class="panel">
-        <div class="card stack">
+        <div class="card stack" style="margin-top:12px;">
           <div>
             <h2>🗺️ 현장 지도</h2>
             <p class="hint">기록된 매장과 조사자 거주지를 지도에서 확인해요.</p>
           </div>
-          <div id="map-container" style="width:100%;height:500px;border-radius:10px;"></div>
+          <div id="map-container" style="width:100%;height:350px;border-radius:10px;"></div>
           <div id="map-legend" class="map-legend"></div>
-          <div id="coverage-stats" class="summary-grid"></div>
+        </div>
+
+        <div id="product-leaderboard" class="card stack" style="margin-top:12px;"></div>
+
+        <div id="area-stats-grid" style="margin-top:12px;"></div>
+
+        <div id="recent-activity" class="card stack" style="margin-top:12px;"></div>
+
+        <div class="card stack" style="margin-top:12px;">
+          <div class="admin-header">
+            <h2>전체 기록 📋</h2>
+            <p class="hint">기록을 확인하고 담당 지역을 조정할 수 있어요.</p>
+          </div>
+          <div id="admin-filter" class="filter-bar"></div>
+          <div id="submission-list" class="stack"></div>
         </div>
       </section>
     </main>
@@ -58,13 +62,9 @@
         <span class="nav-icon">&#x1F4CD;</span>
         <span>현장기록</span>
       </button>
-      <button class="nav-tab" data-tab="admin">
+      <button class="nav-tab" data-tab="dashboard">
         <span class="nav-icon">&#x1F4CA;</span>
-        <span>현황판</span>
-      </button>
-      <button class="nav-tab" data-tab="map">
-        <span class="nav-icon">&#x1F5FA;</span>
-        <span>지도</span>
+        <span>대시보드</span>
       </button>
     </nav>
 
