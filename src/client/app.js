@@ -221,16 +221,36 @@ async function initMap() {
   if (!state.bootstrap) return;
 
   const container = document.getElementById('map-container');
-  if (!state.mapInitialized) {
-    const options = {
-      center: new kakao.maps.LatLng(37.5665, 126.9780),
-      level: 8
-    };
-    state.kakaoMap = new kakao.maps.Map(container, options);
-    state.mapInitialized = true;
-  } else {
-    state.kakaoMap.relayout();
+
+  function createMap() {
+    if (!state.mapInitialized) {
+      const options = {
+        center: new kakao.maps.LatLng(37.5665, 126.9780),
+        level: 8
+      };
+      state.kakaoMap = new kakao.maps.Map(container, options);
+      state.mapInitialized = true;
+    } else {
+      state.kakaoMap.relayout();
+    }
+    renderMapData();
   }
+
+  if (typeof kakao === 'undefined' || typeof kakao.maps === 'undefined') {
+    container.innerHTML = '<p style="padding:20px;color:#888;">카카오맵을 불러올 수 없습니다.</p>';
+    return;
+  }
+
+  if (typeof kakao.maps.LatLng === 'undefined') {
+    container.innerHTML = '<p style="padding:20px;color:#888;">카카오맵 로딩 중...</p>';
+    kakao.maps.load(createMap);
+    return;
+  }
+
+  createMap();
+}
+
+async function renderMapData() {
 
   const map = state.kakaoMap;
   const submissions = state.bootstrap.submissions;
