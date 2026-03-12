@@ -8,8 +8,8 @@ test('flattenSubmissionForSheet expands product prices into wide sheet columns',
     {
       id: 'submission_1',
       createdAt: '2026-03-12T00:00:00.000Z',
-      researcher: { name: 'Kim', residenceArea: 'Seoul Central' },
-      assignment: { currentArea: 'Seoul Central' },
+      researcher: { name: 'Kim', residenceArea: '서울 중부' },
+      assignment: { currentArea: '서울 중부' },
       survey: {
         region: 'Gangnam',
         storeType: '편의점',

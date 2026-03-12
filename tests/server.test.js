@@ -41,7 +41,7 @@ test('submission API stores a survey and exposes it in bootstrap data', async (t
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      researcher: { name: 'Kim', residenceArea: 'Seoul Central' },
+      researcher: { name: 'Kim', residenceArea: '서울 중부' },
       survey: {
         region: 'Gangnam',
         storeType: 'Pharmacy',
@@ -59,7 +59,7 @@ test('submission API stores a survey and exposes it in bootstrap data', async (t
 
   assert.equal(createResponse.status, 201);
   const created = await createResponse.json();
-  assert.equal(created.assignment.currentArea, 'Seoul Central');
+  assert.equal(created.assignment.currentArea, '서울 중부');
   assert.match(created.photo.url, /^\/uploads\//);
   assert.equal(created.sync.mode, 'local');
 
@@ -78,7 +78,7 @@ test('override API updates assignment area', async (t) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      researcher: { name: 'Lee', residenceArea: 'Seoul West' },
+      researcher: { name: 'Lee', residenceArea: '서울 서부' },
       survey: {
         region: 'Mapo',
         storeType: 'Mart',
@@ -98,7 +98,7 @@ test('override API updates assignment area', async (t) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       submissionId: created.id,
-      assignedArea: 'Gyeonggi North',
+      assignedArea: '경기 북부',
       reason: 'Capacity balancing',
       adminName: 'Ops lead'
     })
@@ -106,13 +106,13 @@ test('override API updates assignment area', async (t) => {
 
   assert.equal(overrideResponse.status, 200);
   const updated = await overrideResponse.json();
-  assert.equal(updated.assignment.currentArea, 'Gyeonggi North');
+  assert.equal(updated.assignment.currentArea, '경기 북부');
   assert.equal(updated.assignment.overriddenBy, 'Ops lead');
 
   const bootstrapResponse = await fetch(`${baseUrl}/api/bootstrap`);
   const bootstrap = await bootstrapResponse.json();
   assert.equal(bootstrap.assignmentOverrides.length, 1);
-  assert.equal(bootstrap.assignmentOverrides[0].assignedArea, 'Gyeonggi North');
+  assert.equal(bootstrap.assignmentOverrides[0].assignedArea, '경기 북부');
 });
 
 test('bootstrap reflects admin token configuration', async (t) => {
@@ -134,7 +134,7 @@ test('submission API accepts payloads without product prices', async (t) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      researcher: { name: 'Kim', residenceArea: 'Seoul Central' },
+      researcher: { name: 'Kim', residenceArea: '서울 중부' },
       survey: {
         region: 'Gangnam',
         storeType: 'Pharmacy',
@@ -182,11 +182,11 @@ test('geocode API returns coordinates from the configured geocoder', async (t) =
 
 test('survey stats include per-area counts and coordinates', async (t) => {
   const coordinatesByQuery = {
-    'Seoul Central': { lat: 37.5665, lng: 126.978, address: '서울특별시 중구' },
-    'Seoul East': { lat: 37.551, lng: 127.146, address: '서울특별시 강동구' },
-    'Seoul West': { lat: 37.5638, lng: 126.9084, address: '서울특별시 마포구' },
-    'Gyeonggi North': { lat: 37.7381, lng: 127.0337, address: '경기도 의정부시' },
-    'Gyeonggi South': { lat: 37.2636, lng: 127.0286, address: '경기도 수원시' }
+    '서울 중부': { lat: 37.5665, lng: 126.978, address: '서울특별시 중구' },
+    '서울 동부': { lat: 37.551, lng: 127.146, address: '서울특별시 강동구' },
+    '서울 서부': { lat: 37.5638, lng: 126.9084, address: '서울특별시 마포구' },
+    '경기 북부': { lat: 37.7381, lng: 127.0337, address: '경기도 의정부시' },
+    '경기 남부': { lat: 37.2636, lng: 127.0286, address: '경기도 수원시' }
   };
   const geocoder = {
     async geocode(query) {
@@ -202,7 +202,7 @@ test('survey stats include per-area counts and coordinates', async (t) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      researcher: { name: 'Park', residenceArea: 'Seoul Central' },
+      researcher: { name: 'Park', residenceArea: '서울 중부' },
       survey: {
         region: 'Gangnam',
         storeType: 'Mart',
@@ -217,21 +217,21 @@ test('survey stats include per-area counts and coordinates', async (t) => {
   const response = await fetch(`${baseUrl}/api/survey-stats`);
   assert.equal(response.status, 200);
   const payload = await response.json();
-  const seoulCentral = payload.areas.find((area) => area.area === 'Seoul Central');
+  const seoulCentral = payload.areas.find((area) => area.area === '서울 중부');
   assert.equal(seoulCentral.submissionCount, 1);
   assert.deepEqual(seoulCentral.coordinates, { lat: 37.5665, lng: 126.978 });
 });
 
 test('submission API uses distance-based assignment when coordinates are available', async (t) => {
   const eastCoordinates = [
-    { lat: 0, lng: 0, address: 'Seoul East residence' },
-    { lat: 0, lng: 10, address: 'Seoul East area' }
+    { lat: 0, lng: 0, address: '서울 동부 residence' },
+    { lat: 0, lng: 10, address: '서울 동부 area' }
   ];
   const coordinatesByQuery = {
-    'Seoul Central': { lat: 0, lng: 1, address: 'Seoul Central' },
-    'Seoul West': { lat: 0, lng: 2, address: 'Seoul West' },
-    'Gyeonggi North': { lat: 0, lng: 3, address: 'Gyeonggi North' },
-    'Gyeonggi South': { lat: 0, lng: 4, address: 'Gyeonggi South' },
+    '서울 중부': { lat: 0, lng: 1, address: '서울 중부' },
+    '서울 서부': { lat: 0, lng: 2, address: '서울 서부' },
+    '경기 북부': { lat: 0, lng: 3, address: '경기 북부' },
+    '경기 남부': { lat: 0, lng: 4, address: '경기 남부' },
     Gangnam: { lat: 0, lng: 5, address: 'Gangnam' }
   };
   const geocoder = {
@@ -239,8 +239,8 @@ test('submission API uses distance-based assignment when coordinates are availab
       return this.tryGeocode(query);
     },
     async tryGeocode(query) {
-      if (query === 'Seoul East') {
-        return eastCoordinates.shift() || { lat: 0, lng: 10, address: 'Seoul East area' };
+      if (query === '서울 동부') {
+        return eastCoordinates.shift() || { lat: 0, lng: 10, address: '서울 동부 area' };
       }
       return coordinatesByQuery[query] || null;
     }
@@ -251,7 +251,7 @@ test('submission API uses distance-based assignment when coordinates are availab
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      researcher: { name: 'Han', residenceArea: 'Seoul East' },
+      researcher: { name: 'Han', residenceArea: '서울 동부' },
       survey: {
         region: 'Gangnam',
         storeType: 'Pharmacy',
@@ -265,7 +265,7 @@ test('submission API uses distance-based assignment when coordinates are availab
 
   assert.equal(response.status, 201);
   const payload = await response.json();
-  assert.equal(payload.assignment.currentArea, 'Seoul Central');
+  assert.equal(payload.assignment.currentArea, '서울 중부');
   assert.equal(payload.assignment.method, 'distance-fairness-blend');
   assert.deepEqual(payload.researcher.coordinates, { lat: 0, lng: 0 });
   assert.deepEqual(payload.survey.coordinates, { lat: 0, lng: 5 });

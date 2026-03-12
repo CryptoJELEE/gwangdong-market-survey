@@ -1,30 +1,30 @@
 const PROXIMITY_TIERS = {
-  'Seoul Central': {
-    0: ['Seoul Central'],
-    1: ['Seoul East', 'Seoul West'],
-    2: ['Gyeonggi North', 'Gyeonggi South']
+  '서울 중부': {
+    0: ['서울 중부'],
+    1: ['서울 동부', '서울 서부'],
+    2: ['경기 북부', '경기 남부']
   },
-  'Seoul East': {
-    0: ['Seoul East'],
-    1: ['Seoul Central', 'Gyeonggi South'],
-    2: ['Seoul West', 'Gyeonggi North']
+  '서울 동부': {
+    0: ['서울 동부'],
+    1: ['서울 중부', '경기 남부'],
+    2: ['서울 서부', '경기 북부']
   },
-  'Seoul West': {
-    0: ['Seoul West'],
-    1: ['Seoul Central', 'Gyeonggi North'],
-    2: ['Seoul East', 'Gyeonggi South']
+  '서울 서부': {
+    0: ['서울 서부'],
+    1: ['서울 중부', '경기 북부'],
+    2: ['서울 동부', '경기 남부']
   },
-  'Gyeonggi North': {
-    0: ['Gyeonggi North'],
-    1: ['Seoul West'],
-    2: ['Seoul Central', 'Seoul East'],
-    3: ['Gyeonggi South']
+  '경기 북부': {
+    0: ['경기 북부'],
+    1: ['서울 서부'],
+    2: ['서울 중부', '서울 동부'],
+    3: ['경기 남부']
   },
-  'Gyeonggi South': {
-    0: ['Gyeonggi South'],
-    1: ['Seoul East'],
-    2: ['Seoul Central', 'Seoul West'],
-    3: ['Gyeonggi North']
+  '경기 남부': {
+    0: ['경기 남부'],
+    1: ['서울 동부'],
+    2: ['서울 중부', '서울 서부'],
+    3: ['경기 북부']
   }
 };
 

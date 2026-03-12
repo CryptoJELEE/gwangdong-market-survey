@@ -1,9 +1,9 @@
 export const DEFAULT_AREAS = [
-  'Seoul Central',
-  'Seoul East',
-  'Seoul West',
-  'Gyeonggi North',
-  'Gyeonggi South'
+  '서울 중부',
+  '서울 동부',
+  '서울 서부',
+  '경기 북부',
+  '경기 남부'
 ];
 
 export const DEFAULT_STORE_TYPE_TEMPLATES = [

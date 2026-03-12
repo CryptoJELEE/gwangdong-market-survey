@@ -26,34 +26,34 @@ test('assignAreaByDistance prefers the closest area when submission counts are e
   const result = assignAreaByDistance({
     residenceCoord: { lat: 37.5665, lng: 126.978 },
     areaCoords: {
-      'Seoul Central': { lat: 37.5665, lng: 126.978 },
-      'Seoul East': { lat: 37.551, lng: 127.146 }
+      '서울 중부': { lat: 37.5665, lng: 126.978 },
+      '서울 동부': { lat: 37.551, lng: 127.146 }
     },
     submissionCounts: {
-      'Seoul Central': 2,
-      'Seoul East': 2
+      '서울 중부': 2,
+      '서울 동부': 2
     }
   });
 
-  assert.equal(result.assignedArea, 'Seoul Central');
-  assert.deepEqual(result.candidateOrder, ['Seoul Central', 'Seoul East']);
+  assert.equal(result.assignedArea, '서울 중부');
+  assert.deepEqual(result.candidateOrder, ['서울 중부', '서울 동부']);
 });
 
 test('assignAreaByDistance uses fairness as a tie-breaker when distances are equal', () => {
   const result = assignAreaByDistance({
     residenceCoord: { lat: 37.5665, lng: 126.978 },
     areaCoords: {
-      'Seoul Central': { lat: 37.5665, lng: 127.078 },
-      'Seoul West': { lat: 37.5665, lng: 126.878 }
+      '서울 중부': { lat: 37.5665, lng: 127.078 },
+      '서울 서부': { lat: 37.5665, lng: 126.878 }
     },
     submissionCounts: {
-      'Seoul Central': 5,
-      'Seoul West': 1
+      '서울 중부': 5,
+      '서울 서부': 1
     }
   });
 
-  assert.equal(result.assignedArea, 'Seoul West');
-  assert.deepEqual(result.candidateOrder, ['Seoul West', 'Seoul Central']);
+  assert.equal(result.assignedArea, '서울 서부');
+  assert.deepEqual(result.candidateOrder, ['서울 서부', '서울 중부']);
 });
 
 test('createGeocoder caches Kakao responses by query', async () => {
@@ -90,8 +90,8 @@ test('createGeocoder caches Kakao responses by query', async () => {
     }
   });
 
-  const first = await geocoder.geocode('Seoul Central');
-  const second = await geocoder.geocode('Seoul Central');
+  const first = await geocoder.geocode('서울 중부');
+  const second = await geocoder.geocode('서울 중부');
 
   assert.equal(calls, 1);
   assert.deepEqual(first, {

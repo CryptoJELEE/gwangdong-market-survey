@@ -1,9 +1,9 @@
 const AREA_QUERY_ALIASES = {
-  'Seoul Central': '서울특별시 중구',
-  'Seoul East': '서울특별시 강동구',
-  'Seoul West': '서울특별시 마포구',
-  'Gyeonggi North': '경기도 의정부시',
-  'Gyeonggi South': '경기도 수원시'
+  '서울 중부': '서울특별시 중구',
+  '서울 동부': '서울특별시 강동구',
+  '서울 서부': '서울특별시 마포구',
+  '경기 북부': '경기도 의정부시',
+  '경기 남부': '경기도 수원시'
 };
 
 function normalizeQuery(query) {
