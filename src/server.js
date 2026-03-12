@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import { loadConfig } from './config.js';
-import { assignArea } from './assignment.js';
+import { assignArea, assignAreaByDistance } from './assignment.js';
+import { createGeocoder } from './geocoding.js';
 import { SurveyStore } from './storage/index.js';
 import { collectJsonBody, json } from './utils.js';
 
@@ -71,9 +72,26 @@ function setCorsHeaders(response) {
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 }
 
-export function createApp(config = loadConfig()) {
+export function createApp(config = loadConfig(), options = {}) {
   const store = new SurveyStore(config);
+  const geocoder = options.geocoder || createGeocoder({
+    apiKey: config.kakaoRestApiKey,
+    store,
+    fetchImpl: options.fetchImpl || fetch
+  });
   let initialized = false;
+
+  async function geocodeAreas(areas) {
+    const areaCoordinates = await Promise.all(
+      areas.map(async (area) => [area, await geocoder.tryGeocode(area)])
+    );
+    return areaCoordinates.reduce((accumulator, [area, coordinate]) => {
+      if (coordinate) {
+        accumulator[area] = coordinate;
+      }
+      return accumulator;
+    }, {});
+  }
 
   const server = http.createServer(async (request, response) => {
     setCorsHeaders(response);
@@ -128,21 +146,68 @@ export function createApp(config = loadConfig()) {
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/api/geocode') {
+        const query = url.searchParams.get('query') || '';
+        const result = await geocoder.geocode(query);
+        json(response, 200, result);
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/survey-stats') {
+        const submissionCounts = await store.getSubmissionCounts();
+        const areaCoordinates = await geocodeAreas(config.areas);
+        json(response, 200, {
+          areas: config.areas.map((area) => ({
+            area,
+            submissionCount: submissionCounts[area] || 0,
+            coordinates: areaCoordinates[area]
+              ? { lat: areaCoordinates[area].lat, lng: areaCoordinates[area].lng }
+              : null,
+            address: areaCoordinates[area]?.address || null
+          }))
+        });
+        return;
+      }
+
       if (request.method === 'POST' && url.pathname === '/api/submissions') {
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         const payload = validateSubmission(body, config);
         const submissionCounts = await store.getSubmissionCounts();
-        const assignment = assignArea({
-          residenceArea: payload.researcher.residenceArea,
-          areas: config.areas,
-          submissionCounts
-        });
+        const [residenceCoord, surveyCoord, areaCoords] = await Promise.all([
+          geocoder.tryGeocode(payload.researcher.residenceArea),
+          geocoder.tryGeocode(payload.survey.region),
+          geocodeAreas(config.areas)
+        ]);
+
+        const hasDistanceInputs =
+          Boolean(residenceCoord) && Object.keys(areaCoords).length === config.areas.length;
+
+        const assignment = hasDistanceInputs
+          ? assignAreaByDistance({
+              residenceCoord,
+              areaCoords,
+              submissionCounts
+            })
+          : assignArea({
+              residenceArea: payload.researcher.residenceArea,
+              areas: config.areas,
+              submissionCounts
+            });
+
         const submission = await store.createSubmission({
           ...payload,
+          researcher: {
+            ...payload.researcher,
+            ...(residenceCoord ? { coordinates: { lat: residenceCoord.lat, lng: residenceCoord.lng } } : {})
+          },
+          survey: {
+            ...payload.survey,
+            ...(surveyCoord ? { coordinates: { lat: surveyCoord.lat, lng: surveyCoord.lng } } : {})
+          },
           assignment: {
             currentArea: assignment.assignedArea,
             candidateOrder: assignment.candidateOrder,
-            method: 'residence-proximity-then-fairness'
+            method: hasDistanceInputs ? 'distance-fairness-blend' : 'residence-proximity-then-fairness'
           }
         });
         json(response, 201, submission);
@@ -184,7 +249,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   });
 
   function shutdown(signal) {
-    console.log(`\n${signal} received — shutting down gracefully...`);
+    console.log(`\n${signal} received - shutting down gracefully...`);
     server.close(() => {
       if (server._store?.close) server._store.close();
       console.log('Server closed.');

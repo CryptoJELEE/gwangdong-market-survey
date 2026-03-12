@@ -9,7 +9,7 @@
     "dev": "node --watch src/server.js",
     "test": "node --test",
     "lint": "node scripts/lint.js",
-    "typecheck": "node --check src/server.js && node --check src/config.js && node --check src/assignment.js && node --check src/storage/localStore.js && node --check src/storage/sqliteStore.js && node --check src/storage/googleSheetsStore.js && node --check src/storage/index.js && node --check src/utils.js && node --check src/client/app.js && node --check scripts/lint.js && node --check tests/assignment.test.js && node --check tests/server.test.js",
+    "typecheck": "node --check src/server.js && node --check src/config.js && node --check src/geocoding.js && node --check src/assignment.js && node --check src/storage/localStore.js && node --check src/storage/sqliteStore.js && node --check src/storage/googleSheetsStore.js && node --check src/storage/index.js && node --check src/utils.js && node --check src/client/app.js && node --check scripts/lint.js && node --check tests/assignment.test.js && node --check tests/geocoding.test.js && node --check tests/server.test.js",
     "verify": "node scripts/verify.js"
   },
   "engines": {

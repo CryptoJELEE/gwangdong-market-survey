@@ -39,6 +39,7 @@ export function loadConfig(env = process.env) {
   return {
     port: Number(mergedEnv.PORT || 3000),
     adminToken: mergedEnv.ADMIN_TOKEN || '',
+    kakaoRestApiKey: mergedEnv.KAKAO_REST_API_KEY || '',
     areas: DEFAULT_AREAS,
     products,
     storeTypeTemplates: DEFAULT_STORE_TYPE_TEMPLATES,

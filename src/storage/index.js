@@ -22,6 +22,14 @@ export class SurveyStore {
     return this.localStore.getSubmissionCounts();
   }
 
+  async getCachedGeocode(query) {
+    return this.localStore.getCachedGeocode(query);
+  }
+
+  async setCachedGeocode(query, lat, lng, address) {
+    return this.localStore.setCachedGeocode(query, lat, lng, address);
+  }
+
   async listSubmissions() {
     return this.localStore.listSubmissions();
   }

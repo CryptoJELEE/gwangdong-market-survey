@@ -9,11 +9,15 @@ CREATE TABLE IF NOT EXISTS submissions (
   created_at TEXT NOT NULL,
   researcher_name TEXT NOT NULL,
   researcher_residence_area TEXT NOT NULL,
+  researcher_residence_lat REAL,
+  researcher_residence_lng REAL,
   survey_region TEXT NOT NULL,
   survey_store_type TEXT NOT NULL,
   survey_store_name TEXT NOT NULL,
   survey_pos_count INTEGER DEFAULT 0,
   survey_display_location TEXT DEFAULT '',
+  survey_location_lat REAL,
+  survey_location_lng REAL,
   prices_json TEXT NOT NULL,
   notes TEXT DEFAULT '',
   photo_filename TEXT,
@@ -36,22 +40,47 @@ CREATE TABLE IF NOT EXISTS assignment_overrides (
   admin_name TEXT DEFAULT 'Admin',
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS geocode_cache (
+  query TEXT PRIMARY KEY,
+  lat REAL NOT NULL,
+  lng REAL NOT NULL,
+  address TEXT NOT NULL,
+  cached_at TEXT NOT NULL
+);
 `;
 
+const SUBMISSION_COLUMN_MIGRATIONS = [
+  ['researcher_residence_lat', 'ALTER TABLE submissions ADD COLUMN researcher_residence_lat REAL'],
+  ['researcher_residence_lng', 'ALTER TABLE submissions ADD COLUMN researcher_residence_lng REAL'],
+  ['survey_location_lat', 'ALTER TABLE submissions ADD COLUMN survey_location_lat REAL'],
+  ['survey_location_lng', 'ALTER TABLE submissions ADD COLUMN survey_location_lng REAL']
+];
+
+function buildCoordinates(lat, lng) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
+  return { lat, lng };
+}
+
 function rowToSubmission(row) {
+  const researcherCoordinates = buildCoordinates(row.researcher_residence_lat, row.researcher_residence_lng);
+  const surveyCoordinates = buildCoordinates(row.survey_location_lat, row.survey_location_lng);
+
   return {
     id: row.id,
     createdAt: row.created_at,
     researcher: {
       name: row.researcher_name,
-      residenceArea: row.researcher_residence_area
+      residenceArea: row.researcher_residence_area,
+      ...(researcherCoordinates ? { coordinates: researcherCoordinates } : {})
     },
     survey: {
       region: row.survey_region,
       storeType: row.survey_store_type,
       storeName: row.survey_store_name,
       posCount: row.survey_pos_count,
-      displayLocation: row.survey_display_location
+      displayLocation: row.survey_display_location,
+      ...(surveyCoordinates ? { coordinates: surveyCoordinates } : {})
     },
     prices: JSON.parse(row.prices_json),
     notes: row.notes || '',
@@ -93,10 +122,23 @@ export class SQLiteStore {
     this.db = new Database(this.config.dbFile);
     this.db.pragma('journal_mode = WAL');
     this.db.exec(SCHEMA);
+    this._migrateSubmissionsTable();
   }
 
   _ensureDb() {
     if (!this.db) throw new Error('SQLiteStore not initialized. Call init() first.');
+  }
+
+  _migrateSubmissionsTable() {
+    const existingColumns = new Set(
+      this.db.prepare('PRAGMA table_info(submissions)').all().map((row) => row.name)
+    );
+
+    for (const [columnName, statement] of SUBMISSION_COLUMN_MIGRATIONS) {
+      if (!existingColumns.has(columnName)) {
+        this.db.exec(statement);
+      }
+    }
   }
 
   async listSubmissions() {
@@ -122,6 +164,42 @@ export class SQLiteStore {
     }, {});
   }
 
+  async getCachedGeocode(query) {
+    this._ensureDb();
+    const row = this.db.prepare(
+      'SELECT query, lat, lng, address, cached_at FROM geocode_cache WHERE query = ?'
+    ).get(String(query || '').trim());
+    if (!row) return null;
+    return {
+      lat: row.lat,
+      lng: row.lng,
+      address: row.address,
+      cachedAt: row.cached_at
+    };
+  }
+
+  async setCachedGeocode(query, lat, lng, address) {
+    this._ensureDb();
+    const normalizedQuery = String(query || '').trim();
+    const cachedAt = nowIso();
+    this.db.prepare(`
+      INSERT INTO geocode_cache (query, lat, lng, address, cached_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(query) DO UPDATE SET
+        lat = excluded.lat,
+        lng = excluded.lng,
+        address = excluded.address,
+        cached_at = excluded.cached_at
+    `).run(normalizedQuery, lat, lng, address, cachedAt);
+
+    return {
+      lat,
+      lng,
+      address,
+      cachedAt
+    };
+  }
+
   async savePhoto(photoDataUrl, storeName) {
     if (!photoDataUrl) return null;
     const { mimeType, buffer } = decodeDataUrl(photoDataUrl);
@@ -141,28 +219,40 @@ export class SQLiteStore {
     this.db.prepare(`
       INSERT INTO submissions (
         id, created_at,
-        researcher_name, researcher_residence_area,
-        survey_region, survey_store_type, survey_store_name, survey_pos_count, survey_display_location,
+        researcher_name, researcher_residence_area, researcher_residence_lat, researcher_residence_lng,
+        survey_region, survey_store_type, survey_store_name, survey_pos_count, survey_display_location, survey_location_lat, survey_location_lng,
         prices_json, notes,
         photo_filename, photo_mime_type, photo_url,
         assignment_current_area, assignment_candidate_order, assignment_method,
         sync_mode
       ) VALUES (
         ?, ?,
-        ?, ?,
-        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?,
         ?, ?,
         ?, ?, ?,
         ?, ?, ?,
         ?
       )
     `).run(
-      id, createdAt,
-      payload.researcher.name, payload.researcher.residenceArea,
-      payload.survey.region, payload.survey.storeType, payload.survey.storeName,
-      payload.survey.posCount, payload.survey.displayLocation,
-      JSON.stringify(payload.prices), payload.notes || '',
-      photo?.filename || null, photo?.mimeType || null, photo?.url || null,
+      id,
+      createdAt,
+      payload.researcher.name,
+      payload.researcher.residenceArea,
+      payload.researcher.coordinates?.lat ?? null,
+      payload.researcher.coordinates?.lng ?? null,
+      payload.survey.region,
+      payload.survey.storeType,
+      payload.survey.storeName,
+      payload.survey.posCount,
+      payload.survey.displayLocation,
+      payload.survey.coordinates?.lat ?? null,
+      payload.survey.coordinates?.lng ?? null,
+      JSON.stringify(payload.prices),
+      payload.notes || '',
+      photo?.filename || null,
+      photo?.mimeType || null,
+      photo?.url || null,
       payload.assignment.currentArea,
       payload.assignment.candidateOrder ? JSON.stringify(payload.assignment.candidateOrder) : null,
       payload.assignment.method,

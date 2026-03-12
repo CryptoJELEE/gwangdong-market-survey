@@ -8,7 +8,8 @@ import { loadConfig } from '../src/config.js';
 
 const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aT0sAAAAASUVORK5CYII=';
 
-async function createTestServer(t, envOverrides = {}) {
+async function createTestServer(t, options = {}) {
+  const { envOverrides = {}, geocoder } = options;
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'market-survey-'));
   const config = loadConfig({
     PORT: '0',
@@ -19,7 +20,7 @@ async function createTestServer(t, envOverrides = {}) {
     ...envOverrides
   });
 
-  const server = createApp(config);
+  const server = createApp(config, { geocoder });
   await new Promise((resolve) => server.listen(0, resolve));
   t.after(() => {
     if (server._store?.close) server._store.close();
@@ -115,7 +116,7 @@ test('override API updates assignment area', async (t) => {
 });
 
 test('bootstrap reflects admin token configuration', async (t) => {
-  const { baseUrl } = await createTestServer(t, { ADMIN_TOKEN: 'secret-token' });
+  const { baseUrl } = await createTestServer(t, { envOverrides: { ADMIN_TOKEN: 'secret-token' } });
 
   const response = await fetch(`${baseUrl}/api/bootstrap`);
   assert.equal(response.status, 200);
@@ -155,4 +156,117 @@ test('root document is served for the mobile app shell', async (t) => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /광동제약 시장조사/);
+});
+
+test('geocode API returns coordinates from the configured geocoder', async (t) => {
+  const geocoder = {
+    async geocode(query) {
+      assert.equal(query, '서울특별시 중구');
+      return { lat: 37.5636, lng: 126.9976, address: '서울특별시 중구' };
+    },
+    async tryGeocode() {
+      return null;
+    }
+  };
+
+  const { baseUrl } = await createTestServer(t, { geocoder });
+  const response = await fetch(`${baseUrl}/api/geocode?query=${encodeURIComponent('서울특별시 중구')}`);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload, {
+    lat: 37.5636,
+    lng: 126.9976,
+    address: '서울특별시 중구'
+  });
+});
+
+test('survey stats include per-area counts and coordinates', async (t) => {
+  const coordinatesByQuery = {
+    'Seoul Central': { lat: 37.5665, lng: 126.978, address: '서울특별시 중구' },
+    'Seoul East': { lat: 37.551, lng: 127.146, address: '서울특별시 강동구' },
+    'Seoul West': { lat: 37.5638, lng: 126.9084, address: '서울특별시 마포구' },
+    'Gyeonggi North': { lat: 37.7381, lng: 127.0337, address: '경기도 의정부시' },
+    'Gyeonggi South': { lat: 37.2636, lng: 127.0286, address: '경기도 수원시' }
+  };
+  const geocoder = {
+    async geocode(query) {
+      return coordinatesByQuery[query];
+    },
+    async tryGeocode(query) {
+      return coordinatesByQuery[query] || null;
+    }
+  };
+
+  const { baseUrl } = await createTestServer(t, { geocoder });
+  await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'Park', residenceArea: 'Seoul Central' },
+      survey: {
+        region: 'Gangnam',
+        storeType: 'Mart',
+        storeName: 'Center Mart'
+      },
+      prices: [
+        { productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 1300 }
+      ]
+    })
+  });
+
+  const response = await fetch(`${baseUrl}/api/survey-stats`);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  const seoulCentral = payload.areas.find((area) => area.area === 'Seoul Central');
+  assert.equal(seoulCentral.submissionCount, 1);
+  assert.deepEqual(seoulCentral.coordinates, { lat: 37.5665, lng: 126.978 });
+});
+
+test('submission API uses distance-based assignment when coordinates are available', async (t) => {
+  const eastCoordinates = [
+    { lat: 0, lng: 0, address: 'Seoul East residence' },
+    { lat: 0, lng: 10, address: 'Seoul East area' }
+  ];
+  const coordinatesByQuery = {
+    'Seoul Central': { lat: 0, lng: 1, address: 'Seoul Central' },
+    'Seoul West': { lat: 0, lng: 2, address: 'Seoul West' },
+    'Gyeonggi North': { lat: 0, lng: 3, address: 'Gyeonggi North' },
+    'Gyeonggi South': { lat: 0, lng: 4, address: 'Gyeonggi South' },
+    Gangnam: { lat: 0, lng: 5, address: 'Gangnam' }
+  };
+  const geocoder = {
+    async geocode(query) {
+      return this.tryGeocode(query);
+    },
+    async tryGeocode(query) {
+      if (query === 'Seoul East') {
+        return eastCoordinates.shift() || { lat: 0, lng: 10, address: 'Seoul East area' };
+      }
+      return coordinatesByQuery[query] || null;
+    }
+  };
+
+  const { baseUrl } = await createTestServer(t, { geocoder });
+  const response = await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'Han', residenceArea: 'Seoul East' },
+      survey: {
+        region: 'Gangnam',
+        storeType: 'Pharmacy',
+        storeName: 'Distance Test'
+      },
+      prices: [
+        { productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 1400 }
+      ]
+    })
+  });
+
+  assert.equal(response.status, 201);
+  const payload = await response.json();
+  assert.equal(payload.assignment.currentArea, 'Seoul Central');
+  assert.equal(payload.assignment.method, 'distance-fairness-blend');
+  assert.deepEqual(payload.researcher.coordinates, { lat: 0, lng: 0 });
+  assert.deepEqual(payload.survey.coordinates, { lat: 0, lng: 5 });
 });
