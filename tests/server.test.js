@@ -155,7 +155,7 @@ test('root document is served for the mobile app shell', async (t) => {
   const response = await fetch(baseUrl);
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /광동제약 시장조사/);
+  assert.match(html, /이온로드/);
 });
 
 test('geocode API returns coordinates from the configured geocoder', async (t) => {

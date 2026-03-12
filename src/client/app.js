@@ -56,9 +56,9 @@ function initGps() {
 
 function updateGpsStatus() {
   const labels = {
-    pending: '\u{1F4CD} 위치 확인 중...',
-    ready: '\u{1F4CD} 위치 확인됨',
-    unavailable: '\u26A0\uFE0F 위치 사용 불가'
+    pending: '\u{1F4CD} 위치 찾는 중...',
+    ready: '\u{1F4CD} 위치 잡았어요!',
+    unavailable: '\u{1F4CD} 위치를 못 찾았어요'
   };
   gpsStatusEl.textContent = labels[state.gps.status] || '';
 }
@@ -80,8 +80,8 @@ function priceFieldName(productId, size) {
 function renderStepIndicator() {
   const steps = [
     { num: 1, label: '기본정보' },
-    { num: 2, label: '가격입력' },
-    { num: 3, label: '사진/메모' }
+    { num: 2, label: '가격체크' },
+    { num: 3, label: '마무리' }
   ];
   stepIndicator.innerHTML = steps.map((s, i) => {
     const cls = s.num === state.currentStep ? 'is-active' : (s.num < state.currentStep ? 'is-done' : '');
@@ -125,7 +125,7 @@ function renderStep1(config) {
   formStepContainer.innerHTML = `
     <div class="card stack">
       <div class="field">
-        <label>조사자 이름</label>
+        <label>이름 (누구세요? 😊)</label>
         <input name="researcherName" required value="${escapeHtml(savedName)}" placeholder="이름을 입력하세요" />
       </div>
       <div class="field">
@@ -135,22 +135,22 @@ function renderStep1(config) {
         </select>
       </div>
       <div class="field">
-        <label>조사 지역</label>
+        <label>오늘 어디 다녀오셨어요?</label>
         <button type="button" class="gps-btn" id="gps-fill-btn">
           \u{1F4CD} 현재 위치 사용
         </button>
         <input name="region" required placeholder="예: 강남" id="region-input" value="${escapeHtml(savedRegion)}" />
       </div>
       <div class="field">
-        <label>거래처 유형</label>
+        <label>어떤 매장이었나요?</label>
         <div class="store-type-grid">
           ${config.storeTypeTemplates.map((t) => `<button type="button" class="store-type-btn ${t.label === state.selectedStoreType ? 'is-active' : ''}" data-store-type="${t.id}" data-label="${t.label}" data-pos="${t.defaultPosCount}">${t.label}</button>`).join('')}
         </div>
         <input type="hidden" name="storeType" value="${escapeHtml(state.selectedStoreType)}" />
       </div>
       <div class="field">
-        <label>점포명</label>
-        <input name="storeName" required placeholder="점포명을 입력하세요" value="${escapeHtml(savedStoreName)}" />
+        <label>매장 이름</label>
+        <input name="storeName" required placeholder="매장 이름을 입력하세요" value="${escapeHtml(savedStoreName)}" />
       </div>
       <div class="field">
         <label>POS 대수</label>
@@ -162,7 +162,7 @@ function renderStep1(config) {
         <input type="hidden" name="posCount" value="${escapeHtml(savedPosCount)}" id="pos-input" />
       </div>
       <div class="field">
-        <label>진열 위치</label>
+        <label>어디에 진열돼 있었어요?</label>
         <input name="displayLocation" placeholder="예: 계산대 앞 / 냉장고 / 매대" value="${escapeHtml(savedDisplayLocation)}" />
       </div>
       <div class="form-nav">
@@ -176,7 +176,7 @@ function renderStep1(config) {
   const regionInput = formStepContainer.querySelector('#region-input');
   gpsFillBtn.addEventListener('click', async () => {
     if (state.gps.status !== 'ready') {
-      showToast('GPS 위치를 확인할 수 없습니다.', 'error');
+      showToast('GPS 위치를 확인할 수 없어요.', 'error');
       return;
     }
     gpsFillBtn.classList.add('is-loading');
@@ -188,7 +188,7 @@ function renderStep1(config) {
         regionInput.value = data.address;
         gpsFillBtn.textContent = '\u{1F4CD} 위치 입력 완료';
       } else {
-        gpsFillBtn.textContent = '\u{1F4CD} 주소를 찾을 수 없습니다';
+        gpsFillBtn.textContent = '\u{1F4CD} 주소를 찾을 수 없어요';
       }
     } catch {
       gpsFillBtn.textContent = '\u{1F4CD} 위치 확인 실패';
@@ -230,7 +230,7 @@ function renderStep1(config) {
     const region = formStepContainer.querySelector('[name="region"]').value.trim();
     const storeName = formStepContainer.querySelector('[name="storeName"]').value.trim();
     if (!name || !region || !storeName) {
-      showToast('필수 항목을 입력해주세요.', 'error');
+      showToast('앗, 빠진 항목이 있어요! 확인해주세요 🙏', 'error');
       return;
     }
     const residenceArea = formStepContainer.querySelector('[name="residenceArea"]').value;
@@ -257,8 +257,8 @@ function renderStep2(config) {
   formStepContainer.innerHTML = `
     <div class="card stack">
       <div>
-        <h3>제품별 가격 입력</h3>
-        <p class="small">판매하지 않는 제품은 비워두세요. 최소 1개 이상의 가격을 입력해주세요.</p>
+        <h3>가격 체크 💰</h3>
+        <p class="small">없는 건 그냥 넘어가세요~ 있는 것만 적어주면 돼요 👌</p>
       </div>
       <div class="stack" id="product-list">
         ${config.products.map((product, idx) => `
@@ -332,26 +332,26 @@ function renderStep3(config) {
   formStepContainer.innerHTML = `
     <div class="card stack">
       <div>
-        <h3>사진 & 메모</h3>
+        <h3>마무리 📸</h3>
       </div>
       <div class="field">
-        <label>점포 사진</label>
+        <label>매장 사진</label>
         <div id="photo-area">
           <label class="camera-btn" id="camera-btn">
             <span class="camera-icon">\u{1F4F7}</span>
-            <span>사진 촬영 / 선택</span>
+            <span>📷 매장 사진 찍기</span>
             <input type="file" name="photo" accept="image/*" capture="environment" id="photo-input" />
           </label>
         </div>
       </div>
       <div class="field">
         <label>메모</label>
-        <textarea name="notes" rows="4" placeholder="프로모션, 품절, 경쟁사 특이사항 등을 적어주세요">${escapeHtml(loadLocal('_step3_notes'))}</textarea>
+        <textarea name="notes" rows="4" placeholder="특이사항 있으면 자유롭게 적어주세요~ (프로모션, 품절, 경쟁사 동향 등)">${escapeHtml(loadLocal('_step3_notes'))}</textarea>
       </div>
       <div class="form-nav">
         <button type="button" class="btn btn-secondary" id="prev-step3">\u2190 이전</button>
       </div>
-      <button type="button" class="btn-submit" id="submit-btn">\u{1F4EE} 조사 저장</button>
+      <button type="button" class="btn-submit" id="submit-btn">✅ 기록 완료!</button>
       <div id="submit-status" class="small text-center"></div>
     </div>
   `;
@@ -374,7 +374,7 @@ function renderStep3(config) {
       photoArea.innerHTML = `
         <label class="camera-btn">
           <span class="camera-icon">\u{1F4F7}</span>
-          <span>사진 촬영 / 선택</span>
+          <span>📷 매장 사진 찍기</span>
           <input type="file" name="photo" accept="image/*" capture="environment" />
         </label>
       `;
@@ -444,14 +444,14 @@ async function handleSubmit(config) {
     });
     const result = await response.json();
     if (!response.ok) {
-      statusEl.textContent = result.error || '저장에 실패했습니다.';
+      statusEl.textContent = result.error || '저장에 실패했어요.';
       submitBtn.disabled = false;
       return;
     }
     showSuccess(result);
     await loadBootstrap();
   } catch (err) {
-    statusEl.textContent = '네트워크 오류가 발생했습니다.';
+    statusEl.textContent = '인터넷 연결을 확인해주세요 📶';
     submitBtn.disabled = false;
   }
 }
@@ -462,12 +462,12 @@ function showSuccess(result) {
   successView.classList.remove('hidden');
   successView.innerHTML = `
     <div class="success-card">
-      <div class="success-icon">\u2705</div>
-      <h3>저장 완료!</h3>
-      <div class="assigned-area">배정 지역: ${escapeHtml(result.assignment.currentArea)}</div>
+      <div class="success-icon">🙌</div>
+      <h3>수고했어요!</h3>
+      <div class="assigned-area">다음 추천 지역: ${escapeHtml(result.assignment.currentArea)}</div>
       <div class="success-actions">
-        <button type="button" class="btn btn-primary" id="new-survey">새 조사 시작</button>
-        <button type="button" class="btn btn-secondary" id="view-history">조사 이력 보기</button>
+        <button type="button" class="btn btn-primary" id="new-survey">한 곳 더 갈래요? 🏃</button>
+        <button type="button" class="btn btn-secondary" id="view-history">오늘 기록 보기 📋</button>
       </div>
     </div>
   `;
@@ -495,11 +495,11 @@ function renderAdmin(config) {
   adminStats.innerHTML = `
     <div class="stat-card">
       <span class="stat-value">${total}</span>
-      <span class="stat-label">총 조사 수</span>
+      <span class="stat-label">총 기록 수</span>
     </div>
     <div class="stat-card">
       <span class="stat-value">${todayCount}</span>
-      <span class="stat-label">오늘 조사</span>
+      <span class="stat-label">오늘 기록</span>
     </div>
     <div class="stat-card">
       <span class="stat-value">${Object.keys(areaCounts).length}</span>
@@ -510,7 +510,7 @@ function renderAdmin(config) {
   // Filters
   const researchers = [...new Set(submissions.map((s) => s.researcher.name))];
   adminFilter.innerHTML = `
-    <input type="text" id="filter-name" placeholder="조사자 이름 검색" />
+    <input type="text" id="filter-name" placeholder="이름 검색" />
     <select id="filter-area">
       <option value="">전체 지역</option>
       ${config.areas.map((a) => `<option value="${a}">${a}</option>`).join('')}
@@ -556,7 +556,7 @@ function renderSubmissionList(config, submissions, nameFilter, areaFilter) {
         </div>
       </article>
     `).join('')
-    : '<div class="notice">아직 등록된 조사 결과가 없습니다.</div>';
+    : '<div class="notice">아직 기록이 없어요. 첫 번째 기록을 남겨볼까요? 🏃</div>';
 
   submissionList.querySelectorAll('[data-action="override"]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -648,7 +648,7 @@ async function initMap() {
   }
 
   if (typeof kakao === 'undefined' || typeof kakao.maps === 'undefined') {
-    container.innerHTML = '<p style="padding:20px;color:#888;">카카오맵을 불러올 수 없습니다.</p>';
+    container.innerHTML = '<p style="padding:20px;color:#888;">카카오맵을 불러올 수 없어요.</p>';
     return;
   }
   if (typeof kakao.maps.LatLng === 'undefined') {
