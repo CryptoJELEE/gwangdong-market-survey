@@ -60,4 +60,8 @@ export class SurveyStore {
     }
     return submission;
   }
+
+  async deleteSubmission(submissionId) {
+    return this.localStore.deleteSubmission(submissionId);
+  }
 }
