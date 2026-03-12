@@ -856,9 +856,13 @@ async function renderMapData() {
   const map = state.kakaoMap;
   const submissions = state.bootstrap.submissions;
 
+  // Clear previous clusterer
+  if (state.mapClusterer) { state.mapClusterer.clear(); }
+
   const bounds = new kakao.maps.LatLngBounds();
   let hasMarkers = false;
   const openInfoWindow = { current: null };
+  const markers = [];
 
   submissions.forEach((sub) => {
     const lat = sub.lat || (sub.geocode && sub.geocode.lat) || (sub.survey?.coordinates?.lat) || (sub.researcher?.coordinates?.lat);
@@ -870,7 +874,7 @@ async function renderMapData() {
     bounds.extend(position);
     hasMarkers = true;
 
-    const marker = new kakao.maps.Marker({ map, position, image: createMarkerImage(color) });
+    const marker = new kakao.maps.Marker({ position, image: createMarkerImage(color) });
     const priceCount = sub.prices ? sub.prices.length : 0;
     const date = new Date(sub.createdAt).toLocaleDateString('ko-KR');
     const content = `<div style="padding:8px 12px;font-size:13px;line-height:1.6;max-width:220px;">
@@ -885,7 +889,22 @@ async function renderMapData() {
       infoWindow.open(map, marker);
       openInfoWindow.current = infoWindow;
     });
+    markers.push(marker);
   });
+
+  // Cluster markers for grouping & distribution view
+  state.mapClusterer = new kakao.maps.MarkerClusterer({
+    map,
+    averageCenter: true,
+    minLevel: 4,
+    disableClickZoom: false,
+    styles: [
+      { width: '40px', height: '40px', background: 'rgba(32,137,92,0.75)', borderRadius: '50%', color: '#fff', textAlign: 'center', fontWeight: '700', lineHeight: '40px', fontSize: '14px' },
+      { width: '50px', height: '50px', background: 'rgba(32,137,92,0.85)', borderRadius: '50%', color: '#fff', textAlign: 'center', fontWeight: '700', lineHeight: '50px', fontSize: '16px' },
+      { width: '60px', height: '60px', background: 'rgba(32,137,92,0.95)', borderRadius: '50%', color: '#fff', textAlign: 'center', fontWeight: '700', lineHeight: '60px', fontSize: '18px' }
+    ]
+  });
+  state.mapClusterer.addMarkers(markers);
 
   if (hasMarkers) map.setBounds(bounds);
 
