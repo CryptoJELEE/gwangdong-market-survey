@@ -251,6 +251,14 @@ export function createApp(config = loadConfig(), options = {}) {
         return;
       }
 
+      if (request.method === 'POST' && url.pathname === '/api/submissions/delete') {
+        const body = await collectJsonBody(request, MAX_BODY_BYTES);
+        if (!body.submissionId) throw new Error('submissionId is required.');
+        await store.deleteSubmission(body.submissionId);
+        json(response, 200, { ok: true });
+        return;
+      }
+
       json(response, 404, { error: 'Not found' });
     } catch (error) {
       json(response, 400, { error: error.message });

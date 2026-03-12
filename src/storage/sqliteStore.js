@@ -298,6 +298,12 @@ export class SQLiteStore {
     return rowToSubmission(updated);
   }
 
+  async deleteSubmission(submissionId) {
+    this._ensureDb();
+    this.db.prepare('DELETE FROM assignment_overrides WHERE submission_id = ?').run(submissionId);
+    this.db.prepare('DELETE FROM submissions WHERE id = ?').run(submissionId);
+  }
+
   close() {
     if (this.db) {
       this.db.close();
