@@ -1,0 +1,158 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { createApp } from '../src/server.js';
+import { loadConfig } from '../src/config.js';
+
+const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aT0sAAAAASUVORK5CYII=';
+
+async function createTestServer(t, envOverrides = {}) {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), 'market-survey-'));
+  const config = loadConfig({
+    PORT: '0',
+    DATA_DIR: tempDir,
+    STORE_FILE: path.join(tempDir, 'store.json'),
+    UPLOADS_DIR: path.join(tempDir, 'uploads'),
+    ...envOverrides
+  });
+
+  const server = createApp(config);
+  await new Promise((resolve) => server.listen(0, resolve));
+  t.after(() => server.close());
+
+  const { port } = server.address();
+  return {
+    tempDir,
+    baseUrl: `http://127.0.0.1:${port}`
+  };
+}
+
+test('submission API stores a survey and exposes it in bootstrap data', async (t) => {
+  const { tempDir, baseUrl } = await createTestServer(t);
+
+  const createResponse = await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'Kim', residenceArea: 'Seoul Central' },
+      survey: {
+        region: 'Gangnam',
+        storeType: 'Pharmacy',
+        storeName: 'Healthy Drug',
+        posCount: 2,
+        displayLocation: 'Front counter'
+      },
+      prices: [
+        { productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 1200 }
+      ],
+      photoDataUrl: tinyPng,
+      notes: 'Promo stand present'
+    })
+  });
+
+  assert.equal(createResponse.status, 201);
+  const created = await createResponse.json();
+  assert.equal(created.assignment.currentArea, 'Seoul Central');
+  assert.match(created.photo.url, /^\/uploads\//);
+  assert.equal(created.sync.mode, 'local');
+
+  const bootstrapResponse = await fetch(`${baseUrl}/api/bootstrap`);
+  const bootstrap = await bootstrapResponse.json();
+  assert.equal(bootstrap.submissions.length, 1);
+  assert.equal(bootstrap.submissions[0].survey.storeName, 'Healthy Drug');
+  assert.equal(bootstrap.assignmentOverrides.length, 0);
+  assert.equal(bootstrap.adminTokenConfigured, false);
+
+  const storeRaw = await readFile(path.join(tempDir, 'store.json'), 'utf8');
+  const store = JSON.parse(storeRaw);
+  assert.equal(store.submissions.length, 1);
+});
+
+test('override API updates assignment area', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  const createResponse = await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'Lee', residenceArea: 'Seoul West' },
+      survey: {
+        region: 'Mapo',
+        storeType: 'Mart',
+        storeName: 'Fresh Mart',
+        posCount: 1,
+        displayLocation: 'Fridge'
+      },
+      prices: [
+        { productId: 'cornsilk', productLabel: '옥수수수염차', size: '500ml', price: 2200 }
+      ]
+    })
+  });
+  const created = await createResponse.json();
+
+  const overrideResponse = await fetch(`${baseUrl}/api/assignments/override`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      submissionId: created.id,
+      assignedArea: 'Gyeonggi North',
+      reason: 'Capacity balancing',
+      adminName: 'Ops lead'
+    })
+  });
+
+  assert.equal(overrideResponse.status, 200);
+  const updated = await overrideResponse.json();
+  assert.equal(updated.assignment.currentArea, 'Gyeonggi North');
+  assert.equal(updated.assignment.overriddenBy, 'Ops lead');
+
+  const bootstrapResponse = await fetch(`${baseUrl}/api/bootstrap`);
+  const bootstrap = await bootstrapResponse.json();
+  assert.equal(bootstrap.assignmentOverrides.length, 1);
+  assert.equal(bootstrap.assignmentOverrides[0].assignedArea, 'Gyeonggi North');
+});
+
+test('bootstrap reflects admin token configuration', async (t) => {
+  const { baseUrl } = await createTestServer(t, { ADMIN_TOKEN: 'secret-token' });
+
+  const response = await fetch(`${baseUrl}/api/bootstrap`);
+  assert.equal(response.status, 200);
+
+  const payload = await response.json();
+  assert.equal(payload.adminTokenConfigured, true);
+  assert.ok(Array.isArray(payload.areas));
+  assert.ok(Array.isArray(payload.products));
+});
+
+test('submission API rejects payloads without product prices', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  const response = await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'Kim', residenceArea: 'Seoul Central' },
+      survey: {
+        region: 'Gangnam',
+        storeType: 'Pharmacy',
+        storeName: 'Healthy Drug'
+      },
+      prices: []
+    })
+  });
+
+  assert.equal(response.status, 400);
+  const payload = await response.json();
+  assert.match(payload.error, /At least one product price is required/);
+});
+
+test('root document is served for the mobile app shell', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  const response = await fetch(baseUrl);
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /광동제약 시장조사/);
+});

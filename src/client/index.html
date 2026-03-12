@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>광동제약 시장조사</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">광동제약</p>
+        <h1>시장조사 웹앱</h1>
+        <p class="subhead">현장 조사 입력, 관리자 검토, 자동 지역 배정을 한 번에 처리합니다.</p>
+      </header>
+
+      <nav class="tabs">
+        <button class="tab is-active" data-tab="survey">조사 입력</button>
+        <button class="tab" data-tab="admin">관리자</button>
+      </nav>
+
+      <section id="survey" class="panel is-active">
+        <form id="survey-form" class="card stack"></form>
+      </section>
+
+      <section id="admin" class="panel">
+        <div class="card stack">
+          <div>
+            <h2>조사 이력</h2>
+            <p class="hint">최근 조사 결과와 사진을 확인하고 필요하면 담당 지역을 조정할 수 있습니다.</p>
+          </div>
+          <div id="admin-summary" class="summary-grid"></div>
+          <div id="submission-list" class="stack"></div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

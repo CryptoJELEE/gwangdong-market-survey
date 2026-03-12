@@ -1,0 +1,71 @@
+{
+  "active": false,
+  "mode": "team",
+  "iteration": 0,
+  "max_iterations": 50,
+  "current_phase": "cancelled",
+  "task_description": "Build the MVP in this empty repo. Read .omx/context/market-survey-webapp-20260312T092800Z.md first. Deliver a smartphone-first market-survey web app for Kwangdong Pharm using a lightweight Node/browser stack with no extra dependencies unless unavoidable. Include: mobile survey entry with photo upload and product price matrix, admin views for submissions/history, rule-based auto area assignment favoring residence proximity before fairness, Google Sheets integration path with local dev fallback, README, env example, tests, and verification. Coordinate through the team state, split work cleanly, and keep diffs reviewable.",
+  "started_at": "2026-03-12T09:28:36.676Z",
+  "tmux_pane_id": "%0",
+  "tmux_pane_set_at": "2026-03-12T09:28:36.676Z",
+  "linked_ralph": false,
+  "team_name": "build-the-mvp-in-this-empty-re",
+  "agent_count": 3,
+  "agent_types": "executor",
+  "available_agent_types": [
+    "analyst",
+    "api-reviewer",
+    "architect",
+    "build-fixer",
+    "code-reviewer",
+    "code-simplifier",
+    "critic",
+    "debugger",
+    "dependency-expert",
+    "designer",
+    "executor",
+    "explore",
+    "git-master",
+    "information-architect",
+    "performance-reviewer",
+    "planner",
+    "product-analyst",
+    "product-manager",
+    "qa-tester",
+    "quality-reviewer",
+    "quality-strategist",
+    "researcher",
+    "security-reviewer",
+    "sisyphus-lite",
+    "style-reviewer",
+    "team-executor",
+    "team-orchestrator",
+    "test-engineer",
+    "ux-researcher",
+    "verifier",
+    "vision",
+    "writer"
+  ],
+  "staffing_summary": "test-engineer x1 (primary delivery lane, medium reasoning); test-engineer x1 (verification + regression lane, medium reasoning); build-fixer x1 (specialist support lane, medium reasoning)",
+  "staffing_allocations": [
+    {
+      "role": "test-engineer",
+      "count": 1,
+      "reason": "primary delivery lane",
+      "reasoningEffort": "medium"
+    },
+    {
+      "role": "test-engineer",
+      "count": 1,
+      "reason": "verification + regression lane",
+      "reasoningEffort": "medium"
+    },
+    {
+      "role": "build-fixer",
+      "count": 1,
+      "reason": "specialist support lane",
+      "reasoningEffort": "medium"
+    }
+  ],
+  "completed_at": "2026-03-12T09:39:59.563Z"
+}

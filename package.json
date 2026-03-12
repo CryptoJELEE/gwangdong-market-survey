@@ -1,0 +1,18 @@
+{
+  "name": "gwangdong-market-survey-webapp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Smartphone-first MVP for Kwangdong Pharm market survey operations",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "lint": "node scripts/lint.js",
+    "typecheck": "node --check src/server.js && node --check src/config.js && node --check src/assignment.js && node --check src/storage/localStore.js && node --check src/storage/googleSheetsStore.js && node --check src/storage/index.js && node --check src/utils.js && node --check src/client/app.js && node --check scripts/lint.js && node --check tests/assignment.test.js && node --check tests/server.test.js",
+    "verify": "node scripts/verify.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

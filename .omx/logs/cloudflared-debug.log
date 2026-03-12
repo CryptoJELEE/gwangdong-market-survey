@@ -1,0 +1,47 @@
+2026-03-12T09:57:44Z INF Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to experiment and try it out. However, be aware that these account-less Tunnels have no uptime guarantee, are subject to the Cloudflare Online Services Terms of Use (https://www.cloudflare.com/website-terms/), and Cloudflare reserves the right to investigate your use of Tunnels for violations of such terms. If you intend to use Tunnels in production you should use a pre-created named tunnel by following: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps
+2026-03-12T09:57:44Z INF Requesting new quick Tunnel on trycloudflare.com...
+2026-03-12T09:57:53Z INF +--------------------------------------------------------------------------------------------+
+2026-03-12T09:57:53Z INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |
+2026-03-12T09:57:53Z INF |  https://victor-issn-bike-sheets.trycloudflare.com                                         |
+2026-03-12T09:57:53Z INF +--------------------------------------------------------------------------------------------+
+2026-03-12T09:57:53Z INF Cannot determine default configuration path. No file [config.yml config.yaml] in [~/.cloudflared ~/.cloudflare-warp ~/cloudflare-warp /etc/cloudflared /usr/local/etc/cloudflared]
+2026-03-12T09:57:53Z INF Version 2026.3.0 (Checksum 99f099a3834e0b20ec2a18ac77d3d77261b77652310d97eca18fc1797d4349d0)
+2026-03-12T09:57:53Z INF GOOS: darwin, GOVersion: go1.26.1, GoArch: arm64
+2026-03-12T09:57:53Z INF Settings: map[ha-connections:1 loglevel:debug protocol:quic url:http://127.0.0.1:3000]
+2026-03-12T09:57:53Z INF cloudflared will not automatically update if installed by a package manager.
+2026-03-12T09:57:53Z INF Generated Connector ID: acb74f68-ac7e-47e7-be97-813b2052e755
+2026-03-12T09:57:53Z DBG Fetched protocol: quic
+2026-03-12T09:57:53Z INF Initial protocol quic
+2026-03-12T09:57:53Z INF ICMP proxy will use 192.168.210.200 as source for IPv4
+2026-03-12T09:57:53Z INF ICMP proxy will use fe80::143a:1ba1:c392:3ed1 in zone en0 as source for IPv6
+2026-03-12T09:57:53Z INF Created ICMP proxy listening on 192.168.210.200:0
+2026-03-12T09:57:53Z DBG failed to create ICMPv6 proxy, only ICMPv4 proxy is created error="bind: can't assign requested address"
+2026-03-12T09:57:53Z DBG edge discovery: looking up edge SRV record domain=_v2-origintunneld._tcp.argotunnel.com event=0
+2026-03-12T09:57:53Z DBG edge discovery: resolved edge addresses addresses=["198.41.192.107","198.41.192.7","198.41.192.47","198.41.192.67","198.41.192.77","198.41.192.27","198.41.192.57","198.41.192.227","198.41.192.167","198.41.192.37","2606:4700:a0::2","2606:4700:a0::4","2606:4700:a0::9","2606:4700:a0::3","2606:4700:a0::6","2606:4700:a0::7","2606:4700:a0::8","2606:4700:a0::1","2606:4700:a0::10","2606:4700:a0::5"] event=0
+2026-03-12T09:57:53Z DBG edge discovery: resolved edge addresses addresses=["198.41.200.113","198.41.200.193","198.41.200.233","198.41.200.53","198.41.200.73","198.41.200.33","198.41.200.63","198.41.200.23","198.41.200.43","198.41.200.13","2606:4700:a8::2","2606:4700:a8::10","2606:4700:a8::1","2606:4700:a8::5","2606:4700:a8::8","2606:4700:a8::7","2606:4700:a8::3","2606:4700:a8::4","2606:4700:a8::6","2606:4700:a8::9"] event=0
+2026-03-12T09:57:53Z DBG edge discovery: looking up edge SRV record domain=_v2-origintunneld._tcp.argotunnel.com event=0
+2026-03-12T09:57:53Z INF ICMP proxy will use 192.168.210.200 as source for IPv4
+2026-03-12T09:57:53Z INF ICMP proxy will use fe80::143a:1ba1:c392:3ed1 in zone en0 as source for IPv6
+2026-03-12T09:57:53Z INF Starting metrics server on 127.0.0.1:20241/metrics
+2026-03-12T09:57:53Z DBG edge discovery: resolved edge addresses addresses=["198.41.192.107","198.41.192.7","198.41.192.47","198.41.192.37","198.41.192.67","198.41.192.77","198.41.192.27","198.41.192.57","198.41.192.227","198.41.192.167","2606:4700:a0::5","2606:4700:a0::9","2606:4700:a0::4","2606:4700:a0::3","2606:4700:a0::6","2606:4700:a0::7","2606:4700:a0::8","2606:4700:a0::1","2606:4700:a0::10","2606:4700:a0::2"] event=0
+2026-03-12T09:57:53Z DBG edge discovery: resolved edge addresses addresses=["198.41.200.113","198.41.200.193","198.41.200.233","198.41.200.13","198.41.200.53","198.41.200.73","198.41.200.33","198.41.200.63","198.41.200.23","198.41.200.43","2606:4700:a8::9","2606:4700:a8::1","2606:4700:a8::10","2606:4700:a8::5","2606:4700:a8::8","2606:4700:a8::7","2606:4700:a8::3","2606:4700:a8::4","2606:4700:a8::6","2606:4700:a8::2"] event=0
+2026-03-12T09:57:53Z DBG edge discovery: giving new address to connection connIndex=0 event=0 ip=198.41.200.113
+2026-03-12T09:57:53Z DBG Tunnel connection options connIndex=0 event=0 features=["allow_remote_config","serialized_headers","support_datagram_v2","support_quic_eof","management_logs"] ip=198.41.200.113
+2026-03-12T09:57:53Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveP256] connIndex=0 event=0 ip=198.41.200.113
+2026-03-12T09:57:53Z DBG Updating DNS local resolver: 219.250.36.130:53
+2026-03-12T09:57:53Z DBG Received transport parameters: MaxUDPPayloadSize=1396, MaxIdleTimeout=5s, MaxDatagramFrameSize=16383 connIndex=0 event=0 ip=198.41.200.113
+2026-03-12T09:57:53Z DBG Registering tunnel connection connIndex=0 event=0 ip=198.41.200.113 protocol=quic
+2026-03-12T09:57:54Z INF Registered tunnel connection connIndex=0 connection=0e0ae35e-d2c7-41ee-9713-5ac6c867a78f event=0 ip=198.41.200.113 location=icn01 protocol=quic
+2026-03-12T09:57:54Z DBG QUIC MTU updated to 1314 connIndex=0 event=0 ip=198.41.200.113
+2026-03-12T09:57:55Z DBG QUIC MTU updated to 1355 connIndex=0 event=0 ip=198.41.200.113
+2026-03-12T09:57:56Z DBG QUIC MTU updated to 1375 connIndex=0 event=0 ip=198.41.200.113
+2026-03-12T09:57:59Z INF Initiating graceful shutdown due to signal terminated ...
+2026-03-12T09:57:59Z DBG Graceful shutdown signalled
+2026-03-12T09:57:59Z ERR failed to run the datagram handler error="context canceled" connIndex=0 event=0 ip=198.41.200.113
+2026-03-12T09:57:59Z ERR failed to serve tunnel connection error="control stream encountered a failure while serving" connIndex=0 event=0 ip=198.41.200.113
+2026-03-12T09:57:59Z ERR Serve tunnel error error="control stream encountered a failure while serving" connIndex=0 event=0 ip=198.41.200.113
+2026-03-12T09:57:59Z INF Retrying connection in up to 1s connIndex=0 event=0 ip=198.41.200.113
+2026-03-12T09:57:59Z ERR Connection terminated connIndex=0
+2026-03-12T09:57:59Z ERR no more connections active and exiting
+2026-03-12T09:57:59Z INF Tunnel server stopped
+2026-03-12T09:57:59Z INF Metrics server stopped
