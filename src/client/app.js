@@ -115,6 +115,12 @@ function renderCurrentStep(config) {
 function renderStep1(config) {
   const savedName = loadLocal('researcherName');
   const savedResidence = loadLocal('residenceArea');
+  const savedRegion = loadLocal('_step1_region');
+  const savedStoreName = loadLocal('_step1_storeName');
+  const savedPosCount = loadLocal('_step1_posCount') || '1';
+  const savedDisplayLocation = loadLocal('_step1_displayLocation');
+  const savedStoreType = loadLocal('_step1_storeType');
+  if (savedStoreType) state.selectedStoreType = savedStoreType;
 
   formStepContainer.innerHTML = `
     <div class="card stack">
@@ -133,7 +139,7 @@ function renderStep1(config) {
         <button type="button" class="gps-btn" id="gps-fill-btn">
           \u{1F4CD} 현재 위치 사용
         </button>
-        <input name="region" required placeholder="예: 강남" id="region-input" />
+        <input name="region" required placeholder="예: 강남" id="region-input" value="${escapeHtml(savedRegion)}" />
       </div>
       <div class="field">
         <label>거래처 유형</label>
@@ -144,20 +150,20 @@ function renderStep1(config) {
       </div>
       <div class="field">
         <label>점포명</label>
-        <input name="storeName" required placeholder="점포명을 입력하세요" />
+        <input name="storeName" required placeholder="점포명을 입력하세요" value="${escapeHtml(savedStoreName)}" />
       </div>
       <div class="field">
         <label>POS 대수</label>
         <div class="stepper">
           <button type="button" id="pos-dec">&minus;</button>
-          <span class="stepper-value" id="pos-display">1</span>
+          <span class="stepper-value" id="pos-display">${escapeHtml(savedPosCount)}</span>
           <button type="button" id="pos-inc">+</button>
         </div>
-        <input type="hidden" name="posCount" value="1" id="pos-input" />
+        <input type="hidden" name="posCount" value="${escapeHtml(savedPosCount)}" id="pos-input" />
       </div>
       <div class="field">
         <label>진열 위치</label>
-        <input name="displayLocation" placeholder="예: 계산대 앞 / 냉장고 / 매대" />
+        <input name="displayLocation" placeholder="예: 계산대 앞 / 냉장고 / 매대" value="${escapeHtml(savedDisplayLocation)}" />
       </div>
       <div class="form-nav">
         <button type="button" class="btn btn-primary" id="next-step1">다음 \u2192</button>
@@ -282,19 +288,39 @@ function renderStep2(config) {
     });
   });
 
+  function savePrices() {
+    const inputs = formStepContainer.querySelectorAll('.price-field input');
+    const prices = {};
+    inputs.forEach((i) => { if (i.value.trim()) prices[i.name] = i.value.trim(); });
+    saveLocal('_step2_prices', JSON.stringify(prices));
+  }
+
+  function restorePrices() {
+    try {
+      const saved = JSON.parse(loadLocal('_step2_prices') || '{}');
+      Object.entries(saved).forEach(([name, val]) => {
+        const input = formStepContainer.querySelector(`input[name="${name}"]`);
+        if (input) input.value = val;
+      });
+    } catch { /* ignore */ }
+  }
+
+  restorePrices();
+
   formStepContainer.querySelector('#prev-step2').addEventListener('click', () => {
+    savePrices();
     state.currentStep = 1;
     renderCurrentStep(config);
   });
 
   formStepContainer.querySelector('#next-step2').addEventListener('click', () => {
-    // Check at least one price entered
     const inputs = formStepContainer.querySelectorAll('.price-field input');
     const hasPrice = [...inputs].some((i) => i.value.trim() !== '');
     if (!hasPrice) {
       showToast('최소 1개 이상의 가격을 입력해주세요.', 'error');
       return;
     }
+    savePrices();
     state.currentStep = 3;
     renderCurrentStep(config);
   });
@@ -318,7 +344,7 @@ function renderStep3(config) {
       </div>
       <div class="field">
         <label>메모</label>
-        <textarea name="notes" rows="4" placeholder="프로모션, 품절, 경쟁사 특이사항 등을 적어주세요"></textarea>
+        <textarea name="notes" rows="4" placeholder="프로모션, 품절, 경쟁사 특이사항 등을 적어주세요">${escapeHtml(loadLocal('_step3_notes'))}</textarea>
       </div>
       <div class="form-nav">
         <button type="button" class="btn btn-secondary" id="prev-step3">\u2190 이전</button>
@@ -354,6 +380,7 @@ function renderStep3(config) {
   });
 
   formStepContainer.querySelector('#prev-step3').addEventListener('click', () => {
+    saveLocal('_step3_notes', formStepContainer.querySelector('[name="notes"]')?.value || '');
     state.currentStep = 2;
     renderCurrentStep(config);
   });
