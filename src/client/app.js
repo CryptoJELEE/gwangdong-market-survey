@@ -307,7 +307,7 @@ function renderStep2(config) {
               ${product.sizes.map((size) => `
                 <div class="price-field">
                   <span class="size-label">${size}</span>
-                  <input inputmode="numeric" name="${priceFieldName(product.id, size)}" placeholder="\u20A9 가격" />
+                  <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="10" name="${priceFieldName(product.id, size)}" placeholder="\u20A9 가격" />
                 </div>
               `).join('')}
             </div>
