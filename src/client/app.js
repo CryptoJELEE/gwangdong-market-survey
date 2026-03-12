@@ -1,5 +1,7 @@
 const state = {
-  bootstrap: null
+  bootstrap: null,
+  mapInitialized: false,
+  kakaoMap: null
 };
 
 const surveyForm = document.querySelector('#survey-form');
@@ -12,6 +14,9 @@ tabs.forEach((button) => {
   button.addEventListener('click', () => {
     tabs.forEach((item) => item.classList.toggle('is-active', item === button));
     panels.forEach((panel) => panel.classList.toggle('is-active', panel.id === button.dataset.tab));
+    if (button.dataset.tab === 'map') {
+      initMap();
+    }
   });
 });
 
@@ -185,6 +190,113 @@ async function fileToDataUrl(file) {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+const MARKER_COLORS = [
+  '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
+  '#1abc9c', '#e67e22', '#34495e', '#d35400', '#c0392b'
+];
+const researcherColorMap = {};
+let colorIndex = 0;
+
+function getResearcherColor(name) {
+  if (!researcherColorMap[name]) {
+    researcherColorMap[name] = MARKER_COLORS[colorIndex % MARKER_COLORS.length];
+    colorIndex++;
+  }
+  return researcherColorMap[name];
+}
+
+function createMarkerImage(color) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="${color}"/><circle cx="12" cy="12" r="5" fill="white"/></svg>`;
+  const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  return new kakao.maps.MarkerImage(
+    src,
+    new kakao.maps.Size(24, 36),
+    { offset: new kakao.maps.Point(12, 36) }
+  );
+}
+
+async function initMap() {
+  if (!state.bootstrap) return;
+
+  const container = document.getElementById('map-container');
+  if (!state.mapInitialized) {
+    const options = {
+      center: new kakao.maps.LatLng(37.5665, 126.9780),
+      level: 8
+    };
+    state.kakaoMap = new kakao.maps.Map(container, options);
+    state.mapInitialized = true;
+  } else {
+    state.kakaoMap.relayout();
+  }
+
+  const map = state.kakaoMap;
+  const submissions = state.bootstrap.submissions;
+
+  let statsData;
+  try {
+    const res = await fetch('/api/survey-stats');
+    statsData = await res.json();
+  } catch {
+    statsData = { areas: [], totalSubmissions: 0 };
+  }
+
+  const bounds = new kakao.maps.LatLngBounds();
+  let hasMarkers = false;
+  const openInfoWindow = { current: null };
+
+  submissions.forEach((sub) => {
+    const lat = sub.lat || (sub.geocode && sub.geocode.lat);
+    const lng = sub.lng || (sub.geocode && sub.geocode.lng);
+    if (!lat || !lng) return;
+
+    const color = getResearcherColor(sub.researcher.name);
+    const position = new kakao.maps.LatLng(lat, lng);
+    bounds.extend(position);
+    hasMarkers = true;
+
+    const marker = new kakao.maps.Marker({
+      map,
+      position,
+      image: createMarkerImage(color)
+    });
+
+    const priceCount = sub.prices ? sub.prices.length : 0;
+    const date = new Date(sub.createdAt).toLocaleDateString('ko-KR');
+    const content = `<div style="padding:8px 12px;font-size:13px;line-height:1.6;max-width:220px;">
+      <strong>${sub.survey.storeName}</strong><br/>
+      ${sub.researcher.name} · ${date}<br/>
+      ${sub.survey.storeType} · 가격 ${priceCount}건
+    </div>`;
+
+    const infoWindow = new kakao.maps.InfoWindow({ content });
+    kakao.maps.event.addListener(marker, 'click', () => {
+      if (openInfoWindow.current) openInfoWindow.current.close();
+      infoWindow.open(map, marker);
+      openInfoWindow.current = infoWindow;
+    });
+  });
+
+  if (hasMarkers) {
+    map.setBounds(bounds);
+  }
+
+  // Render legend
+  const legend = document.getElementById('map-legend');
+  legend.innerHTML = Object.entries(researcherColorMap).map(([name, color]) =>
+    `<div class="legend-item"><span class="legend-dot" style="background:${color}"></span>${name}</div>`
+  ).join('');
+
+  // Render coverage stats
+  const coverageStats = document.getElementById('coverage-stats');
+  if (statsData.areas && statsData.areas.length) {
+    coverageStats.innerHTML = statsData.areas.map((a, i) => {
+      const bg = MARKER_COLORS[i % MARKER_COLORS.length];
+      return `<div class="summary-tile"><span class="coverage-badge" style="background:${bg}">${a.area}</span><strong>${a.count}건</strong></div>`;
+    }).join('');
+  }
 }
 
 async function bootstrap() {
