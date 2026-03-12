@@ -16,8 +16,7 @@ if [ "$HTTP_CODE" -eq 200 ]; then
   COUNT=$(python3 -c "import json; d=json.load(open('$BACKUP_DIR/$FILENAME')); print(d['totalSubmissions'])" 2>/dev/null)
   echo "✅ 백업 완료: $FILENAME ($COUNT건)"
   
-  # 30일 이상 된 백업 삭제 (보관 주기)
-  find "$BACKUP_DIR" -name "ionroad-backup-*.json" -mtime +30 -delete 2>/dev/null
+  # 백업 파일 영구 보관 (삭제하지 않음)
 else
   echo "❌ 백업 실패 (HTTP $HTTP_CODE)"
   rm -f "$BACKUP_DIR/$FILENAME"

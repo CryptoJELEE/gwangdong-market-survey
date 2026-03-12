@@ -1,4 +1,5 @@
 import http from 'node:http';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
@@ -66,7 +67,7 @@ async function serveStatic(response, filePath) {
 function setCorsHeaders(response) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
 export function createApp(config = loadConfig(), options = {}) {
@@ -77,6 +78,28 @@ export function createApp(config = loadConfig(), options = {}) {
     fetchImpl: options.fetchImpl || fetch
   });
   let initialized = false;
+
+  // ── Admin auth ──
+  const adminTokens = new Map();
+  const TOKEN_TTL = 24 * 60 * 60 * 1000;
+
+  function createAdminToken() {
+    const token = crypto.randomUUID();
+    adminTokens.set(token, Date.now());
+    return token;
+  }
+
+  function checkAuth(request) {
+    const auth = request.headers['authorization'] || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    const createdAt = adminTokens.get(token);
+    if (createdAt === undefined) return false;
+    if (Date.now() - createdAt > TOKEN_TTL) {
+      adminTokens.delete(token);
+      return false;
+    }
+    return true;
+  }
 
   async function geocodeAreas(areas) {
     const areaCoordinates = await Promise.all(
@@ -130,6 +153,46 @@ export function createApp(config = loadConfig(), options = {}) {
       }
       if (request.method === 'GET' && url.pathname.startsWith('/uploads/')) {
         await serveStatic(response, path.resolve(config.uploadsDir, url.pathname.replace('/uploads/', '')));
+        return;
+      }
+
+      // ── Admin page static files ──
+      if (request.method === 'GET' && url.pathname === '/admin') {
+        await serveStatic(response, path.resolve('src/client/admin.html'));
+        return;
+      }
+      if (request.method === 'GET' && url.pathname === '/admin.js') {
+        await serveStatic(response, path.resolve('src/client/admin.js'));
+        return;
+      }
+
+      // ── Admin auth endpoints ──
+      if (request.method === 'POST' && url.pathname === '/api/admin/login') {
+        const body = await collectJsonBody(request, MAX_BODY_BYTES);
+        if (body.password === config.adminPassword) {
+          json(response, 200, { token: createAdminToken() });
+        } else {
+          json(response, 401, { error: '비밀번호가 틀렸어요.' });
+        }
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/admin/verify') {
+        if (checkAuth(request)) {
+          json(response, 200, { ok: true });
+        } else {
+          json(response, 401, { error: 'Unauthorized' });
+        }
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/admin/submissions') {
+        if (!checkAuth(request)) {
+          json(response, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const submissions = await store.listSubmissions();
+        json(response, 200, submissions);
         return;
       }
 
@@ -252,14 +315,22 @@ export function createApp(config = loadConfig(), options = {}) {
       }
 
       if (request.method === 'GET' && url.pathname === '/api/backup') {
+        if (!checkAuth(request)) {
+          json(response, 401, { error: 'Unauthorized' });
+          return;
+        }
         const submissions = await store.listSubmissions();
-        const config = store.getConfig ? store.getConfig() : {};
+        const cfg = store.getConfig ? store.getConfig() : {};
         const timestamp = new Date().toISOString();
-        json(response, 200, { timestamp, totalSubmissions: submissions.length, submissions, config });
+        json(response, 200, { timestamp, totalSubmissions: submissions.length, submissions, config: cfg });
         return;
       }
 
       if (request.method === 'POST' && url.pathname === '/api/submissions/delete') {
+        if (!checkAuth(request)) {
+          json(response, 401, { error: 'Unauthorized' });
+          return;
+        }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         if (!body.submissionId) throw new Error('submissionId is required.');
         await store.deleteSubmission(body.submissionId);

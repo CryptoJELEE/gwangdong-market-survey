@@ -39,6 +39,7 @@ export function loadConfig(env = process.env) {
   return {
     port: Number(mergedEnv.PORT || 3000),
     adminToken: mergedEnv.ADMIN_TOKEN || '',
+    adminPassword: mergedEnv.ADMIN_PASSWORD || 'ionroad2026',
     kakaoRestApiKey: mergedEnv.KAKAO_REST_API_KEY || '',
     areas: DEFAULT_AREAS,
     products,

@@ -654,6 +654,32 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
 .address-detail { font-size: 0.8rem; color: var(--text-muted); }
 .address-no-result { padding: 12px 14px; color: var(--text-muted); font-size: 0.9rem; text-align: center; }
 
+/* ── Admin page ── */
+.logout-btn {
+  padding: 6px 14px;
+  border: 1px solid rgba(255,255,255,0.4);
+  border-radius: 6px;
+  background: transparent;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.logout-btn:active { background: rgba(255,255,255,0.15); }
+.btn-danger-sm {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--error);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 36px;
+}
+.btn-danger-sm:active { opacity: 0.85; }
+
 /* ── Utilities ── */
 .small { font-size: 0.85rem; color: var(--text-muted); }
 .text-center { text-align: center; }

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>이온로드 관리자</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="status-bar">
+      <span>이온로드 관리자 🔒</span>
+      <button id="logout-btn" class="logout-btn hidden">로그아웃</button>
+    </div>
+
+    <main class="shell">
+      <section id="login-section">
+        <header class="hero">
+          <p class="eyebrow">이온로드 🔒</p>
+          <h1>관리자 로그인</h1>
+          <p class="subhead">관리자 비밀번호를 입력해주세요.</p>
+        </header>
+        <div class="card stack">
+          <div class="field">
+            <label>비밀번호</label>
+            <input type="password" id="password-input" placeholder="비밀번호를 입력하세요" />
+          </div>
+          <button class="btn-submit" id="login-btn">관리자 로그인</button>
+          <div id="login-error" class="small text-center" style="color:var(--error)"></div>
+        </div>
+      </section>
+
+      <section id="admin-section" class="hidden">
+        <header class="hero">
+          <p class="eyebrow">이온로드 관리자 🔒</p>
+          <h1>관리자 대시보드</h1>
+        </header>
+
+        <div id="admin-stats" class="quick-stats"></div>
+
+        <div class="card stack" style="margin-top:12px;">
+          <h2>백업 💾</h2>
+          <button class="btn btn-primary" id="backup-btn">백업 다운로드 (JSON)</button>
+        </div>
+
+        <div id="researcher-stats" class="card stack" style="margin-top:12px;"></div>
+
+        <div class="card stack" style="margin-top:12px;">
+          <div class="admin-header">
+            <h2>전체 기록 📋</h2>
+            <p class="hint">기록을 확인하고 담당 지역을 조정하거나 삭제할 수 있어요.</p>
+          </div>
+          <div id="admin-filter" class="filter-bar"></div>
+          <div id="submission-list" class="stack"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/admin.js"></script>
+  </body>
+</html>

@@ -13,8 +13,6 @@ const surveyForm = document.querySelector('#survey-form');
 const formStepContainer = document.querySelector('#form-step-container');
 const stepIndicator = document.querySelector('#step-indicator');
 const successView = document.querySelector('#success-view');
-const submissionList = document.querySelector('#submission-list');
-const adminFilter = document.querySelector('#admin-filter');
 const gpsStatusEl = document.querySelector('#gps-status');
 const statusResearcher = document.querySelector('#status-researcher');
 const navTabs = [...document.querySelectorAll('.nav-tab')];
@@ -689,7 +687,7 @@ function renderDashboard(config) {
           <div class="activity-item">
             <div class="activity-dot"></div>
             <div class="activity-text">
-              <strong>${escapeHtml(r.name)}</strong>님이 ${escapeHtml(r.storeName)}에서 ${r.priceCount}개 제품 기록
+              <strong>${escapeHtml(r.name)}</strong>님이 ${escapeHtml(r.storeName)}에서 기록
               <span class="activity-time">${relativeTime(r.createdAt)}</span>
             </div>
           </div>
@@ -699,76 +697,6 @@ function renderDashboard(config) {
   } else {
     activityEl.innerHTML = '<h2>최근 활동 🕐</h2><p class="small">아직 활동이 없어요.</p>';
   }
-
-  // 6. Submission list with filters
-  const filterEl = adminFilter;
-  filterEl.innerHTML = `
-    <input type="text" id="filter-name" placeholder="이름 검색" />
-    <select id="filter-area">
-      <option value="">전체 지역</option>
-      ${areas.map((a) => `<option value="${a}">${a}</option>`).join('')}
-    </select>
-  `;
-  const filterName = filterEl.querySelector('#filter-name');
-  const filterArea = filterEl.querySelector('#filter-area');
-  const doFilter = () => renderSubmissionList(config, submissions, filterName.value, filterArea.value);
-  filterName.addEventListener('input', doFilter);
-  filterArea.addEventListener('change', doFilter);
-
-  renderSubmissionList(config, submissions, '', '');
-}
-
-function renderSubmissionList(config, submissions, nameFilter, areaFilter) {
-  let filtered = submissions;
-  if (nameFilter) {
-    const q = nameFilter.toLowerCase();
-    filtered = filtered.filter((s) => s.researcher.name.toLowerCase().includes(q));
-  }
-  if (areaFilter) {
-    filtered = filtered.filter((s) => s.assignment.currentArea === areaFilter);
-  }
-
-  submissionList.innerHTML = filtered.length
-    ? filtered.map((sub) => `
-      <article class="submission-card">
-        <div class="sub-header">
-          <span class="store-name">${escapeHtml(sub.survey.storeName)}</span>
-          <span class="sub-date">${new Date(sub.createdAt).toLocaleDateString('ko-KR')}</span>
-        </div>
-        <div class="sub-meta">
-          ${escapeHtml(sub.researcher.name)} \u00B7 ${escapeHtml(sub.researcher.residenceArea)} \u2192 <strong>${escapeHtml(sub.assignment.currentArea)}</strong>
-        </div>
-        <div class="sub-meta">${escapeHtml(sub.survey.region)} \u00B7 ${escapeHtml(sub.survey.storeType)} \u00B7 POS ${sub.survey.posCount}</div>
-        <div class="sub-prices">${sub.prices.map((p) => `${p.productLabel} ${p.size} \u20A9${p.price}`).join(', ')}</div>
-        ${sub.photo ? `<img class="sub-photo" src="${sub.photo.url}" alt="${escapeHtml(sub.survey.storeName)}" />` : ''}
-        <div class="sub-actions">
-          <select data-submission-id="${sub.id}">
-            ${config.areas.map((a) => `<option value="${a}" ${a === sub.assignment.currentArea ? 'selected' : ''}>${a}</option>`).join('')}
-          </select>
-          <button data-action="override" data-submission-id="${sub.id}">지역 변경</button>
-        </div>
-      </article>
-    `).join('')
-    : '<div class="notice">아직 기록이 없어요. 첫 번째 기록을 남겨볼까요? 🏃</div>';
-
-  submissionList.querySelectorAll('[data-action="override"]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const select = submissionList.querySelector(`select[data-submission-id="${button.dataset.submissionId}"]`);
-      const response = await fetch('/api/assignments/override', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          submissionId: button.dataset.submissionId,
-          assignedArea: select.value,
-          reason: 'Admin override from MVP console',
-          adminName: 'Admin console'
-        })
-      });
-      if (response.ok) {
-        await loadBootstrap();
-      }
-    });
-  });
 }
 
 // ── Helpers ──
