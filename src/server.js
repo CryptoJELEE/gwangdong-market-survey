@@ -251,6 +251,14 @@ export function createApp(config = loadConfig(), options = {}) {
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/api/backup') {
+        const submissions = await store.listSubmissions();
+        const config = store.getConfig ? store.getConfig() : {};
+        const timestamp = new Date().toISOString();
+        json(response, 200, { timestamp, totalSubmissions: submissions.length, submissions, config });
+        return;
+      }
+
       if (request.method === 'POST' && url.pathname === '/api/submissions/delete') {
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         if (!body.submissionId) throw new Error('submissionId is required.');
