@@ -137,7 +137,10 @@ function renderStep1(config) {
         <button type="button" class="gps-btn" id="gps-fill-btn">
           \u{1F4CD} 현재 위치 사용
         </button>
-        <input name="region" required placeholder="예: 강남" id="region-input" value="${escapeHtml(savedRegion)}" />
+        <div class="address-search-wrap">
+          <input name="region" required placeholder="주소를 검색하세요 (예: 강남역)" id="region-input" value="${escapeHtml(savedRegion)}" autocomplete="off" />
+          <ul class="address-dropdown" id="address-dropdown"></ul>
+        </div>
       </div>
       <div class="field">
         <label>어떤 매장이었나요?</label>
@@ -191,6 +194,43 @@ function renderStep1(config) {
       gpsFillBtn.textContent = '\u{1F4CD} 위치 확인 실패';
     }
     gpsFillBtn.classList.remove('is-loading');
+  });
+
+  // Address autocomplete via Kakao keyword search
+  const dropdown = formStepContainer.querySelector('#address-dropdown');
+  let searchTimer = null;
+
+  regionInput.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    const q = regionInput.value.trim();
+    if (q.length < 2) { dropdown.innerHTML = ''; dropdown.style.display = 'none'; return; }
+    searchTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(q)}&size=5`, {
+          headers: { Authorization: 'KakaoAK 082ce6eafadae8cfe01d6fc0859b158a' }
+        });
+        const data = await res.json();
+        if (!data.documents?.length) { dropdown.innerHTML = '<li class="address-no-result">검색 결과가 없어요</li>'; dropdown.style.display = 'block'; return; }
+        dropdown.innerHTML = data.documents.map((d) =>
+          `<li class="address-item" data-address="${escapeHtml(d.address_name)}" data-place="${escapeHtml(d.place_name || '')}">
+            <span class="address-place">${escapeHtml(d.place_name || d.address_name)}</span>
+            <span class="address-detail">${escapeHtml(d.address_name)}</span>
+          </li>`
+        ).join('');
+        dropdown.style.display = 'block';
+      } catch { dropdown.style.display = 'none'; }
+    }, 300);
+  });
+
+  dropdown.addEventListener('click', (e) => {
+    const item = e.target.closest('.address-item');
+    if (!item) return;
+    regionInput.value = item.dataset.address;
+    dropdown.style.display = 'none';
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.address-search-wrap')) dropdown.style.display = 'none';
   });
 
   formStepContainer.querySelectorAll('.store-type-btn').forEach((btn) => {
