@@ -233,13 +233,20 @@ function renderStep1(config) {
       showToast('필수 항목을 입력해주세요.', 'error');
       return;
     }
+    const residenceArea = formStepContainer.querySelector('[name="residenceArea"]').value;
+    const storeType = formStepContainer.querySelector('[name="storeType"]')?.value || state.selectedStoreType || '';
+    const posCount = formStepContainer.querySelector('[name="posCount"]')?.value || '1';
+    const displayLocation = formStepContainer.querySelector('[name="displayLocation"]')?.value || '';
+
+    // Save to both state AND localStorage for redundancy
+    state.step1Data = { researcherName: name, residenceArea, region, storeType, storeName, posCount, displayLocation };
     saveLocal('researcherName', name);
-    saveLocal('residenceArea', formStepContainer.querySelector('[name="residenceArea"]').value);
+    saveLocal('residenceArea', residenceArea);
     saveLocal('_step1_region', region);
-    saveLocal('_step1_storeType', formStepContainer.querySelector('[name="storeType"]')?.value || state.selectedStoreType || '');
+    saveLocal('_step1_storeType', storeType);
     saveLocal('_step1_storeName', storeName);
-    saveLocal('_step1_posCount', formStepContainer.querySelector('[name="posCount"]')?.value || '1');
-    saveLocal('_step1_displayLocation', formStepContainer.querySelector('[name="displayLocation"]')?.value || '');
+    saveLocal('_step1_posCount', posCount);
+    saveLocal('_step1_displayLocation', displayLocation);
     statusResearcher.textContent = name;
     state.currentStep = 2;
     renderCurrentStep(state.bootstrap);
@@ -409,21 +416,21 @@ async function handleSubmit(config) {
     }
   }
 
-  // We need data from step 1 which is no longer in DOM; use localStorage + hidden fields
-  // Re-read from localStorage for step-1 fields
+  // Read from both state.formData cache AND localStorage as fallback
+  const s = state.step1Data || {};
   const payload = {
     researcher: {
-      name: loadLocal('researcherName'),
-      residenceArea: loadLocal('residenceArea')
+      name: s.researcherName || loadLocal('researcherName') || '',
+      residenceArea: s.residenceArea || loadLocal('residenceArea') || ''
     },
     survey: {
-      region: loadLocal('_step1_region'),
-      storeType: loadLocal('_step1_storeType'),
-      storeName: loadLocal('_step1_storeName'),
-      posCount: loadLocal('_step1_posCount'),
-      displayLocation: loadLocal('_step1_displayLocation')
+      region: s.region || loadLocal('_step1_region') || '',
+      storeType: s.storeType || loadLocal('_step1_storeType') || '',
+      storeName: s.storeName || loadLocal('_step1_storeName') || '',
+      posCount: s.posCount || loadLocal('_step1_posCount') || '1',
+      displayLocation: s.displayLocation || loadLocal('_step1_displayLocation') || ''
     },
-    notes: formData.get('notes') || '',
+    notes: formData.get('notes') || loadLocal('_step3_notes') || '',
     photoDataUrl: state.photoDataUrl,
     prices
   };
