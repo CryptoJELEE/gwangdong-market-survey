@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp } from 'node:fs/promises';
 import { createApp } from '../src/server.js';
 import { loadConfig } from '../src/config.js';
 
@@ -13,6 +13,7 @@ async function createTestServer(t, envOverrides = {}) {
   const config = loadConfig({
     PORT: '0',
     DATA_DIR: tempDir,
+    DB_FILE: path.join(tempDir, 'survey.db'),
     STORE_FILE: path.join(tempDir, 'store.json'),
     UPLOADS_DIR: path.join(tempDir, 'uploads'),
     ...envOverrides
@@ -20,7 +21,10 @@ async function createTestServer(t, envOverrides = {}) {
 
   const server = createApp(config);
   await new Promise((resolve) => server.listen(0, resolve));
-  t.after(() => server.close());
+  t.after(() => {
+    if (server._store?.close) server._store.close();
+    server.close();
+  });
 
   const { port } = server.address();
   return {
@@ -64,10 +68,6 @@ test('submission API stores a survey and exposes it in bootstrap data', async (t
   assert.equal(bootstrap.submissions[0].survey.storeName, 'Healthy Drug');
   assert.equal(bootstrap.assignmentOverrides.length, 0);
   assert.equal(bootstrap.adminTokenConfigured, false);
-
-  const storeRaw = await readFile(path.join(tempDir, 'store.json'), 'utf8');
-  const store = JSON.parse(storeRaw);
-  assert.equal(store.submissions.length, 1);
 });
 
 test('override API updates assignment area', async (t) => {

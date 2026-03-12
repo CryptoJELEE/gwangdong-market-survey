@@ -7,6 +7,8 @@ import { assignArea } from './assignment.js';
 import { SurveyStore } from './storage/index.js';
 import { collectJsonBody, json } from './utils.js';
 
+const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
+
 function validateSubmission(body, config) {
   const required = [
     body.researcher?.name,
@@ -63,12 +65,37 @@ async function serveStatic(response, filePath) {
   response.end(contents);
 }
 
+function setCorsHeaders(response) {
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
 export function createApp(config = loadConfig()) {
   const store = new SurveyStore(config);
+  let initialized = false;
 
-  return http.createServer(async (request, response) => {
+  const server = http.createServer(async (request, response) => {
+    setCorsHeaders(response);
+
+    if (request.method === 'OPTIONS') {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+
     try {
+      if (!initialized) {
+        await store.init();
+        initialized = true;
+      }
+
       const url = new URL(request.url, `http://${request.headers.host}`);
+
+      if (request.method === 'GET' && url.pathname === '/health') {
+        json(response, 200, { status: 'ok' });
+        return;
+      }
 
       if (request.method === 'GET' && url.pathname === '/') {
         await serveStatic(response, path.resolve('src/client/index.html'));
@@ -102,7 +129,7 @@ export function createApp(config = loadConfig()) {
       }
 
       if (request.method === 'POST' && url.pathname === '/api/submissions') {
-        const body = await collectJsonBody(request);
+        const body = await collectJsonBody(request, MAX_BODY_BYTES);
         const payload = validateSubmission(body, config);
         const submissionCounts = await store.getSubmissionCounts();
         const assignment = assignArea({
@@ -123,7 +150,7 @@ export function createApp(config = loadConfig()) {
       }
 
       if (request.method === 'POST' && url.pathname === '/api/assignments/override') {
-        const body = await collectJsonBody(request);
+        const body = await collectJsonBody(request, MAX_BODY_BYTES);
         if (!body.submissionId || !body.assignedArea) {
           throw new Error('submissionId and assignedArea are required.');
         }
@@ -142,12 +169,33 @@ export function createApp(config = loadConfig()) {
       json(response, 400, { error: error.message });
     }
   });
+
+  server._store = store;
+  return server;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const config = loadConfig();
   const server = createApp(config);
-  server.listen(config.port, () => {
-    console.log(`Market survey MVP running at http://localhost:${config.port}`);
+  const host = '0.0.0.0';
+
+  server.listen(config.port, host, () => {
+    console.log(`Market survey app running at http://${host}:${config.port}`);
   });
+
+  function shutdown(signal) {
+    console.log(`\n${signal} received — shutting down gracefully...`);
+    server.close(() => {
+      if (server._store?.close) server._store.close();
+      console.log('Server closed.');
+      process.exit(0);
+    });
+    setTimeout(() => {
+      console.error('Forceful shutdown after timeout.');
+      process.exit(1);
+    }, 5000);
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }

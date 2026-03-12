@@ -1,13 +1,21 @@
-import { LocalStore } from './localStore.js';
+import { SQLiteStore } from './sqliteStore.js';
 import { GoogleSheetsMirror } from './googleSheetsStore.js';
 
 export class SurveyStore {
   constructor(config) {
-    this.localStore = new LocalStore(config);
+    this.localStore = new SQLiteStore(config);
     this.googleSheetsMirror = new GoogleSheetsMirror({
       ...config.googleSheets,
       products: config.products
     });
+  }
+
+  async init() {
+    await this.localStore.init();
+  }
+
+  close() {
+    if (this.localStore.close) this.localStore.close();
   }
 
   async getSubmissionCounts() {

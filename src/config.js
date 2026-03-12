@@ -33,6 +33,7 @@ export function loadConfig(env = process.env) {
   const dataDir = path.resolve(rootDir, mergedEnv.DATA_DIR || 'data');
   const uploadsDir = path.resolve(rootDir, mergedEnv.UPLOADS_DIR || path.join(dataDir, 'uploads'));
   const storeFile = path.resolve(rootDir, mergedEnv.STORE_FILE || path.join(dataDir, 'store.json'));
+  const dbFile = path.resolve(rootDir, mergedEnv.DB_FILE || path.join(dataDir, 'survey.db'));
   const products = DEFAULT_PRODUCTS;
 
   return {
@@ -44,6 +45,7 @@ export function loadConfig(env = process.env) {
     dataDir,
     uploadsDir,
     storeFile,
+    dbFile,
     googleSheets: {
       enabled: String(mergedEnv.GOOGLE_SHEETS_ENABLED || 'false').toLowerCase() === 'true',
       spreadsheetId: mergedEnv.GOOGLE_SHEETS_SPREADSHEET_ID || '',

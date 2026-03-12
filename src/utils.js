@@ -28,9 +28,14 @@ export async function writeJson(filePath, value) {
   await writeFile(filePath, JSON.stringify(value, null, 2));
 }
 
-export async function collectJsonBody(request) {
+export async function collectJsonBody(request, maxBytes = Infinity) {
   const chunks = [];
+  let totalLength = 0;
   for await (const chunk of request) {
+    totalLength += chunk.length;
+    if (totalLength > maxBytes) {
+      throw new Error('Request body too large.');
+    }
     chunks.push(chunk);
   }
   if (!chunks.length) return {};

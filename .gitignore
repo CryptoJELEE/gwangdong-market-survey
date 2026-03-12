@@ -1,4 +1,8 @@
 .env
+node_modules/
 data/uploads/
 data/store.json
+data/*.db
+data/*.db-wal
+data/*.db-shm
 
