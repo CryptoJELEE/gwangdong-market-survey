@@ -640,7 +640,7 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
 /* ── Address Autocomplete ── */
 .address-search-wrap { position: relative; }
 .address-dropdown {
-  position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+  position: relative; left: 0; right: 0; z-index: 100;
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 10px; margin-top: 4px; max-height: 220px; overflow-y: auto;
   list-style: none; padding: 4px 0; display: none;
