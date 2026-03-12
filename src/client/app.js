@@ -674,8 +674,8 @@ async function renderMapData() {
   const openInfoWindow = { current: null };
 
   submissions.forEach((sub) => {
-    const lat = sub.lat || (sub.geocode && sub.geocode.lat);
-    const lng = sub.lng || (sub.geocode && sub.geocode.lng);
+    const lat = sub.lat || (sub.geocode && sub.geocode.lat) || (sub.survey?.coordinates?.lat) || (sub.researcher?.coordinates?.lat);
+    const lng = sub.lng || (sub.geocode && sub.geocode.lng) || (sub.survey?.coordinates?.lng) || (sub.researcher?.coordinates?.lng);
     if (!lat || !lng) return;
 
     const color = getResearcherColor(sub.researcher.name);
