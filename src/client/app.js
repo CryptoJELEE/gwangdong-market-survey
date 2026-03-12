@@ -229,6 +229,11 @@ function renderStep1(config) {
     }
     saveLocal('researcherName', name);
     saveLocal('residenceArea', formStepContainer.querySelector('[name="residenceArea"]').value);
+    saveLocal('_step1_region', region);
+    saveLocal('_step1_storeType', formStepContainer.querySelector('[name="storeType"]')?.value || state.selectedStoreType || '');
+    saveLocal('_step1_storeName', storeName);
+    saveLocal('_step1_posCount', formStepContainer.querySelector('[name="posCount"]')?.value || '1');
+    saveLocal('_step1_displayLocation', formStepContainer.querySelector('[name="displayLocation"]')?.value || '');
     statusResearcher.textContent = name;
     state.currentStep = 2;
     renderCurrentStep(state.bootstrap);
