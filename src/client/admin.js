@@ -298,7 +298,7 @@ function renderAdmin() {
     <div class="quick-stat"><span class="qs-icon">📍</span><span class="qs-value">${coveredAreas}/${areas.length}</span><span class="qs-label">지역</span></div>
   `;
 
-  // Researcher stats with last activity
+  // Researcher stats with last activity + detail profile
   const researcherStats = document.querySelector('#researcher-stats');
   const sortedResearchers = Object.entries(researchers).sort((a, b) => b[1] - a[1]);
   researcherStats.innerHTML = `
@@ -308,12 +308,13 @@ function renderAdmin() {
         const lastDate = new Date(researcherLastActivity[name]).toLocaleDateString('ko-KR');
         const rank = idx + 1;
         return `
-        <div class="area-card">
+        <div class="area-card" data-researcher="${escapeHtml(name)}">
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px;">#${rank}</div>
           <div class="area-name">${escapeHtml(name)}</div>
           <div class="area-count">${count}건</div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">최근 ${lastDate}</div>
         </div>
+        <div class="researcher-detail" id="rd-${idx}"></div>
       `;
       }).join('')}
     </div>
@@ -364,6 +365,179 @@ function renderAdmin() {
   renderSubmissionList('', '', '', '');
   renderCharts();
   renderWeekCompare();
+  bindResearcherDetails();
+  renderPriceTrendDropdowns();
+}
+
+// ── Researcher detail profile ──
+function bindResearcherDetails() {
+  if (!adminData) return;
+  const cards = document.querySelectorAll('.area-card[data-researcher]');
+  cards.forEach((card, idx) => {
+    card.addEventListener('click', () => {
+      const detail = document.querySelector(`#rd-${idx}`);
+      if (!detail) return;
+      if (detail.classList.contains('open')) {
+        detail.classList.remove('open');
+        return;
+      }
+      // Close others
+      document.querySelectorAll('.researcher-detail.open').forEach((d) => d.classList.remove('open'));
+      const name = card.dataset.researcher;
+      detail.innerHTML = buildResearcherDetail(name);
+      detail.classList.add('open');
+    });
+  });
+}
+
+function buildResearcherDetail(name) {
+  const { submissions } = adminData;
+  const mine = submissions.filter((s) => s.researcher.name === name);
+  const total = mine.length;
+  if (total === 0) return '<p>데이터 없음</p>';
+
+  const withPrice = mine.filter((s) => (s.prices || []).length > 0).length;
+  const priceRate = Math.round((withPrice / total) * 100);
+  const withPhoto = mine.filter((s) => s.photo).length;
+  const photoRate = Math.round((withPhoto / total) * 100);
+
+  // Top 3 areas
+  const areaMap = {};
+  mine.forEach((s) => {
+    const a = s.assignment?.currentArea;
+    if (a) areaMap[a] = (areaMap[a] || 0) + 1;
+  });
+  const topAreas = Object.entries(areaMap).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  // Store types
+  const storeMap = {};
+  mine.forEach((s) => {
+    const t = s.survey.storeType;
+    if (t) storeMap[t] = (storeMap[t] || 0) + 1;
+  });
+  const topStores = Object.entries(storeMap).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  // Recent 5
+  const recent5 = [...mine].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 5);
+
+  // Activity period
+  const dates = mine.map((s) => new Date(s.createdAt).getTime());
+  const firstDate = new Date(Math.min(...dates)).toLocaleDateString('ko-KR');
+  const lastDate = new Date(Math.max(...dates)).toLocaleDateString('ko-KR');
+
+  return `
+    <div class="rd-grid">
+      <div class="rd-item"><div class="rd-label">총 제출</div><div class="rd-value">${total}건</div></div>
+      <div class="rd-item"><div class="rd-label">가격 입력률</div><div class="rd-value">${priceRate}%</div></div>
+      <div class="rd-item"><div class="rd-label">사진 첨부율</div><div class="rd-value">${photoRate}%</div></div>
+      <div class="rd-item"><div class="rd-label">활동 기간</div><div class="rd-value" style="font-size:12px;">${firstDate} ~ ${lastDate}</div></div>
+    </div>
+    <div class="rd-label" style="margin-bottom:4px;">주요 조사 지역</div>
+    <div class="rd-tags">${topAreas.map(([a, c]) => `<span class="rd-tag">${escapeHtml(a)} (${c})</span>`).join('')}</div>
+    <div class="rd-label" style="margin-top:8px;margin-bottom:4px;">주요 매장유형</div>
+    <div class="rd-tags">${topStores.map(([t, c]) => `<span class="rd-tag">${escapeHtml(t)} (${c})</span>`).join('')}</div>
+    <div class="rd-recent">
+      <div class="rd-label" style="margin-bottom:4px;">최근 5건</div>
+      ${recent5.map((s) => `
+        <div class="rd-recent-item">
+          <span>${escapeHtml(s.survey.storeName)}</span>
+          <span style="color:var(--text-muted);font-size:12px;">${new Date(s.createdAt).toLocaleDateString('ko-KR')}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ── Price trend ──
+function renderPriceTrendDropdowns() {
+  if (!adminData) return;
+  const products = adminData.products || [];
+  const prodSelect = document.querySelector('#trend-product');
+  const sizeSelect = document.querySelector('#trend-size');
+
+  prodSelect.innerHTML = '<option value="">제품 선택</option>' +
+    products.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.label)}</option>`).join('');
+
+  prodSelect.addEventListener('change', () => {
+    const pid = prodSelect.value;
+    const prod = products.find((p) => p.id === pid);
+    if (!prod) {
+      sizeSelect.innerHTML = '<option value="">사이즈 선택</option>';
+      document.querySelector('#trend-chart').innerHTML = '';
+      return;
+    }
+    sizeSelect.innerHTML = '<option value="">사이즈 선택</option>' +
+      prod.sizes.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+    document.querySelector('#trend-chart').innerHTML = '';
+  });
+
+  sizeSelect.addEventListener('change', () => {
+    renderPriceTrend(prodSelect.value, sizeSelect.value);
+  });
+}
+
+function renderPriceTrend(productId, size) {
+  const chart = document.querySelector('#trend-chart');
+  if (!productId || !size || !adminData) {
+    chart.innerHTML = '';
+    return;
+  }
+
+  const products = adminData.products || [];
+  const prod = products.find((p) => p.id === productId);
+  if (!prod) { chart.innerHTML = ''; return; }
+
+  // Gather matching price entries with timestamps
+  const entries = [];
+  adminData.submissions.forEach((s) => {
+    (s.prices || []).forEach((p) => {
+      if (p.productLabel === prod.label && p.size === size && p.price) {
+        entries.push({
+          date: new Date(s.createdAt),
+          price: Number(String(p.price).replace(/[^0-9]/g, '')),
+          store: s.survey.storeName,
+          area: s.assignment?.currentArea || ''
+        });
+      }
+    });
+  });
+
+  if (entries.length === 0) {
+    chart.innerHTML = '<div class="notice">해당 제품/사이즈의 가격 데이터가 없어요.</div>';
+    return;
+  }
+
+  // Sort by date
+  entries.sort((a, b) => a.date - b.date);
+
+  const prices = entries.map((e) => e.price);
+  const avg = prices.reduce((s, p) => s + p, 0) / prices.length;
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const barMax = maxP * 1.1 || 1;
+
+  chart.innerHTML = `
+    <div style="max-height:300px;overflow-y:auto;">
+      ${entries.map((e) => {
+        const pct = Math.round((e.price / barMax) * 100);
+        const isOutlier = Math.abs(e.price - avg) > avg * 0.3;
+        const dateStr = e.date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+        return `
+        <div class="trend-bar-row">
+          <span class="trend-bar-label" title="${escapeHtml(e.store)}">${dateStr} ${escapeHtml(e.store)}</span>
+          <div class="trend-bar-track">
+            <div class="trend-bar-fill ${isOutlier ? 'outlier' : ''}" style="width:${pct}%;background:${isOutlier ? 'var(--error)' : 'var(--primary)'};"></div>
+          </div>
+          <span class="trend-bar-value" style="${isOutlier ? 'color:var(--error);' : ''}">\u20A9${e.price.toLocaleString()}</span>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="trend-stats">
+      <div class="trend-stat"><div class="ts-label">최저가</div><div class="ts-value">\u20A9${minP.toLocaleString()}</div></div>
+      <div class="trend-stat"><div class="ts-label">최고가</div><div class="ts-value">\u20A9${maxP.toLocaleString()}</div></div>
+      <div class="trend-stat"><div class="ts-label">평균가</div><div class="ts-value">\u20A9${Math.round(avg).toLocaleString()}</div></div>
+    </div>
+  `;
 }
 
 function applyDateFilter(submissions, dateFilter) {
@@ -866,6 +1040,13 @@ document.querySelector('#add-product-btn').addEventListener('click', async () =>
     renderSettingsProducts();
     await loadAdminData();
   }
+});
+
+// ── Summary print ──
+document.querySelector('#summary-btn').addEventListener('click', () => {
+  const title = document.querySelector('#admin-title');
+  title.setAttribute('data-print-date', new Date().toLocaleDateString('ko-KR'));
+  window.print();
 });
 
 // ── Init ──

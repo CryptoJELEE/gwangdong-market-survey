@@ -33,8 +33,31 @@
       .product-card .add-size-row{display:flex;gap:4px;margin-top:6px}
       .product-card .add-size-row input{flex:1;font-size:12px;padding:4px 8px}
       .product-card .add-size-row button{font-size:12px;padding:4px 8px}
+      .researcher-detail{display:none;padding:12px;margin-top:8px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);animation:slideDown .2s ease}
+      .researcher-detail.open{display:block}
+      .researcher-detail .rd-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+      .researcher-detail .rd-item{padding:8px 10px;background:var(--bg);border-radius:var(--radius-sm)}
+      .researcher-detail .rd-label{font-size:11px;color:var(--text-muted);font-weight:600}
+      .researcher-detail .rd-value{font-size:16px;font-weight:800;color:var(--primary);margin-top:2px}
+      .researcher-detail .rd-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+      .researcher-detail .rd-tag{padding:2px 8px;background:var(--primary);color:#fff;border-radius:12px;font-size:11px;font-weight:600}
+      .researcher-detail .rd-recent{margin-top:10px}
+      .researcher-detail .rd-recent-item{padding:6px 8px;border-bottom:1px solid var(--border);font-size:13px;display:flex;justify-content:space-between}
+      .researcher-detail .rd-recent-item:last-child{border-bottom:none}
+      .area-card[data-researcher]{cursor:pointer}
+      .area-card[data-researcher]:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}
+      .trend-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+      .trend-bar-label{min-width:90px;font-size:12px;font-weight:600;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+      .trend-bar-track{flex:1;height:22px;background:var(--border);border-radius:6px;overflow:hidden;position:relative}
+      .trend-bar-fill{height:100%;border-radius:6px;transition:width .4s ease}
+      .trend-bar-value{min-width:60px;font-size:12px;font-weight:700;color:var(--primary);text-align:right}
+      .trend-bar-fill.outlier{background:var(--error)!important}
+      .trend-stats{display:flex;gap:12px;margin-top:10px;flex-wrap:wrap}
+      .trend-stat{padding:8px 12px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;flex:1;min-width:80px}
+      .trend-stat .ts-label{font-size:11px;color:var(--text-muted);font-weight:600}
+      .trend-stat .ts-value{font-size:18px;font-weight:800;color:var(--primary);margin-top:2px}
       @media print{
-        .status-bar,.logout-btn,#login-section,#csv-btn,#backup-btn,.filter-bar,#submission-list,.sub-actions,.btn,.btn-submit,.new-submission-banner,#researcher-stats,.no-print,#settings-section{display:none!important}
+        .status-bar,.logout-btn,#login-section,#csv-btn,#backup-btn,.filter-bar,#submission-list,.sub-actions,.btn,.btn-submit,.new-submission-banner,#researcher-stats,.no-print,#settings-section,#price-trend-section{display:none!important}
         #admin-section{display:block!important}
         #admin-section .hidden{display:block!important}
         body{background:#fff;color:#000;font-size:12pt}
@@ -43,6 +66,8 @@
         #charts-section{break-before:auto}
         #charts-section .card{break-inside:avoid;page-break-inside:avoid}
         h1::after{content:" - 인쇄일: " attr(data-print-date);font-size:12pt;font-weight:400}
+        .print-summary-section{display:block!important}
+        .print-summary-section .card{break-inside:avoid;page-break-inside:avoid}
       }
     </style>
   </head>
@@ -97,6 +122,23 @@
         </div>
 
         <div id="researcher-stats" class="card stack" style="margin-top:12px;"></div>
+
+        <div id="price-trend-section" class="card stack" style="margin-top:12px;">
+          <h2>가격 트렌드 📈</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+            <select id="trend-product" style="flex:1;min-width:120px;">
+              <option value="">제품 선택</option>
+            </select>
+            <select id="trend-size" style="flex:1;min-width:120px;">
+              <option value="">사이즈 선택</option>
+            </select>
+          </div>
+          <div id="trend-chart"></div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <button class="btn btn-secondary no-print" id="summary-btn" style="width:100%;">📊 요약 보기</button>
+        </div>
 
         <div id="settings-section" class="card stack" style="margin-top:12px;">
           <h2>설정 ⚙️</h2>

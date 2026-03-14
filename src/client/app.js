@@ -5,6 +5,7 @@ const state = {
   gps: { lat: null, lng: null, status: 'pending' },
   currentStep: 1,
   photoDataUrl: '',
+  photos: [],
   selectedStoreType: '',
   pollTimer: null,
   previousBadgeIndex: -1
@@ -116,6 +117,7 @@ function renderStepIndicator() {
 function renderForm(config) {
   state.currentStep = 1;
   state.photoDataUrl = '';
+  state.photos = [];
   state.selectedStoreType = config.storeTypeTemplates[0]?.label || '';
   surveyForm.classList.remove('hidden');
   successView.classList.add('hidden');
@@ -424,10 +426,32 @@ function renderStep2(config) {
     });
   });
 
+  // Won formatting on price inputs
+  formStepContainer.querySelectorAll('.price-field input').forEach((input) => {
+    input.addEventListener('blur', () => {
+      const raw = input.value.replace(/[^0-9]/g, '');
+      if (raw) {
+        input.dataset.rawValue = raw;
+        input.type = 'text';
+        input.value = '\u20A9' + Number(raw).toLocaleString();
+      }
+    });
+    input.addEventListener('focus', () => {
+      if (input.dataset.rawValue) {
+        input.type = 'number';
+        input.value = input.dataset.rawValue;
+        delete input.dataset.rawValue;
+      }
+    });
+  });
+
   function savePrices() {
     const inputs = formStepContainer.querySelectorAll('.price-field input');
     const prices = {};
-    inputs.forEach((i) => { if (i.value.trim()) prices[i.name] = i.value.trim(); });
+    inputs.forEach((i) => {
+      const val = i.dataset.rawValue || i.value.replace(/[^0-9]/g, '');
+      if (val) prices[i.name] = val;
+    });
     saveLocal('_step2_prices', JSON.stringify(prices));
   }
 
@@ -452,7 +476,7 @@ function renderStep2(config) {
   formStepContainer.querySelector('#next-step2').addEventListener('click', () => {
     savePrices();
     const inputs = formStepContainer.querySelectorAll('.price-field input');
-    const hasAnyPrice = [...inputs].some((i) => i.value.trim());
+    const hasAnyPrice = [...inputs].some((i) => i.dataset.rawValue || i.value.replace(/[^0-9]/g, ''));
     if (!hasAnyPrice) {
       showPriceReminder(config);
       return;
@@ -493,6 +517,50 @@ function showPriceReminder(config) {
   });
 }
 
+function renderPhotoSlots() {
+  const photoArea = formStepContainer.querySelector('#photo-area');
+  const slots = [];
+  for (let i = 0; i < 3; i++) {
+    if (state.photos[i]) {
+      slots.push(`
+        <div class="photo-slot" data-slot="${i}" style="display:inline-block;position:relative;width:calc(33% - 6px);aspect-ratio:1;border-radius:8px;overflow:hidden;vertical-align:top;">
+          <img src="${state.photos[i]}" alt="사진 ${i + 1}" style="width:100%;height:100%;object-fit:cover;" />
+          <button type="button" class="photo-slot-remove" data-remove="${i}" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:12px;cursor:pointer;line-height:22px;text-align:center;">\u2715</button>
+        </div>
+      `);
+    } else {
+      slots.push(`
+        <label class="photo-slot" data-slot="${i}" style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:calc(33% - 6px);aspect-ratio:1;border:2px dashed var(--border,#ddd);border-radius:8px;cursor:pointer;vertical-align:top;gap:4px;font-size:.8rem;color:#999;">
+          <span style="font-size:1.4rem;">\u{1F4F7}</span>
+          <span>${state.photos.filter(Boolean).length === 0 && i === 0 ? '📷 촬영' : `${i + 1}`}</span>
+          <input type="file" accept="image/*" capture="environment" data-photo-slot="${i}" style="display:none;" />
+        </label>
+      `);
+    }
+  }
+  photoArea.innerHTML = `<div style="display:flex;gap:6px;">${slots.join('')}</div>`;
+
+  // Bind events
+  photoArea.querySelectorAll('[data-photo-slot]').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const file = input.files[0];
+      if (!file) return;
+      const idx = Number(input.dataset.photoSlot);
+      state.photos[idx] = await fileToDataUrl(file);
+      state.photoDataUrl = state.photos[0] || '';
+      renderPhotoSlots();
+    });
+  });
+  photoArea.querySelectorAll('[data-remove]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = Number(btn.dataset.remove);
+      state.photos.splice(idx, 1);
+      state.photoDataUrl = state.photos[0] || '';
+      renderPhotoSlots();
+    });
+  });
+}
+
 function renderStep3(config) {
   formStepContainer.innerHTML = `
     <div class="card stack">
@@ -500,14 +568,8 @@ function renderStep3(config) {
         <h3>마무리 📸</h3>
       </div>
       <div class="field">
-        <label>매장 사진</label>
-        <div id="photo-area">
-          <label class="camera-btn" id="camera-btn">
-            <span class="camera-icon">\u{1F4F7}</span>
-            <span>📷 매장 사진 찍기</span>
-            <input type="file" name="photo" accept="image/*" capture="environment" id="photo-input" />
-          </label>
-        </div>
+        <label>매장 사진 (최대 3장)</label>
+        <div id="photo-area"></div>
       </div>
       <div class="field">
         <label>메모</label>
@@ -521,29 +583,7 @@ function renderStep3(config) {
     </div>
   `;
 
-  const photoInput = formStepContainer.querySelector('#photo-input');
-  const photoArea = formStepContainer.querySelector('#photo-area');
-  photoInput.addEventListener('change', async () => {
-    const file = photoInput.files[0];
-    if (!file) return;
-    state.photoDataUrl = await fileToDataUrl(file);
-    photoArea.innerHTML = `
-      <div class="photo-preview-container">
-        <img class="photo-preview" src="${state.photoDataUrl}" alt="미리보기" />
-        <button type="button" class="photo-remove" id="photo-remove">\u2715</button>
-      </div>
-    `;
-    photoArea.querySelector('#photo-remove').addEventListener('click', () => {
-      state.photoDataUrl = '';
-      photoArea.innerHTML = `
-        <label class="camera-btn">
-          <span class="camera-icon">\u{1F4F7}</span>
-          <span>📷 매장 사진 찍기</span>
-          <input type="file" name="photo" accept="image/*" capture="environment" />
-        </label>
-      `;
-    });
-  });
+  renderPhotoSlots();
 
   formStepContainer.querySelector('#prev-step3').addEventListener('click', () => {
     saveLocal('_step3_notes', formStepContainer.querySelector('[name="notes"]')?.value || '');
@@ -563,11 +603,13 @@ async function handleSubmit(config) {
   submitBtn.innerHTML = '<span class="spinner spinner-inline"></span> 저장 중...';
 
   const formData = new FormData(surveyForm);
+  let savedPrices = {};
+  try { savedPrices = JSON.parse(loadLocal('_step2_prices') || '{}'); } catch { /* ignore */ }
   const prices = [];
   for (const product of config.products) {
     for (const size of product.sizes) {
       const name = priceFieldName(product.id, size);
-      const price = formData.get(name);
+      const price = formData.get(name) || savedPrices[name] || '';
       if (price) {
         prices.push({ productId: product.id, productLabel: product.label, size, price });
       }
@@ -596,7 +638,8 @@ async function handleSubmit(config) {
       displayLocation: sanitize(s.displayLocation || loadLocal('_step1_displayLocation'))
     },
     notes: sanitize(formData.get('notes') || loadLocal('_step3_notes')),
-    photoDataUrl: state.photoDataUrl,
+    photoDataUrl: state.photos[0] || state.photoDataUrl || '',
+    photos: state.photos.filter(Boolean),
     prices: validPrices
   };
 
@@ -649,6 +692,7 @@ async function handleSubmit(config) {
       try { localStorage.removeItem('kwangdong_' + k); } catch {}
     });
     state.photoDataUrl = '';
+    state.photos = [];
     // Check badge before reload
     const oldBadgeIdx = state.previousBadgeIndex;
     showSuccess(result);
@@ -1014,15 +1058,21 @@ function renderPhotoGallery(submissions) {
   }
 
   const mySubs = getMySubmissions(submissions);
-  const photosData = mySubs
-    .filter((s) => s.photoDataUrl)
+  const photosData = [];
+  mySubs
+    .filter((s) => s.photoDataUrl || (s.photos && s.photos.length > 0))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 12)
-    .map((s) => ({
-      url: s.photoDataUrl,
-      storeName: s.survey.storeName,
-      date: new Date(s.createdAt).toLocaleDateString('ko-KR')
-    }));
+    .forEach((s) => {
+      const urls = (s.photos && s.photos.length > 0) ? s.photos : (s.photoDataUrl ? [s.photoDataUrl] : []);
+      urls.forEach((url) => {
+        photosData.push({
+          url,
+          storeName: s.survey.storeName,
+          date: new Date(s.createdAt).toLocaleDateString('ko-KR')
+        });
+      });
+    });
+  photosData.splice(12);
 
   if (photosData.length === 0) {
     container.innerHTML = `
@@ -1143,6 +1193,18 @@ function renderDashboard(config) {
   // 3. Product Leaderboard
   const productStats = calcProductStats(submissions, products);
   const medals = ['🥇', '🥈', '🥉'];
+
+  // Build per-size competitor average map (excluding ion-kick)
+  const competitorAvgBySize = {};
+  productStats.forEach((ps) => {
+    if (ps.id === 'ion-kick') return;
+    Object.entries(ps.sizeStats).forEach(([size, stats]) => {
+      if (!competitorAvgBySize[size]) competitorAvgBySize[size] = { total: 0, count: 0 };
+      competitorAvgBySize[size].total += stats.avg;
+      competitorAvgBySize[size].count += 1;
+    });
+  });
+
   const leaderboard = document.querySelector('#product-leaderboard');
   leaderboard.innerHTML = `
     <h2>제품 현황판 🏆</h2>
@@ -1152,6 +1214,27 @@ function renderDashboard(config) {
       const isIonKick = ps.id === 'ion-kick';
       const barColor = isIonKick ? 'var(--gold)' : 'var(--primary)';
       const cardClass = isIonKick ? 'product-stat-card is-highlight' : 'product-stat-card';
+
+      // Price comparison badges for ion-kick
+      let priceCompareHtml = '';
+      if (isIonKick) {
+        const badges = [];
+        Object.entries(ps.sizeStats).forEach(([size, stats]) => {
+          const comp = competitorAvgBySize[size];
+          if (!comp || comp.count === 0) return;
+          const compAvg = Math.round(comp.total / comp.count);
+          const diff = stats.avg - compAvg;
+          if (diff < 0) {
+            badges.push(`<span class="price-compare-badge price-compare-cheaper" style="display:inline-block;padding:4px 10px;border-radius:12px;font-size:.8rem;font-weight:600;background:#d4edda;color:#155724;margin:2px 0;">💪 ${size} 이온킥이 평균 ₩${Math.abs(diff).toLocaleString()} 저렴해요!</span>`);
+          } else if (diff > 0) {
+            badges.push(`<span class="price-compare-badge price-compare-pricier" style="display:inline-block;padding:4px 10px;border-radius:12px;font-size:.8rem;font-weight:600;background:#fff3cd;color:#856404;margin:2px 0;">📊 ${size} 경쟁사 대비 ₩${diff.toLocaleString()} 비싸요</span>`);
+          }
+        });
+        if (badges.length > 0) {
+          priceCompareHtml = `<div class="price-compare-badges" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">${badges.join('')}</div>`;
+        }
+      }
+
       const sizesHtml = Object.entries(ps.sizeStats).map(([size, stats]) =>
         `<div class="ps-size"><span class="ps-size-label">${size}</span> 평균 ₩${stats.avg.toLocaleString()} <span class="ps-range">(₩${stats.min.toLocaleString()}~₩${stats.max.toLocaleString()})</span></div>`
       ).join('');
@@ -1166,6 +1249,7 @@ function renderDashboard(config) {
           </div>
           <div class="ps-detail">${ps.storeCount}/${ps.totalStores}개 매장</div>
           ${sizesHtml ? `<div class="ps-sizes">${sizesHtml}</div>` : ''}
+          ${priceCompareHtml}
         </div>
       `;
     }).join('')}
