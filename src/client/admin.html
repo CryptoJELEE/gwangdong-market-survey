@@ -6,6 +6,30 @@
     <title>이온로드 관리자</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .new-submission-banner{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--primary);color:#fff;font-weight:600;font-size:14px;border-radius:var(--radius-sm);margin-bottom:12px;animation:slideDown .3s ease}
+      @keyframes slideDown{from{transform:translateY(-100%);opacity:0}to{transform:translateY(0);opacity:1}}
+      .new-submission-banner button{background:#fff;color:var(--primary);border:none;padding:6px 14px;border-radius:var(--radius-sm);font-weight:700;cursor:pointer;font-size:13px}
+      .week-compare{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+      .week-compare-item{display:flex;flex-direction:column;align-items:center;padding:12px;background:var(--bg);border-radius:var(--radius-sm)}
+      .week-compare-item .wc-label{font-size:12px;color:var(--text-muted);font-weight:600}
+      .week-compare-item .wc-value{font-size:24px;font-weight:800;color:var(--primary);margin:4px 0}
+      .week-compare-delta{text-align:center;padding:8px;font-size:14px;font-weight:700;border-radius:var(--radius-sm)}
+      .week-compare-delta.positive{background:#e8f5e9;color:#2e7d32}
+      .week-compare-delta.negative{background:#ffeaea;color:#c62828}
+      .week-compare-delta.neutral{background:var(--bg);color:var(--text-muted)}
+      @media print{
+        .status-bar,.logout-btn,#login-section,#csv-btn,#backup-btn,.filter-bar,#submission-list,.sub-actions,.btn,.btn-submit,.new-submission-banner,#researcher-stats,.no-print{display:none!important}
+        #admin-section{display:block!important}
+        #admin-section .hidden{display:block!important}
+        body{background:#fff;color:#000;font-size:12pt}
+        .card{box-shadow:none;border:1px solid #ccc;break-inside:avoid}
+        .quick-stats{break-inside:avoid}
+        #charts-section{break-before:auto}
+        #charts-section .card{break-inside:avoid;page-break-inside:avoid}
+        h1::after{content:" - 인쇄일: " attr(data-print-date);font-size:12pt;font-weight:400}
+      }
+    </style>
   </head>
   <body>
     <div class="status-bar">
@@ -31,9 +55,10 @@
       </section>
 
       <section id="admin-section" class="hidden">
+        <div id="new-submission-banner"></div>
         <header class="hero">
           <p class="eyebrow">이온로드 관리자 🔒</p>
-          <h1>관리자 대시보드</h1>
+          <h1 id="admin-title">관리자 대시보드</h1>
         </header>
 
         <div id="admin-stats" class="quick-stats"></div>
@@ -45,11 +70,14 @@
           <div class="card stack" id="chart-quality"></div>
         </div>
 
+        <div id="week-compare-section" class="card stack" style="margin-top:12px;"></div>
+
         <div class="card stack" style="margin-top:12px;">
           <h2>내보내기 💾</h2>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn btn-primary" id="csv-btn" style="flex:1;">📥 CSV 다운로드</button>
             <button class="btn btn-secondary" id="backup-btn" style="flex:1;">백업 (JSON)</button>
+            <button class="btn btn-secondary no-print" id="print-btn" style="flex:1;">🖨️ 인쇄</button>
           </div>
         </div>
 

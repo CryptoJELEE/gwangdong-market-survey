@@ -73,6 +73,7 @@ function showLogin() {
   loginBtn.disabled = false;
   passwordInput.value = '';
   loginError.textContent = '';
+  stopPolling();
 }
 
 async function showAdmin() {
@@ -101,6 +102,8 @@ async function init() {
 
 // ── Admin data ──
 let adminData = null;
+let knownCount = 0;
+let pollTimer = null;
 
 async function loadAdminData() {
   try {
@@ -116,10 +119,53 @@ async function loadAdminData() {
     }
     const submissions = await submissionsRes.json();
     adminData = { ...bootstrap, submissions };
+    knownCount = submissions.length;
     renderAdmin();
+    startPolling();
   } catch {
     showToast('데이터를 불러올 수 없어요.', 'error');
   }
+}
+
+// ── Polling for new submissions ──
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(pollNewSubmissions, 30000);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+async function pollNewSubmissions() {
+  try {
+    const res = await authFetch('/api/admin/submissions');
+    if (!res.ok) return;
+    const submissions = await res.json();
+    const newCount = submissions.length - knownCount;
+    if (newCount > 0) {
+      showNewSubmissionBanner(newCount);
+    }
+  } catch { /* ignore poll errors */ }
+}
+
+function showNewSubmissionBanner(count) {
+  const banner = document.querySelector('#new-submission-banner');
+  banner.innerHTML = `
+    <div class="new-submission-banner">
+      <span>\uD83D\uDD14 새 기록 ${count}건이 추가됐어요!</span>
+      <button id="refresh-btn">새로고침</button>
+    </div>
+  `;
+  banner.querySelector('#refresh-btn').addEventListener('click', async () => {
+    banner.innerHTML = '';
+    await loadAdminData();
+  });
+}
+
+function hideNewSubmissionBanner() {
+  const banner = document.querySelector('#new-submission-banner');
+  if (banner) banner.innerHTML = '';
 }
 
 // ── Chart helpers ──
@@ -315,6 +361,7 @@ function renderAdmin() {
   filterStore.addEventListener('input', doFilter);
   renderSubmissionList('', '', '', '');
   renderCharts();
+  renderWeekCompare();
 }
 
 function applyDateFilter(submissions, dateFilter) {
@@ -445,11 +492,20 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
 }
 
 // ── CSV Export ──
+function formatDateCSV(dateStr) {
+  const d = new Date(dateStr);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${mo}-${da} ${h}:${mi}`;
+}
+
 document.querySelector('#csv-btn').addEventListener('click', () => {
   if (!adminData) return;
   const { submissions, products } = adminData;
 
-  // Build price column headers from products
   const priceHeaders = [];
   for (const product of products) {
     for (const size of product.sizes) {
@@ -457,16 +513,21 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
     }
   }
 
-  const headers = ['제출일시', '조사자', '거주지역', '조사지역', '매장유형', '매장명', 'POS대수', '진열위치', ...priceHeaders, '메모'];
+  const headers = ['제출일시', '조사자', '거주지역', '조사지역', '매장유형', '매장명', 'POS대수', '진열위치', ...priceHeaders, '메모', '위도', '경도'];
 
   const rows = submissions.map((sub) => {
     const priceMap = {};
     (sub.prices || []).forEach((p) => {
       priceMap[`${p.productLabel} ${p.size}`] = p.price;
     });
-    const priceCols = priceHeaders.map((h) => priceMap[h] !== undefined ? priceMap[h] : '');
+    const priceCols = priceHeaders.map((h) => {
+      const v = priceMap[h];
+      if (v === undefined || v === null) return '';
+      return String(v).replace(/[^0-9]/g, '');
+    });
+    const gps = sub.gps || sub.location;
     return [
-      new Date(sub.createdAt).toLocaleString('ko-KR'),
+      formatDateCSV(sub.createdAt),
       sub.researcher.name,
       sub.researcher.residenceArea,
       sub.assignment?.currentArea || '',
@@ -475,7 +536,9 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
       sub.survey.posCount,
       sub.survey.displayLocation || '',
       ...priceCols,
-      sub.notes || ''
+      sub.notes || '',
+      gps?.lat ?? '',
+      gps?.lng ?? ''
     ];
   });
 
@@ -494,8 +557,9 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const dateStr = new Date().toISOString().slice(0, 10);
+  const count = submissions.length;
   a.href = url;
-  a.download = `ionroad-export-${dateStr}.csv`;
+  a.download = `ionroad-export-${count}\uAC74-${dateStr}.csv`;
   a.click();
   URL.revokeObjectURL(url);
   showToast('CSV 파일이 다운로드되었어요.');
@@ -538,6 +602,66 @@ function showToast(message, type) {
   toast.textContent = message;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
+}
+
+// ── Print ──
+document.querySelector('#print-btn').addEventListener('click', () => {
+  const title = document.querySelector('#admin-title');
+  title.setAttribute('data-print-date', new Date().toLocaleDateString('ko-KR'));
+  window.print();
+});
+
+// ── Week comparison ──
+function renderWeekCompare() {
+  if (!adminData) return;
+  const section = document.querySelector('#week-compare-section');
+  const { submissions } = adminData;
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayOfWeek = startOfToday.getDay() || 7; // Mon=1 ... Sun=7
+
+  const thisWeekStart = new Date(startOfToday);
+  thisWeekStart.setDate(thisWeekStart.getDate() - (dayOfWeek - 1));
+
+  const lastWeekStart = new Date(thisWeekStart);
+  lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+  const lastWeekEnd = new Date(thisWeekStart);
+
+  const thisWeekCount = submissions.filter((s) => new Date(s.createdAt) >= thisWeekStart).length;
+  const lastWeekCount = submissions.filter((s) => {
+    const d = new Date(s.createdAt);
+    return d >= lastWeekStart && d < lastWeekEnd;
+  }).length;
+
+  const delta = thisWeekCount - lastWeekCount;
+  let deltaText, deltaClass;
+  if (delta > 0) {
+    deltaText = `\u25B2 +${delta}\uAC74`;
+    deltaClass = 'positive';
+  } else if (delta < 0) {
+    deltaText = `\u25BC ${delta}\uAC74`;
+    deltaClass = 'negative';
+  } else {
+    deltaText = '\u2014 \uBCC0\uB3D9 \uC5C6\uC74C';
+    deltaClass = 'neutral';
+  }
+
+  section.innerHTML = `
+    <h2>\uD83D\uDCC5 \uC8FC\uAC04 \uBE44\uAD50</h2>
+    <div class="week-compare">
+      <div class="week-compare-item">
+        <span class="wc-label">\uC9C0\uB09C\uC8FC</span>
+        <span class="wc-value">${lastWeekCount}</span>
+        <span class="wc-label">\uAC74</span>
+      </div>
+      <div class="week-compare-item">
+        <span class="wc-label">\uC774\uBC88\uC8FC</span>
+        <span class="wc-value">${thisWeekCount}</span>
+        <span class="wc-label">\uAC74</span>
+      </div>
+    </div>
+    <div class="week-compare-delta ${deltaClass}">${deltaText}</div>
+  `;
 }
 
 // ── Init ──

@@ -29,6 +29,15 @@ navTabs.forEach((button) => {
   });
 });
 
+// ── Dashboard share link ──
+const dashboardShareLink = document.querySelector('#dashboard-share');
+if (dashboardShareLink) {
+  dashboardShareLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    shareIonroad('현장 시장조사를 더 쉽고 재밌게 — 이온로드 🏃');
+  });
+}
+
 // ── GPS ──
 function initGps() {
   if (!navigator.geolocation) {
@@ -594,6 +603,13 @@ async function handleSubmit(config) {
     const newBadgeIdx = getBadgeIndex(newSubs.length);
     if (newBadgeIdx > oldBadgeIdx && newBadgeIdx >= 0) {
       const newBadge = BADGES[newBadgeIdx];
+      // Show badge with bounce animation in success view
+      const badgeEl = document.createElement('div');
+      badgeEl.className = 'badge-bounce';
+      badgeEl.style.cssText = 'font-size:2rem;text-align:center;margin-top:8px;';
+      badgeEl.textContent = `${newBadge.emoji} ${newBadge.label}`;
+      const successCard = successView.querySelector('.success-card');
+      if (successCard) successCard.insertBefore(badgeEl, successCard.querySelector('.success-actions'));
       showToast(`🎉 축하해요! ${newBadge.label} 뱃지를 획득했어요!`, 'success');
     }
     state.previousBadgeIndex = newBadgeIdx;
@@ -615,17 +631,44 @@ function showSuccess(result) {
   surveyForm.classList.add('hidden');
   stepIndicator.innerHTML = '';
   successView.classList.remove('hidden');
+
+  const storeName = (state.step1Data && state.step1Data.storeName) || '매장';
+
   successView.innerHTML = `
+    <style>
+      .success-check { font-size: 3rem; animation: successPop .5s cubic-bezier(.17,.67,.24,1.3) both; }
+      @keyframes successPop { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+      .confetti-wrap { position: relative; height: 0; overflow: visible; pointer-events: none; }
+      .confetti-piece { position: absolute; width: 8px; height: 8px; border-radius: 2px; opacity: 0; animation: confettiFall 1.2s ease-out forwards; }
+      @keyframes confettiFall { 0% { transform: translateY(-30px) rotate(0deg); opacity: 1; } 100% { transform: translateY(60px) rotate(360deg); opacity: 0; } }
+      .badge-bounce { display: inline-block; animation: badgeBounce .6s ease .4s both; }
+      @keyframes badgeBounce { 0% { transform: scale(0); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }
+      .share-btn { margin-top: 8px; background: none; border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 8px 16px; cursor: pointer; font-size: .9rem; color: inherit; }
+      .share-btn:active { opacity: .7; }
+    </style>
     <div class="success-card">
-      <div class="success-icon">🙌</div>
+      <div class="confetti-wrap" id="confetti-wrap"></div>
+      <div class="success-check">✅</div>
       <h3>수고했어요!</h3>
       <div class="assigned-area">다음 추천 지역: ${escapeHtml(result.assignment.currentArea)}</div>
       <div class="success-actions">
         <button type="button" class="btn btn-primary" id="new-survey">한 곳 더 갈래요? 🏃</button>
         <button type="button" class="btn btn-secondary" id="view-history">오늘 기록 보기 📋</button>
+        <button type="button" class="share-btn" id="share-success">📤 오늘 기록 공유하기</button>
       </div>
     </div>
   `;
+
+  // Confetti particles
+  const confettiWrap = successView.querySelector('#confetti-wrap');
+  const colors = ['#f39c12', '#e74c3c', '#3498db', '#2ecc71', '#9b59b6', '#e67e22'];
+  for (let i = 0; i < 12; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti-piece';
+    piece.style.cssText = `left:${Math.random() * 100}%;background:${colors[i % colors.length]};animation-delay:${Math.random() * 0.4}s;`;
+    confettiWrap.appendChild(piece);
+  }
+
   successView.querySelector('#new-survey').addEventListener('click', () => {
     renderForm(state.bootstrap);
   });
@@ -633,6 +676,9 @@ function showSuccess(result) {
     navTabs.forEach((t) => t.classList.toggle('is-active', t.dataset.tab === 'dashboard'));
     panels.forEach((p) => p.classList.toggle('is-active', p.id === 'dashboard'));
     initMap();
+  });
+  successView.querySelector('#share-success').addEventListener('click', () => {
+    shareIonroad(`오늘 ${escapeHtml(storeName)}에서 시장조사 완료! 이온로드로 간편 기록 중 📋`);
   });
 }
 
@@ -1011,6 +1057,24 @@ function showToast(message, type) {
   toast.textContent = message;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
+}
+
+async function shareIonroad(text) {
+  const shareData = {
+    title: '이온로드 🏃',
+    text,
+    url: window.location.origin
+  };
+  if (navigator.share) {
+    try { await navigator.share(shareData); } catch { /* user cancelled */ }
+  } else {
+    try {
+      await navigator.clipboard.writeText(`${text}\n${window.location.origin}`);
+      showToast('링크가 복사됐어요! 📋', 'success');
+    } catch {
+      showToast('공유에 실패했어요', 'error');
+    }
+  }
 }
 
 // ── Map ──
