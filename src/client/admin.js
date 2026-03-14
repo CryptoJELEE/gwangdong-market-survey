@@ -122,6 +122,101 @@ async function loadAdminData() {
   }
 }
 
+// ── Chart helpers ──
+function renderBarChart(container, title, items) {
+  // items: [{ label, value }] — already sorted
+  const max = Math.max(...items.map((i) => i.value), 1);
+  container.innerHTML = `
+    <h2>${title}</h2>
+    <div style="display:grid;gap:8px;">
+      ${items.map((item) => {
+        const pct = Math.round((item.value / max) * 100);
+        return `
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="min-width:72px;font-size:13px;font-weight:600;text-align:right;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(item.label)}</span>
+          <div style="flex:1;height:24px;background:var(--border);border-radius:6px;overflow:hidden;position:relative;">
+            <div style="width:${pct}%;height:100%;background:var(--primary);border-radius:6px;transition:width 0.4s ease;"></div>
+          </div>
+          <span style="min-width:32px;font-size:13px;font-weight:700;color:var(--primary);">${item.value}</span>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderCharts() {
+  if (!adminData) return;
+  const { submissions } = adminData;
+
+  // 1. Daily submission trend (last 7 days)
+  const dailyCounts = {};
+  const today = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    dailyCounts[key] = 0;
+  }
+  submissions.forEach((s) => {
+    const key = new Date(s.createdAt).toISOString().slice(0, 10);
+    if (key in dailyCounts) dailyCounts[key]++;
+  });
+  const dailyItems = Object.entries(dailyCounts).map(([date, count]) => ({
+    label: date.slice(5), // MM-DD
+    value: count,
+  }));
+  renderBarChart(document.querySelector('#chart-daily'), '📈 일별 기록 추이', dailyItems);
+
+  // 2. Researcher contribution
+  const researchers = {};
+  submissions.forEach((s) => {
+    const name = s.researcher.name;
+    researchers[name] = (researchers[name] || 0) + 1;
+  });
+  const researcherItems = Object.entries(researchers)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => ({ label: name, value: count }));
+  renderBarChart(document.querySelector('#chart-researcher'), '👥 조사자별 기여도', researcherItems);
+
+  // 3. Area distribution
+  const areaCounts = {};
+  submissions.forEach((s) => {
+    const area = s.assignment?.currentArea;
+    if (area) areaCounts[area] = (areaCounts[area] || 0) + 1;
+  });
+  const areaItems = Object.entries(areaCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([area, count]) => ({ label: area, value: count }));
+  renderBarChart(document.querySelector('#chart-area'), '📍 지역별 분포', areaItems);
+
+  // 4. Data quality metrics
+  const total = submissions.length;
+  const withPrice = submissions.filter((s) => (s.prices || []).length > 0).length;
+  const priceRate = total ? Math.round((withPrice / total) * 100) : 0;
+  const totalPrices = submissions.reduce((sum, s) => sum + (s.prices || []).length, 0);
+  const avgPrices = total ? (totalPrices / total).toFixed(1) : '0';
+  const withPhoto = submissions.filter((s) => s.photo).length;
+  const photoRate = total ? Math.round((withPhoto / total) * 100) : 0;
+
+  document.querySelector('#chart-quality').innerHTML = `
+    <h2>📊 데이터 품질</h2>
+    <div style="display:grid;gap:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-radius:var(--radius-sm);">
+        <span style="font-size:14px;font-weight:600;">가격 입력률</span>
+        <span style="font-size:18px;font-weight:800;color:var(--primary);">${priceRate}%</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-radius:var(--radius-sm);">
+        <span style="font-size:14px;font-weight:600;">평균 가격 입력 수</span>
+        <span style="font-size:18px;font-weight:800;color:var(--primary);">${avgPrices}개/건</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-radius:var(--radius-sm);">
+        <span style="font-size:14px;font-weight:600;">사진 첨부율</span>
+        <span style="font-size:18px;font-weight:800;color:var(--primary);">${photoRate}%</span>
+      </div>
+    </div>
+  `;
+}
+
 function renderAdmin() {
   if (!adminData) return;
   const { submissions, areas } = adminData;
@@ -219,6 +314,7 @@ function renderAdmin() {
   filterArea.addEventListener('change', doFilter);
   filterStore.addEventListener('input', doFilter);
   renderSubmissionList('', '', '', '');
+  renderCharts();
 }
 
 function applyDateFilter(submissions, dateFilter) {

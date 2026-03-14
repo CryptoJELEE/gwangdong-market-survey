@@ -151,7 +151,10 @@ function renderStep1(config) {
       </div>
       <div class="field">
         <label>매장 이름</label>
-        <input name="storeName" required placeholder="매장 이름을 입력하세요" value="${escapeHtml(savedStoreName)}" />
+        <div class="address-search-wrap">
+          <input name="storeName" required placeholder="예: GS25 역삼점, 이마트 강남점" value="${escapeHtml(savedStoreName)}" id="store-name-input" autocomplete="off" />
+          <ul class="address-dropdown" id="store-name-dropdown"></ul>
+        </div>
       </div>
       <div class="field">
         <label>POS 대수</label>
@@ -231,7 +234,39 @@ function renderStep1(config) {
   });
 
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.address-search-wrap')) dropdown.style.display = 'none';
+    if (!e.target.closest('.address-search-wrap')) {
+      dropdown.style.display = 'none';
+      storeDropdown.style.display = 'none';
+    }
+  });
+
+  // Store name autocomplete from bootstrap submissions
+  const storeNameInput = formStepContainer.querySelector('#store-name-input');
+  const storeDropdown = formStepContainer.querySelector('#store-name-dropdown');
+
+  function getRecentStoreNames() {
+    const subs = state.bootstrap?.submissions || [];
+    const names = new Set();
+    subs.forEach((s) => { if (s.survey?.storeName) names.add(s.survey.storeName); });
+    return [...names];
+  }
+
+  storeNameInput.addEventListener('input', () => {
+    const q = storeNameInput.value.trim().toLowerCase();
+    if (q.length < 2) { storeDropdown.innerHTML = ''; storeDropdown.style.display = 'none'; return; }
+    const matches = getRecentStoreNames().filter((n) => n.toLowerCase().includes(q));
+    if (matches.length === 0) { storeDropdown.innerHTML = ''; storeDropdown.style.display = 'none'; return; }
+    storeDropdown.innerHTML = matches.slice(0, 5).map((n) =>
+      `<li class="address-item" data-store-name="${escapeHtml(n)}"><span class="address-place">${escapeHtml(n)}</span></li>`
+    ).join('');
+    storeDropdown.style.display = 'block';
+  });
+
+  storeDropdown.addEventListener('click', (e) => {
+    const item = e.target.closest('.address-item');
+    if (!item) return;
+    storeNameInput.value = item.dataset.storeName;
+    storeDropdown.style.display = 'none';
   });
 
   formStepContainer.querySelectorAll('.store-type-btn').forEach((btn) => {
@@ -355,8 +390,45 @@ function renderStep2(config) {
 
   formStepContainer.querySelector('#next-step2').addEventListener('click', () => {
     savePrices();
+    const inputs = formStepContainer.querySelectorAll('.price-field input');
+    const hasAnyPrice = [...inputs].some((i) => i.value.trim());
+    if (!hasAnyPrice) {
+      showPriceReminder(config);
+      return;
+    }
     state.currentStep = 3;
     renderCurrentStep(config);
+  });
+}
+
+function showPriceReminder(config) {
+  const overlay = document.createElement('div');
+  overlay.className = 'price-reminder-overlay';
+  overlay.innerHTML = `
+    <div class="price-reminder-dialog">
+      <p>가격을 입력하지 않았어요. 괜찮으시면 다음으로 넘어갈게요 👌</p>
+      <div class="price-reminder-actions">
+        <button type="button" class="btn btn-secondary" id="reminder-skip">네, 넘어갈게요</button>
+        <button type="button" class="btn btn-primary" id="reminder-input">가격 입력할게요</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#reminder-skip').addEventListener('click', () => {
+    overlay.remove();
+    state.currentStep = 3;
+    renderCurrentStep(config);
+  });
+
+  overlay.querySelector('#reminder-input').addEventListener('click', () => {
+    overlay.remove();
+    const firstAccordion = formStepContainer.querySelector('.product-accordion');
+    if (firstAccordion) {
+      firstAccordion.classList.add('is-open');
+      const firstInput = firstAccordion.querySelector('.price-field input');
+      if (firstInput) firstInput.focus();
+    }
   });
 }
 
@@ -473,17 +545,26 @@ async function handleSubmit(config) {
   }
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
     const response = await fetch('/api/submissions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
     const result = await response.json();
     if (!response.ok) {
       statusEl.textContent = result.error || '저장에 실패했어요.';
       submitBtn.disabled = false;
       return;
     }
+    // Clear temporary localStorage keys (keep researcherName, residenceArea)
+    ['_step1_region', '_step1_storeType', '_step1_storeName', '_step1_posCount', '_step1_displayLocation', '_step2_prices', '_step3_notes'].forEach((k) => {
+      try { localStorage.removeItem('kwangdong_' + k); } catch {}
+    });
+    state.photoDataUrl = '';
     // Check badge before reload
     const oldBadgeIdx = state.previousBadgeIndex;
     showSuccess(result);
@@ -501,7 +582,7 @@ async function handleSubmit(config) {
     panels.forEach((p) => p.classList.toggle('is-active', p.id === 'dashboard'));
     initMap();
   } catch (err) {
-    statusEl.textContent = '인터넷 연결을 확인해주세요 📶';
+    statusEl.textContent = err.name === 'AbortError' ? '요청 시간이 초과됐어요. 다시 시도해주세요 ⏱️' : '인터넷 연결을 확인해주세요 📶';
     submitBtn.disabled = false;
   }
 }
