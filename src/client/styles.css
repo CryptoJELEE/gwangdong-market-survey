@@ -806,6 +806,129 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
 }
 .empty-state .empty-icon { font-size: 36px; margin-bottom: 8px; }
 
+/* ── Dark Mode ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1b26;
+    --surface: #24283b;
+    --card: #24283b;
+    --text: #c0caf5;
+    --text-muted: #565f89;
+    --border: #3b4261;
+    --primary: #20895c;
+    --primary-light: #26a06a;
+    --primary-dark: #1a6e49;
+    --primary-hover: #26a06a;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --error: #ef4444;
+    --gold: #f59e0b;
+    --shadow: 0 2px 12px rgba(0,0,0,0.2);
+    --shadow-lg: 0 8px 30px rgba(0,0,0,0.3);
+  }
+
+  body { background: var(--bg); color: var(--text); }
+
+  .field input, .field select, .field textarea {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--border);
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    background: #292e42;
+    border-color: var(--primary);
+  }
+  .field input::placeholder, .field textarea::placeholder { color: var(--text-muted); }
+
+  .gps-btn { background: rgba(32,137,92,0.15); border-color: var(--primary); }
+  .gps-btn:active { background: rgba(32,137,92,0.25); }
+
+  .store-type-btn { background: var(--surface); color: var(--text); border-color: var(--border); }
+  .store-type-btn.is-active { background: rgba(32,137,92,0.15); border-color: var(--primary); color: var(--primary-light); }
+
+  .stepper button { background: var(--surface); color: var(--text); }
+  .stepper button:active { background: var(--border); }
+  .stepper .stepper-value { background: var(--bg); color: var(--text); }
+
+  .btn-secondary { background: var(--surface); color: var(--text); }
+  .btn-secondary:active { background: var(--border); }
+
+  .product-header { background: var(--surface); }
+  .product-accordion { border-color: var(--border); }
+  .product-body { background: var(--bg); }
+  .price-field input { background: var(--surface); color: var(--text); border-color: var(--border); }
+  .price-field input:focus { border-color: var(--primary); }
+
+  .camera-btn { background: var(--surface); border-color: var(--border); color: var(--text-muted); }
+  .camera-btn:active { background: var(--border); }
+
+  .product-stat-card { background: var(--surface); border-color: var(--border); }
+  .product-stat-card.is-highlight { background: #2a2520; border-color: var(--gold); }
+
+  .area-card { background: rgba(32,137,92,0.1); }
+
+  .faq-item { background: var(--surface); }
+
+  .address-dropdown { background: var(--surface); border-color: var(--border); }
+  .address-item:active, .address-item:hover { background: var(--bg); }
+
+  .filter-bar input, .filter-bar select { background: var(--surface); color: var(--text); border-color: var(--border); }
+
+  .submission-card { background: var(--surface); border-color: var(--border); }
+
+  .summary-tile { background: rgba(32,137,92,0.1); }
+
+  .notice { background: var(--surface); color: var(--text-muted); }
+
+  .success-card .assigned-area { background: rgba(32,137,92,0.15); }
+
+  .onboarding-card { background: var(--card); }
+  .onboarding-slide .field input { background: var(--surface); color: var(--text); }
+  .onboarding-slide .field input:focus { background: #292e42; }
+
+  .help-sheet { background: var(--card); }
+
+  .quick-stat { background: var(--surface); }
+
+  .step-num { background: var(--border); color: var(--text-muted); }
+
+  .skeleton-line { background: var(--border); }
+  .skeleton-card { background: var(--surface); }
+}
+
+/* ── Loading Skeleton ── */
+.loading-skeleton {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: var(--bg);
+}
+.loading-skeleton .shell { padding-top: 16px; }
+.skeleton-hero { padding: 16px 0 12px; display: grid; gap: 8px; }
+.skeleton-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 20px 16px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.skeleton-line {
+  height: 14px;
+  border-radius: 7px;
+  background: var(--border);
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+.skeleton-line-sm { width: 30%; }
+.skeleton-line-md { width: 60%; }
+.skeleton-line-lg { width: 80%; }
+.skeleton-line-full { width: 100%; }
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
 /* ── Utilities ── */
 .small { font-size: 0.85rem; color: var(--text-muted); }
 .text-center { text-align: center; }

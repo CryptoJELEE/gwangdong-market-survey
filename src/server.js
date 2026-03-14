@@ -168,6 +168,16 @@ export function createApp(config = loadConfig(), options = {}) {
         await serveStatic(response, path.resolve('src/client/favicon.svg'));
         return;
       }
+      if (request.method === 'GET' && url.pathname === '/manifest.json') {
+        response.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8' });
+        const contents = await readFile(path.resolve('src/client/manifest.json'));
+        response.end(contents);
+        return;
+      }
+      if (request.method === 'GET' && (url.pathname === '/icon-192.png' || url.pathname === '/icon-512.png')) {
+        await serveStatic(response, path.resolve('src/client', url.pathname.slice(1)));
+        return;
+      }
       if (request.method === 'GET' && url.pathname.startsWith('/uploads/')) {
         await serveStatic(response, path.resolve(config.uploadsDir, url.pathname.replace('/uploads/', '')));
         return;

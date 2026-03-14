@@ -174,7 +174,8 @@ function renderStep1(config) {
   const regionInput = formStepContainer.querySelector('#region-input');
   gpsFillBtn.addEventListener('click', async () => {
     if (state.gps.status !== 'ready') {
-      showToast('GPS 위치를 확인할 수 없어요.', 'error');
+      showToast('위치를 못 찾았어요 😅 주소를 직접 검색해주세요', 'error');
+      regionInput.focus();
       return;
     }
     gpsFillBtn.classList.add('is-loading');
@@ -439,21 +440,29 @@ async function handleSubmit(config) {
   }
 
   const s = state.step1Data || {};
+
+  // Sanitize: trim whitespace, filter negative prices
+  const sanitize = (v) => String(v || '').trim();
+  const validPrices = prices.filter((p) => {
+    const num = Number(String(p.price).replace(/[^0-9]/g, ''));
+    return num > 0;
+  });
+
   const payload = {
     researcher: {
-      name: s.researcherName || loadLocal('researcherName') || '',
-      residenceArea: s.residenceArea || loadLocal('residenceArea') || ''
+      name: sanitize(s.researcherName || loadLocal('researcherName')),
+      residenceArea: sanitize(s.residenceArea || loadLocal('residenceArea'))
     },
     survey: {
-      region: s.region || loadLocal('_step1_region') || '',
-      storeType: s.storeType || loadLocal('_step1_storeType') || '',
-      storeName: s.storeName || loadLocal('_step1_storeName') || '',
+      region: sanitize(s.region || loadLocal('_step1_region')),
+      storeType: sanitize(s.storeType || loadLocal('_step1_storeType')),
+      storeName: sanitize(s.storeName || loadLocal('_step1_storeName')),
       posCount: s.posCount || loadLocal('_step1_posCount') || '1',
-      displayLocation: s.displayLocation || loadLocal('_step1_displayLocation') || ''
+      displayLocation: sanitize(s.displayLocation || loadLocal('_step1_displayLocation'))
     },
-    notes: formData.get('notes') || loadLocal('_step3_notes') || '',
+    notes: sanitize(formData.get('notes') || loadLocal('_step3_notes')),
     photoDataUrl: state.photoDataUrl,
-    prices
+    prices: validPrices
   };
 
   if (state.gps.status === 'ready') {
@@ -475,6 +484,10 @@ async function handleSubmit(config) {
     }
     showSuccess(result);
     await loadBootstrap();
+    // 대시보드 자동 갱신 후 탭 전환
+    navTabs.forEach((t) => t.classList.toggle('is-active', t.dataset.tab === 'dashboard'));
+    panels.forEach((p) => p.classList.toggle('is-active', p.id === 'dashboard'));
+    initMap();
   } catch (err) {
     statusEl.textContent = '인터넷 연결을 확인해주세요 📶';
     submitBtn.disabled = false;
@@ -716,8 +729,24 @@ function escapeHtml(str) {
 
 async function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1280;
+      let w = img.width;
+      let h = img.height;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.7));
+    };
+    img.onerror = () => reject(new Error('이미지를 불러올 수 없어요'));
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => { img.src = reader.result; };
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });

@@ -5,9 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>이온로드 - 현장 기록</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#20895c">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="apple-touch-icon" href="/favicon.svg">
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <!-- Loading skeleton (replaced by JS on init) -->
+    <div class="loading-skeleton" id="loading-skeleton">
+      <div class="status-bar">
+        <span>이온로드 로딩 중...</span>
+      </div>
+      <div class="shell">
+        <div class="skeleton-hero">
+          <div class="skeleton-line skeleton-line-sm"></div>
+          <div class="skeleton-line skeleton-line-lg"></div>
+          <div class="skeleton-line skeleton-line-md"></div>
+        </div>
+        <div class="skeleton-card">
+          <div class="skeleton-line skeleton-line-md"></div>
+          <div class="skeleton-line skeleton-line-full"></div>
+          <div class="skeleton-line skeleton-line-full"></div>
+          <div class="skeleton-line skeleton-line-lg"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="status-bar">
       <span class="gps-status" id="gps-status">위치 찾는 중...</span>
       <span class="researcher-name" id="status-researcher"></span>
@@ -116,5 +141,12 @@
 
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=cd597c4c6f2cb58323e670a8bcef366b&autoload=false&libraries=services,clusterer"></script>
     <script type="module" src="/app.js"></script>
+    <script>
+      // Remove loading skeleton once app.js module starts executing
+      window.addEventListener('DOMContentLoaded', function() {
+        var el = document.getElementById('loading-skeleton');
+        if (el) el.remove();
+      });
+    </script>
   </body>
 </html>
