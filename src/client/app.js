@@ -544,6 +544,17 @@ async function handleSubmit(config) {
     payload.gpsLng = state.gps.lng;
   }
 
+  // Offline queue: save locally if offline
+  if (!navigator.onLine) {
+    const queue = getPendingSubmissions();
+    queue.push(payload);
+    savePendingSubmissions(queue);
+    showToast('📶 오프라인이에요. 연결되면 자동으로 저장할게요!', 'info');
+    statusEl.textContent = '';
+    submitBtn.disabled = false;
+    return;
+  }
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -554,12 +565,21 @@ async function handleSubmit(config) {
       signal: controller.signal
     });
     clearTimeout(timeoutId);
-    const result = await response.json();
     if (!response.ok) {
-      statusEl.textContent = result.error || '저장에 실패했어요.';
+      if (response.status === 429) {
+        statusEl.textContent = '요청이 너무 많아요. 잠시 후 다시 시도해주세요';
+      } else if (response.status >= 500) {
+        statusEl.textContent = '서버에 문제가 생겼어요. 잠시 후 다시 시도해주세요';
+      } else if (response.status >= 400) {
+        statusEl.textContent = '입력 데이터를 확인해주세요';
+      } else {
+        const result = await response.json().catch(() => ({}));
+        statusEl.textContent = result.error || '저장에 실패했어요.';
+      }
       submitBtn.disabled = false;
       return;
     }
+    const result = await response.json();
     // Clear temporary localStorage keys (keep researcherName, residenceArea)
     ['_step1_region', '_step1_storeType', '_step1_storeName', '_step1_posCount', '_step1_displayLocation', '_step2_prices', '_step3_notes'].forEach((k) => {
       try { localStorage.removeItem('kwangdong_' + k); } catch {}
@@ -582,7 +602,11 @@ async function handleSubmit(config) {
     panels.forEach((p) => p.classList.toggle('is-active', p.id === 'dashboard'));
     initMap();
   } catch (err) {
-    statusEl.textContent = err.name === 'AbortError' ? '요청 시간이 초과됐어요. 다시 시도해주세요 ⏱️' : '인터넷 연결을 확인해주세요 📶';
+    if (err.name === 'AbortError') {
+      statusEl.textContent = '시간 초과. 다시 시도해주세요 ⏱️';
+    } else {
+      statusEl.textContent = '인터넷 연결을 확인해주세요 📶';
+    }
     submitBtn.disabled = false;
   }
 }
@@ -1220,6 +1244,67 @@ function stopDashboardPolling() {
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && getActiveTab() === 'dashboard') {
     startDashboardPolling();
+  }
+});
+
+// ── Global error handling ──
+window.onerror = function (msg, source, line, col, error) {
+  console.error('Global error:', { msg, source, line, col, error });
+  showToast('문제가 생겼어요 😅 새로고침 해주세요', 'error');
+};
+window.onunhandledrejection = function (event) {
+  console.error('Unhandled rejection:', event.reason);
+  showToast('문제가 생겼어요 😅 새로고침 해주세요', 'error');
+};
+
+// ── Offline submission queue ──
+function getPendingSubmissions() {
+  try {
+    return JSON.parse(localStorage.getItem('kwangdong_pendingSubmissions') || '[]');
+  } catch { return []; }
+}
+
+function savePendingSubmissions(queue) {
+  try { localStorage.setItem('kwangdong_pendingSubmissions', JSON.stringify(queue)); } catch {}
+}
+
+async function flushPendingSubmissions() {
+  const queue = getPendingSubmissions();
+  if (queue.length === 0) return;
+  let flushed = 0;
+  const remaining = [];
+  for (const item of queue) {
+    try {
+      const response = await fetch('/api/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+      });
+      if (response.ok) {
+        flushed++;
+      } else {
+        remaining.push(item);
+      }
+    } catch {
+      remaining.push(item);
+    }
+  }
+  savePendingSubmissions(remaining);
+  if (flushed > 0) {
+    showToast(`오프라인 기록 ${flushed}건 저장 완료! ✅`, 'success');
+    await loadBootstrap();
+  }
+}
+
+window.addEventListener('online', () => {
+  flushPendingSubmissions();
+});
+
+// ── Page unload warning ──
+window.addEventListener('beforeunload', (e) => {
+  if (state.currentStep > 1) {
+    e.preventDefault();
+    e.returnValue = '작성 중인 내용이 있어요';
   }
 });
 

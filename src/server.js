@@ -10,6 +10,37 @@ import { SurveyStore } from './storage/index.js';
 import { collectJsonBody, json } from './utils.js';
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_PHOTO_BYTES = 500 * 1024; // 500 KB
+
+// ── Rate Limiter ──
+function createRateLimiter() {
+  const buckets = new Map(); // key → { count, resetTime }
+  const CLEANUP_INTERVAL = 60_000;
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, bucket] of buckets) {
+      if (now > bucket.resetTime) buckets.delete(key);
+    }
+  }, CLEANUP_INTERVAL).unref();
+
+  return function checkRate(key, maxRequests, windowMs = 60_000) {
+    const now = Date.now();
+    let bucket = buckets.get(key);
+    if (!bucket || now > bucket.resetTime) {
+      bucket = { count: 0, resetTime: now + windowMs };
+      buckets.set(key, bucket);
+    }
+    bucket.count++;
+    return bucket.count > maxRequests;
+  };
+}
+
+function getClientIp(request) {
+  const forwarded = request.headers['x-forwarded-for'];
+  if (forwarded) return forwarded.split(',')[0].trim();
+  return request.socket?.remoteAddress || 'unknown';
+}
 
 function validateSubmission(body, config) {
   const required = [
@@ -23,19 +54,46 @@ function validateSubmission(body, config) {
     throw new Error('Missing required submission fields.');
   }
 
+  // Input length validation
+  const researcherName = String(body.researcher.name).trim();
+  const storeName = String(body.survey.storeName).trim();
+  const region = String(body.survey.region).trim();
+  const notes = String(body.notes || '').trim();
+
+  if (researcherName.length > 50) throw new Error('researcherName은 최대 50자입니다.');
+  if (storeName.length > 100) throw new Error('storeName은 최대 100자입니다.');
+  if (region.length > 200) throw new Error('region은 최대 200자입니다.');
+  if (notes.length > 2000) throw new Error('notes는 최대 2000자입니다.');
+
+  // Photo size validation
+  const photoDataUrl = String(body.photoDataUrl || '').trim();
+  if (photoDataUrl.length > 0) {
+    const base64Part = photoDataUrl.includes(',') ? photoDataUrl.split(',')[1] : photoDataUrl;
+    const estimatedBytes = Math.ceil(base64Part.length * 3 / 4);
+    if (estimatedBytes > MAX_PHOTO_BYTES) throw new Error('사진은 최대 500KB입니다.');
+  }
+
   const prices = (body.prices || []).filter((item) => item.price !== '' && item.price !== null && item.price !== undefined);
+
+  // Price validation
+  for (const item of prices) {
+    const price = Number(item.price);
+    if (!Number.isFinite(price) || price < 0 || price > 999999) {
+      throw new Error('가격은 0~999999 범위의 숫자여야 합니다.');
+    }
+  }
 
   return {
     researcher: {
-      name: body.researcher.name,
+      name: researcherName,
       residenceArea: config.areas.includes(body.researcher.residenceArea) ? body.researcher.residenceArea : config.areas[0]
     },
     survey: {
-      region: body.survey.region,
-      storeType: body.survey.storeType,
-      storeName: body.survey.storeName,
+      region,
+      storeType: String(body.survey.storeType).trim(),
+      storeName,
       posCount: Number(body.survey.posCount || 0),
-      displayLocation: body.survey.displayLocation || ''
+      displayLocation: String(body.survey.displayLocation || '').trim()
     },
     prices: prices.map((item) => ({
       productId: item.productId,
@@ -43,8 +101,8 @@ function validateSubmission(body, config) {
       size: item.size,
       price: Number(item.price)
     })),
-    photoDataUrl: body.photoDataUrl || '',
-    notes: body.notes || ''
+    photoDataUrl,
+    notes
   };
 }
 
@@ -58,9 +116,25 @@ async function serveStatic(response, filePath) {
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
-    '.webp': 'image/webp'
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.json': 'application/json; charset=utf-8'
   };
-  response.writeHead(200, { 'Content-Type': contentTypes[extension] || 'application/octet-stream' });
+
+  // ETag + Cache-Control
+  const etag = `"${crypto.createHash('md5').update(contents).digest('hex')}"`;
+  const cacheHeaders = { 'Content-Type': contentTypes[extension] || 'application/octet-stream', 'ETag': etag };
+
+  if (extension === '.html') {
+    cacheHeaders['Cache-Control'] = 'no-cache';
+  } else if (extension === '.css' || extension === '.js' || extension === '.json') {
+    cacheHeaders['Cache-Control'] = 'public, max-age=3600';
+  } else {
+    cacheHeaders['Cache-Control'] = 'public, max-age=86400';
+  }
+
+  response.writeHead(200, cacheHeaders);
   response.end(contents);
 }
 
@@ -68,6 +142,7 @@ function setCorsHeaders(response) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  response.setHeader('Access-Control-Max-Age', '86400');
 }
 
 export async function closeApp(server) {
@@ -130,7 +205,15 @@ export function createApp(config = loadConfig(), options = {}) {
     }, {});
   }
 
+  const checkRate = createRateLimiter();
+
   const server = http.createServer(async (request, response) => {
+    const clientIp = getClientIp(request);
+    const url = new URL(request.url, `http://${request.headers.host}`);
+
+    // Request logging
+    console.log(`[${request.method}] ${url.pathname} (${clientIp})`);
+
     setCorsHeaders(response);
 
     if (request.method === 'OPTIONS') {
@@ -139,13 +222,31 @@ export function createApp(config = loadConfig(), options = {}) {
       return;
     }
 
+    // Rate limiting
+    const isSubmissionPost = request.method === 'POST' && url.pathname === '/api/submissions';
+    const isAdminLogin = request.method === 'POST' && url.pathname === '/api/admin/login';
+
+    if (isAdminLogin && checkRate(`login:${clientIp}`, 5)) {
+      console.warn(`[RATE] 429 - login rate exceeded (${clientIp})`);
+      json(response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+      return;
+    }
+    if (isSubmissionPost && checkRate(`submit:${clientIp}`, 10)) {
+      console.warn(`[RATE] 429 - submission rate exceeded (${clientIp})`);
+      json(response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+      return;
+    }
+    if (checkRate(`global:${clientIp}`, 60)) {
+      console.warn(`[RATE] 429 - global rate exceeded (${clientIp})`);
+      json(response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+      return;
+    }
+
     try {
       if (!initialized) {
         await store.init();
         initialized = true;
       }
-
-      const url = new URL(request.url, `http://${request.headers.host}`);
 
       if (request.method === 'GET' && url.pathname === '/health') {
         json(response, 200, { status: 'ok' });
@@ -169,9 +270,7 @@ export function createApp(config = loadConfig(), options = {}) {
         return;
       }
       if (request.method === 'GET' && url.pathname === '/manifest.json') {
-        response.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8' });
-        const contents = await readFile(path.resolve('src/client/manifest.json'));
-        response.end(contents);
+        await serveStatic(response, path.resolve('src/client/manifest.json'));
         return;
       }
       if (request.method === 'GET' && (url.pathname === '/icon-192.png' || url.pathname === '/icon-512.png')) {
@@ -367,6 +466,8 @@ export function createApp(config = loadConfig(), options = {}) {
 
       json(response, 404, { error: 'Not found' });
     } catch (error) {
+      console.warn(`[400] ${request.method} ${url.pathname} (${clientIp}): ${error.message}`);
+      console.error(error.stack);
       json(response, 400, { error: error.message });
     }
   });
