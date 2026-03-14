@@ -616,12 +616,21 @@ function renderDashboard(config) {
   const coveredAreas = new Set(submissions.map((s) => s.assignment?.currentArea).filter(Boolean)).size;
 
   // 1. Quick Stats
-  document.querySelector('#quick-stats').innerHTML = `
-    <div class="quick-stat"><span class="qs-icon">🏃</span><span class="qs-value">${total}</span><span class="qs-label">총 기록</span></div>
-    <div class="quick-stat"><span class="qs-icon">📅</span><span class="qs-value">${todayCount}</span><span class="qs-label">오늘</span></div>
-    <div class="quick-stat"><span class="qs-icon">👤</span><span class="qs-value">${uniqueResearchers}</span><span class="qs-label">조사자</span></div>
-    <div class="quick-stat"><span class="qs-icon">📍</span><span class="qs-value">${coveredAreas}/${areas.length}</span><span class="qs-label">지역</span></div>
-  `;
+  if (total === 0) {
+    document.querySelector('#quick-stats').innerHTML = `
+      <div class="empty-state" style="width:100%;">
+        <div class="empty-icon">🏃</div>
+        <p>아직 기록이 없어요<br/>첫 번째 기록을 남겨볼까요?</p>
+      </div>
+    `;
+  } else {
+    document.querySelector('#quick-stats').innerHTML = `
+      <div class="quick-stat"><span class="qs-icon">🏃</span><span class="qs-value">${total}</span><span class="qs-label">총 기록</span></div>
+      <div class="quick-stat"><span class="qs-icon">📅</span><span class="qs-value">${todayCount}</span><span class="qs-label">오늘</span></div>
+      <div class="quick-stat"><span class="qs-icon">👤</span><span class="qs-value">${uniqueResearchers}</span><span class="qs-label">조사자</span></div>
+      <div class="quick-stat"><span class="qs-icon">📍</span><span class="qs-value">${coveredAreas}/${areas.length}</span><span class="qs-label">지역</span></div>
+    `;
+  }
 
   // 3. Product Leaderboard
   const productStats = calcProductStats(submissions, products);
@@ -629,7 +638,7 @@ function renderDashboard(config) {
   const leaderboard = document.querySelector('#product-leaderboard');
   leaderboard.innerHTML = `
     <h2>제품 현황판 🏆</h2>
-    ${productStats.length === 0 ? '<p class="small">아직 데이터가 없어요.</p>' : productStats.map((ps, i) => {
+    ${productStats.length === 0 ? '<div class="empty-state"><div class="empty-icon">🏆</div><p>데이터가 쌓이면 제품 순위가 표시돼요!</p></div>' : productStats.map((ps, i) => {
       const pct = Math.round(ps.discoveryRate * 100);
       const medal = i < 3 ? medals[i] : '';
       const isIonKick = ps.id === 'ion-kick';
@@ -862,6 +871,67 @@ surveyForm.addEventListener('click', (e) => {
   }
 });
 
+// ── Onboarding ──
+function initOnboarding() {
+  if (loadLocal('onboarded')) return;
+  const overlay = document.getElementById('onboarding-overlay');
+  const slides = overlay.querySelectorAll('.onboarding-slide');
+  const dots = overlay.querySelectorAll('.onboarding-dots .dot');
+  const nextBtn = document.getElementById('onboarding-next');
+  const skipBtn = document.getElementById('onboarding-skip');
+  const nameInput = document.getElementById('onboarding-name');
+  let current = 0;
+
+  // Pre-fill name if exists
+  const savedName = loadLocal('researcherName');
+  if (savedName) nameInput.value = savedName;
+
+  overlay.classList.remove('hidden');
+
+  function goTo(idx) {
+    slides.forEach((s, i) => s.classList.toggle('is-active', i === idx));
+    dots.forEach((d, i) => d.classList.toggle('is-active', i === idx));
+    current = idx;
+    nextBtn.textContent = idx === 2 ? '시작하기!' : '다음';
+  }
+
+  nextBtn.addEventListener('click', () => {
+    if (current < 2) {
+      goTo(current + 1);
+      if (current === 2) nameInput.focus();
+    } else {
+      finishOnboarding();
+    }
+  });
+
+  skipBtn.addEventListener('click', finishOnboarding);
+
+  function finishOnboarding() {
+    const name = nameInput.value.trim();
+    if (name) {
+      saveLocal('researcherName', name);
+      statusResearcher.textContent = name;
+    }
+    saveLocal('onboarded', 'true');
+    overlay.classList.add('hidden');
+  }
+}
+
+// ── Help Sheet ──
+function initHelpSheet() {
+  const fab = document.getElementById('help-fab');
+  const sheet = document.getElementById('help-sheet');
+  const backdrop = document.getElementById('help-backdrop');
+
+  function open() { sheet.classList.remove('hidden'); backdrop.classList.remove('hidden'); }
+  function close() { sheet.classList.add('hidden'); backdrop.classList.add('hidden'); }
+
+  fab.addEventListener('click', open);
+  backdrop.addEventListener('click', close);
+}
+
 // ── Init ──
 initGps();
 loadBootstrap();
+initOnboarding();
+initHelpSheet();

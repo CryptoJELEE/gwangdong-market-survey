@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp } from 'node:fs/promises';
-import { createApp } from '../src/server.js';
+import { closeApp, createApp } from '../src/server.js';
 import { loadConfig } from '../src/config.js';
 
 const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aT0sAAAAASUVORK5CYII=';
@@ -22,9 +22,8 @@ async function createTestServer(t, options = {}) {
 
   const server = createApp(config, { geocoder });
   await new Promise((resolve) => server.listen(0, resolve));
-  t.after(() => {
-    if (server._store?.close) server._store.close();
-    server.close();
+  t.after(async () => {
+    await closeApp(server);
   });
 
   const { port } = server.address();

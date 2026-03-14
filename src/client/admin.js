@@ -131,8 +131,14 @@ function renderAdmin() {
   const today = new Date().toDateString();
   const todayCount = submissions.filter((s) => new Date(s.createdAt).toDateString() === today).length;
   const researchers = {};
+  const researcherLastActivity = {};
   submissions.forEach((s) => {
-    researchers[s.researcher.name] = (researchers[s.researcher.name] || 0) + 1;
+    const name = s.researcher.name;
+    researchers[name] = (researchers[name] || 0) + 1;
+    const ts = new Date(s.createdAt).getTime();
+    if (!researcherLastActivity[name] || ts > researcherLastActivity[name]) {
+      researcherLastActivity[name] = ts;
+    }
   });
   const uniqueResearchers = Object.keys(researchers).length;
   const areaCounts = {};
@@ -149,18 +155,24 @@ function renderAdmin() {
     <div class="quick-stat"><span class="qs-icon">📍</span><span class="qs-value">${coveredAreas}/${areas.length}</span><span class="qs-label">지역</span></div>
   `;
 
-  // Researcher stats
+  // Researcher stats with last activity
   const researcherStats = document.querySelector('#researcher-stats');
   const sortedResearchers = Object.entries(researchers).sort((a, b) => b[1] - a[1]);
   researcherStats.innerHTML = `
     <h2>조사자별 현황 👤</h2>
     <div class="area-cards">
-      ${sortedResearchers.map(([name, count]) => `
+      ${sortedResearchers.map(([name, count], idx) => {
+        const lastDate = new Date(researcherLastActivity[name]).toLocaleDateString('ko-KR');
+        const rank = idx + 1;
+        return `
         <div class="area-card">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px;">#${rank}</div>
           <div class="area-name">${escapeHtml(name)}</div>
           <div class="area-count">${count}건</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">최근 ${lastDate}</div>
         </div>
-      `).join('')}
+      `;
+      }).join('')}
     </div>
     <h3 style="margin-top:16px;">지역별 현황</h3>
     <div class="area-cards">
@@ -174,37 +186,90 @@ function renderAdmin() {
   `;
 
   // Filters
+  const researcherNames = Object.keys(researchers).sort();
   adminFilter.innerHTML = `
-    <input type="text" id="filter-name" placeholder="이름 검색" />
+    <select id="filter-date">
+      <option value="">전체 기간</option>
+      <option value="today">오늘</option>
+      <option value="7days">최근 7일</option>
+      <option value="30days">최근 30일</option>
+    </select>
+    <select id="filter-researcher">
+      <option value="">전체 조사자</option>
+      ${researcherNames.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}
+    </select>
     <select id="filter-area">
       <option value="">전체 지역</option>
       ${areas.map((a) => `<option value="${a}">${a}</option>`).join('')}
     </select>
+    <input type="text" id="filter-store" placeholder="매장명 검색" />
   `;
-  const filterName = adminFilter.querySelector('#filter-name');
+  const filterDate = adminFilter.querySelector('#filter-date');
+  const filterResearcher = adminFilter.querySelector('#filter-researcher');
   const filterArea = adminFilter.querySelector('#filter-area');
-  const doFilter = () => renderSubmissionList(filterName.value, filterArea.value);
-  filterName.addEventListener('input', doFilter);
+  const filterStore = adminFilter.querySelector('#filter-store');
+  const doFilter = () => renderSubmissionList(
+    filterDate.value,
+    filterResearcher.value,
+    filterArea.value,
+    filterStore.value
+  );
+  filterDate.addEventListener('change', doFilter);
+  filterResearcher.addEventListener('change', doFilter);
   filterArea.addEventListener('change', doFilter);
-  renderSubmissionList('', '');
+  filterStore.addEventListener('input', doFilter);
+  renderSubmissionList('', '', '', '');
 }
 
-function renderSubmissionList(nameFilter, areaFilter) {
+function applyDateFilter(submissions, dateFilter) {
+  if (!dateFilter) return submissions;
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (dateFilter === 'today') {
+    return submissions.filter((s) => new Date(s.createdAt) >= startOfToday);
+  }
+  if (dateFilter === '7days') {
+    const d = new Date(startOfToday);
+    d.setDate(d.getDate() - 7);
+    return submissions.filter((s) => new Date(s.createdAt) >= d);
+  }
+  if (dateFilter === '30days') {
+    const d = new Date(startOfToday);
+    d.setDate(d.getDate() - 30);
+    return submissions.filter((s) => new Date(s.createdAt) >= d);
+  }
+  return submissions;
+}
+
+function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFilter) {
   if (!adminData) return;
-  const { submissions, areas } = adminData;
+  const { submissions, areas, products } = adminData;
   let filtered = submissions;
-  if (nameFilter) {
-    const q = nameFilter.toLowerCase();
-    filtered = filtered.filter((s) => s.researcher.name.toLowerCase().includes(q));
+
+  filtered = applyDateFilter(filtered, dateFilter);
+
+  if (researcherFilter) {
+    filtered = filtered.filter((s) => s.researcher.name === researcherFilter);
   }
   if (areaFilter) {
     filtered = filtered.filter((s) => s.assignment?.currentArea === areaFilter);
   }
+  if (storeFilter) {
+    const q = storeFilter.toLowerCase();
+    filtered = filtered.filter((s) => s.survey.storeName.toLowerCase().includes(q));
+  }
 
   submissionList.innerHTML = filtered.length
-    ? filtered.map((sub) => `
-      <article class="submission-card">
-        <div class="sub-header">
+    ? filtered.map((sub) => {
+        const priceRows = (sub.prices || []).map((p) =>
+          `<tr><td>${escapeHtml(p.productLabel)}</td><td>${escapeHtml(p.size)}</td><td style="text-align:right;">\u20A9${Number(p.price).toLocaleString()}</td></tr>`
+        ).join('');
+        const gps = sub.gps || sub.location;
+        const gpsText = gps ? `${gps.lat?.toFixed(5)}, ${gps.lng?.toFixed(5)}` : '-';
+
+        return `
+      <article class="submission-card" data-id="${sub.id}">
+        <div class="sub-header" style="cursor:pointer;" data-toggle="${sub.id}">
           <span class="store-name">${escapeHtml(sub.survey.storeName)}</span>
           <span class="sub-date">${new Date(sub.createdAt).toLocaleDateString('ko-KR')}</span>
         </div>
@@ -212,18 +277,38 @@ function renderSubmissionList(nameFilter, areaFilter) {
           ${escapeHtml(sub.researcher.name)} \u00B7 ${escapeHtml(sub.researcher.residenceArea)} \u2192 <strong>${escapeHtml(sub.assignment?.currentArea || '')}</strong>
         </div>
         <div class="sub-meta">${escapeHtml(sub.survey.region)} \u00B7 ${escapeHtml(sub.survey.storeType)} \u00B7 POS ${sub.survey.posCount}</div>
-        <div class="sub-prices">${(sub.prices || []).map((p) => `${p.productLabel} ${p.size} \u20A9${p.price}`).join(', ')}</div>
-        ${sub.photo ? `<img class="sub-photo" src="${sub.photo.url}" alt="${escapeHtml(sub.survey.storeName)}" />` : ''}
-        <div class="sub-actions">
-          <select data-submission-id="${sub.id}">
-            ${areas.map((a) => `<option value="${a}" ${a === sub.assignment?.currentArea ? 'selected' : ''}>${a}</option>`).join('')}
-          </select>
-          <button data-action="override" data-submission-id="${sub.id}">지역 변경</button>
-          <button data-action="delete" data-submission-id="${sub.id}" class="btn-danger-sm">삭제</button>
+        <div class="sub-detail hidden" id="detail-${sub.id}">
+          ${sub.survey.displayLocation ? `<div class="sub-meta" style="margin-top:6px;">진열위치: ${escapeHtml(sub.survey.displayLocation)}</div>` : ''}
+          ${priceRows ? `
+          <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;">
+            <thead><tr style="border-bottom:1.5px solid var(--border);text-align:left;">
+              <th style="padding:6px 4px;">제품</th><th style="padding:6px 4px;">사이즈</th><th style="padding:6px 4px;text-align:right;">가격</th>
+            </tr></thead>
+            <tbody>${priceRows}</tbody>
+          </table>` : '<div class="sub-meta" style="margin-top:8px;">가격 데이터 없음</div>'}
+          ${sub.photo ? `<img class="sub-photo" src="${sub.photo.url}" alt="${escapeHtml(sub.survey.storeName)}" />` : ''}
+          ${sub.notes ? `<div class="sub-meta" style="margin-top:6px;">메모: ${escapeHtml(sub.notes)}</div>` : ''}
+          <div class="sub-meta" style="margin-top:6px;">GPS: ${gpsText}</div>
+          <div class="sub-actions">
+            <select data-submission-id="${sub.id}">
+              ${areas.map((a) => `<option value="${a}" ${a === sub.assignment?.currentArea ? 'selected' : ''}>${a}</option>`).join('')}
+            </select>
+            <button data-action="override" data-submission-id="${sub.id}">지역 변경</button>
+            <button data-action="delete" data-submission-id="${sub.id}" class="btn-danger-sm">삭제</button>
+          </div>
         </div>
       </article>
-    `).join('')
+    `;
+      }).join('')
     : '<div class="notice">기록이 없어요.</div>';
+
+  // Toggle detail
+  submissionList.querySelectorAll('[data-toggle]').forEach((header) => {
+    header.addEventListener('click', () => {
+      const detail = document.querySelector(`#detail-${header.dataset.toggle}`);
+      if (detail) detail.classList.toggle('hidden');
+    });
+  });
 
   submissionList.querySelectorAll('[data-action="override"]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -262,6 +347,63 @@ function renderSubmissionList(nameFilter, areaFilter) {
     });
   });
 }
+
+// ── CSV Export ──
+document.querySelector('#csv-btn').addEventListener('click', () => {
+  if (!adminData) return;
+  const { submissions, products } = adminData;
+
+  // Build price column headers from products
+  const priceHeaders = [];
+  for (const product of products) {
+    for (const size of product.sizes) {
+      priceHeaders.push(`${product.label} ${size}`);
+    }
+  }
+
+  const headers = ['제출일시', '조사자', '거주지역', '조사지역', '매장유형', '매장명', 'POS대수', '진열위치', ...priceHeaders, '메모'];
+
+  const rows = submissions.map((sub) => {
+    const priceMap = {};
+    (sub.prices || []).forEach((p) => {
+      priceMap[`${p.productLabel} ${p.size}`] = p.price;
+    });
+    const priceCols = priceHeaders.map((h) => priceMap[h] !== undefined ? priceMap[h] : '');
+    return [
+      new Date(sub.createdAt).toLocaleString('ko-KR'),
+      sub.researcher.name,
+      sub.researcher.residenceArea,
+      sub.assignment?.currentArea || '',
+      sub.survey.storeType,
+      sub.survey.storeName,
+      sub.survey.posCount,
+      sub.survey.displayLocation || '',
+      ...priceCols,
+      sub.notes || ''
+    ];
+  });
+
+  const csvContent = [headers, ...rows].map((row) =>
+    row.map((cell) => {
+      const str = String(cell);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    }).join(',')
+  ).join('\r\n');
+
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `ionroad-export-${dateStr}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV 파일이 다운로드되었어요.');
+});
 
 // ── Backup ──
 document.querySelector('#backup-btn').addEventListener('click', async () => {

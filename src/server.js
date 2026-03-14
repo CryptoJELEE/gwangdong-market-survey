@@ -70,6 +70,23 @@ function setCorsHeaders(response) {
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 }
 
+export async function closeApp(server) {
+  if (!server) return;
+
+  await new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error && error.code !== 'ERR_SERVER_NOT_RUNNING') {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+    server.closeIdleConnections?.();
+  });
+
+  server._store?.close?.();
+}
+
 export function createApp(config = loadConfig(), options = {}) {
   const store = new SurveyStore(config);
   const geocoder = options.geocoder || createGeocoder({
@@ -358,11 +375,14 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   });
 
   function shutdown(signal) {
-    console.log(`\n${signal} received - shutting down gracefully...`);
-    server.close(() => {
-      if (server._store?.close) server._store.close();
+    console.log(`
+${signal} received - shutting down gracefully...`);
+    closeApp(server).then(() => {
       console.log('Server closed.');
       process.exit(0);
+    }).catch((error) => {
+      console.error('Graceful shutdown failed.', error);
+      process.exit(1);
     });
     setTimeout(() => {
       console.error('Forceful shutdown after timeout.');

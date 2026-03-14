@@ -48,6 +48,61 @@
       </section>
     </main>
 
+    <!-- Help FAB -->
+    <button class="help-fab" id="help-fab" aria-label="도움말">?</button>
+
+    <!-- Help Bottom Sheet -->
+    <div class="help-backdrop hidden" id="help-backdrop"></div>
+    <div class="help-sheet hidden" id="help-sheet">
+      <div class="help-sheet-handle"></div>
+      <h3>사용 가이드</h3>
+      <div class="help-steps">
+        <div class="help-step"><span class="help-step-num">1</span> 매장 정보를 입력하세요 (이름, 위치, 매장 종류)</div>
+        <div class="help-step"><span class="help-step-num">2</span> 제품 가격을 체크하세요 (있는 것만!)</div>
+        <div class="help-step"><span class="help-step-num">3</span> 사진 찍고 메모 남기면 끝!</div>
+      </div>
+      <h4>자주 묻는 질문</h4>
+      <div class="help-faq">
+        <div class="faq-item"><strong>가격을 모르면?</strong><span>비워두세요</span></div>
+        <div class="faq-item"><strong>사진 안 찍어도 되나요?</strong><span>네, 선택사항이에요</span></div>
+        <div class="faq-item"><strong>같은 매장 두 번 가면?</strong><span>다시 기록하면 돼요</span></div>
+      </div>
+      <a href="/admin" class="help-admin-link">관리자 페이지 →</a>
+    </div>
+
+    <!-- Onboarding Overlay -->
+    <div class="onboarding-overlay hidden" id="onboarding-overlay">
+      <div class="onboarding-card">
+        <div class="onboarding-slides" id="onboarding-slides">
+          <div class="onboarding-slide is-active" data-slide="0">
+            <div class="onboarding-emoji">🏃</div>
+            <h2>이온로드에 오신 걸 환영해요!</h2>
+            <p>현장의 눈이 되어 매장을 방문하고, 제품 가격과 진열 현황을 간편하게 기록하는 앱이에요.</p>
+          </div>
+          <div class="onboarding-slide" data-slide="1">
+            <div class="onboarding-emoji">📍 → 💰 → 📸</div>
+            <h2>3단계로 간편 기록</h2>
+            <p>매장 정보 입력 → 가격 체크 → 사진 & 메모<br/>있는 것만 적으면 돼요. 정말 간단하죠?</p>
+          </div>
+          <div class="onboarding-slide" data-slide="2">
+            <div class="onboarding-emoji">🚀</div>
+            <h2>시작해볼까요?</h2>
+            <div class="field" style="margin-top:12px;">
+              <label>이름을 알려주세요</label>
+              <input id="onboarding-name" placeholder="이름을 입력하세요" />
+            </div>
+          </div>
+        </div>
+        <div class="onboarding-dots" id="onboarding-dots">
+          <span class="dot is-active"></span><span class="dot"></span><span class="dot"></span>
+        </div>
+        <div class="onboarding-actions">
+          <button class="btn btn-primary" id="onboarding-next">다음</button>
+        </div>
+        <button class="onboarding-skip" id="onboarding-skip">이미 알고 있어요</button>
+      </div>
+    </div>
+
     <nav class="bottom-nav">
       <button class="nav-tab is-active" data-tab="survey">
         <span class="nav-icon">&#x1F4CD;</span>

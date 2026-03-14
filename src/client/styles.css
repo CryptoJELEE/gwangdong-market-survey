@@ -680,6 +680,132 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
 }
 .btn-danger-sm:active { opacity: 0.85; }
 
+/* ── Onboarding Overlay ── */
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.onboarding-overlay.hidden { display: none !important; }
+.onboarding-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 32px 24px 24px;
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+  animation: fadeIn 0.3s ease;
+}
+.onboarding-slide { display: none; }
+.onboarding-slide.is-active { display: block; animation: fadeIn 0.25s ease; }
+.onboarding-emoji { font-size: 48px; margin-bottom: 16px; }
+.onboarding-slide h2 { font-size: 20px; font-weight: 800; margin-bottom: 10px; }
+.onboarding-slide p { font-size: 14px; color: var(--text-muted); line-height: 1.7; }
+.onboarding-dots { display: flex; justify-content: center; gap: 8px; margin: 20px 0 16px; }
+.onboarding-dots .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--border); transition: background var(--transition);
+}
+.onboarding-dots .dot.is-active { background: var(--primary); width: 20px; border-radius: 4px; }
+.onboarding-actions { margin-bottom: 12px; }
+.onboarding-actions .btn { width: 100%; min-height: 50px; font-size: 16px; }
+.onboarding-skip {
+  background: none; border: none; color: var(--text-muted); font-size: 13px;
+  cursor: pointer; padding: 8px; font-weight: 500;
+}
+.onboarding-skip:active { color: var(--text); }
+.onboarding-slide .field { text-align: left; }
+.onboarding-slide .field input {
+  width: 100%; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  padding: 14px 12px; font-size: 15px; background: #fafbfc; color: var(--text);
+}
+.onboarding-slide .field input:focus { outline: none; border-color: var(--primary); background: white; }
+.onboarding-slide .field label { font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px; }
+
+/* ── Help FAB ── */
+.help-fab {
+  position: fixed;
+  bottom: calc(72px + env(safe-area-inset-bottom) + 12px);
+  right: 16px;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: white;
+  font-size: 20px;
+  font-weight: 800;
+  cursor: pointer;
+  z-index: 150;
+  box-shadow: 0 4px 14px rgba(32,137,92,0.35);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+.help-fab:active { transform: scale(0.92); }
+
+/* ── Help Bottom Sheet ── */
+.help-backdrop {
+  position: fixed; inset: 0; z-index: 190;
+  background: rgba(0,0,0,0.4);
+  animation: fadeIn 0.2s ease;
+}
+.help-backdrop.hidden { display: none !important; }
+.help-sheet {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  z-index: 200;
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  padding: 12px 20px calc(24px + env(safe-area-inset-bottom));
+  max-height: 70vh; overflow-y: auto;
+  box-shadow: 0 -4px 30px rgba(0,0,0,0.12);
+  animation: sheetUp 0.3s ease;
+}
+.help-sheet.hidden { display: none !important; }
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.help-sheet-handle {
+  width: 36px; height: 4px; border-radius: 2px;
+  background: var(--border); margin: 0 auto 16px;
+}
+.help-sheet h3 { font-size: 18px; font-weight: 800; margin-bottom: 14px; }
+.help-sheet h4 { font-size: 15px; font-weight: 700; margin: 18px 0 10px; }
+.help-steps { display: grid; gap: 10px; }
+.help-step {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 14px; line-height: 1.5;
+}
+.help-step-num {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  background: var(--primary); color: white;
+  font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.help-faq { display: grid; gap: 8px; }
+.faq-item {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px; background: #f9fafb; border-radius: 8px;
+  font-size: 13px;
+}
+.faq-item strong { color: var(--text); }
+.faq-item span { color: var(--text-muted); }
+.help-admin-link {
+  display: block; text-align: center; margin-top: 18px;
+  color: var(--primary); font-size: 13px; font-weight: 600;
+  text-decoration: none; padding: 10px;
+}
+.help-admin-link:active { opacity: 0.7; }
+
+/* ── Empty State ── */
+.empty-state {
+  text-align: center; padding: 32px 16px;
+  color: var(--text-muted); font-size: 14px; line-height: 1.7;
+}
+.empty-state .empty-icon { font-size: 36px; margin-bottom: 8px; }
+
 /* ── Utilities ── */
 .small { font-size: 0.85rem; color: var(--text-muted); }
 .text-center { text-align: center; }
