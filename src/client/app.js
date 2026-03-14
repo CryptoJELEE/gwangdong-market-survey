@@ -101,13 +101,14 @@ function priceFieldName(productId, size) {
 function renderStepIndicator() {
   const steps = [
     { num: 1, label: '기본정보' },
-    { num: 2, label: '가격체크' },
+    { num: 2, label: '가격' },
     { num: 3, label: '마무리' }
   ];
   stepIndicator.innerHTML = steps.map((s, i) => {
     const cls = s.num === state.currentStep ? 'is-active' : (s.num < state.currentStep ? 'is-done' : '');
-    const arrow = i < steps.length - 1 ? '<span class="step-arrow">\u2192</span>' : '';
-    return `<span class="step ${cls}"><span class="step-num">${s.num < state.currentStep ? '\u2713' : s.num}</span>${s.label}</span>${arrow}`;
+    const line = i < steps.length - 1 ? `<span class="step-line ${s.num < state.currentStep ? 'is-done' : ''}"></span>` : '';
+    const icon = s.num < state.currentStep ? '\u2713' : s.num;
+    return `<span class="step ${cls}"><span class="step-num">${icon}</span><span class="step-label">${s.num}/3 ${s.label}</span></span>${line}`;
   }).join('');
 }
 
@@ -559,7 +560,7 @@ async function handleSubmit(config) {
   const submitBtn = formStepContainer.querySelector('#submit-btn');
   const statusEl = formStepContainer.querySelector('#submit-status');
   submitBtn.disabled = true;
-  statusEl.textContent = '저장 중...';
+  submitBtn.innerHTML = '<span class="spinner spinner-inline"></span> 저장 중...';
 
   const formData = new FormData(surveyForm);
   const prices = [];
@@ -637,9 +638,12 @@ async function handleSubmit(config) {
         statusEl.textContent = result.error || '저장에 실패했어요.';
       }
       submitBtn.disabled = false;
+      submitBtn.textContent = '\u2705 기록 완료!';
       return;
     }
     const result = await response.json();
+    // Vibration feedback on success
+    if (navigator.vibrate) navigator.vibrate(200);
     // Clear temporary localStorage keys (keep researcherName, residenceArea)
     ['_step1_region', '_step1_storeType', '_step1_storeName', '_step1_posCount', '_step1_displayLocation', '_step2_prices', '_step3_notes'].forEach((k) => {
       try { localStorage.removeItem('kwangdong_' + k); } catch {}
@@ -677,6 +681,7 @@ async function handleSubmit(config) {
       statusEl.textContent = '인터넷 연결을 확인해주세요 📶';
     }
     submitBtn.disabled = false;
+    submitBtn.textContent = '\u2705 기록 완료!';
   }
 }
 
@@ -1101,6 +1106,23 @@ function renderDashboard(config) {
   const uniqueResearchers = new Set(submissions.map((s) => s.researcher.name)).size;
   const coveredAreas = new Set(submissions.map((s) => s.assignment?.currentArea).filter(Boolean)).size;
 
+  // 0. Dashboard refresh button
+  let refreshContainer = document.querySelector('#dashboard-refresh-wrap');
+  if (!refreshContainer) {
+    refreshContainer = document.createElement('div');
+    refreshContainer.id = 'dashboard-refresh-wrap';
+    refreshContainer.style.cssText = 'display:flex;justify-content:flex-end;margin-bottom:8px;';
+    const quickStats = document.querySelector('#quick-stats');
+    quickStats.parentNode.insertBefore(refreshContainer, quickStats);
+  }
+  refreshContainer.innerHTML = '<button type="button" class="dashboard-refresh-btn" id="dashboard-refresh" aria-label="새로고침">\u{1F504}</button>';
+  refreshContainer.querySelector('#dashboard-refresh').addEventListener('click', async () => {
+    const btn = refreshContainer.querySelector('#dashboard-refresh');
+    btn.classList.add('is-spinning');
+    await loadBootstrap();
+    btn.classList.remove('is-spinning');
+  });
+
   // 1. Quick Stats
   if (total === 0) {
     document.querySelector('#quick-stats').innerHTML = `
@@ -1382,10 +1404,13 @@ async function renderMapData() {
 
 // ── Bootstrap ──
 async function loadBootstrap() {
+  const refreshBtn = document.querySelector('#dashboard-refresh');
+  if (refreshBtn) refreshBtn.classList.add('is-spinning');
   const response = await fetch('/api/bootstrap');
   state.bootstrap = await response.json();
   renderForm(state.bootstrap);
   renderDashboard(state.bootstrap);
+  if (refreshBtn) refreshBtn.classList.remove('is-spinning');
 }
 
 // Save step 1 field values to localStorage before navigating away
@@ -1557,9 +1582,28 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
+// ── Scroll to top ──
+function initScrollToTop() {
+  const btn = document.createElement('button');
+  btn.className = 'scroll-top-btn hidden';
+  btn.id = 'scroll-top-btn';
+  btn.setAttribute('aria-label', '맨 위로');
+  btn.textContent = '\u2191';
+  document.body.appendChild(btn);
+
+  btn.addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  window.addEventListener('scroll', () => {
+    btn.classList.toggle('hidden', window.scrollY < 200);
+  }, { passive: true });
+}
+
 // ── Init ──
 initGps();
 loadBootstrap();
 initOnboarding();
 initHelpSheet();
 startDashboardPolling();
+initScrollToTop();

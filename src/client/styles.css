@@ -129,9 +129,10 @@ select {
 }
 .step-indicator .step {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 4px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
   transition: color var(--transition);
@@ -139,21 +140,38 @@ select {
 .step-indicator .step.is-active { color: var(--primary); }
 .step-indicator .step.is-done { color: var(--success); }
 .step-indicator .step-num {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   background: var(--border);
   color: var(--text-muted);
-  transition: background var(--transition), color var(--transition);
+  transition: background var(--transition), color var(--transition), box-shadow var(--transition);
 }
-.step-indicator .step.is-active .step-num { background: var(--primary); color: white; }
+.step-indicator .step.is-active .step-num {
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 0 0 4px rgba(32,137,92,0.2);
+}
 .step-indicator .step.is-done .step-num { background: var(--success); color: white; }
-.step-indicator .step-arrow { margin: 0 8px; color: var(--border); font-size: 14px; }
+.step-indicator .step-label {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.step-indicator .step-line {
+  width: 40px;
+  height: 2px;
+  background: var(--border);
+  margin: 0 6px;
+  margin-bottom: 20px;
+  border-radius: 1px;
+  transition: background var(--transition);
+}
+.step-indicator .step-line.is-done { background: var(--success); }
 
 /* ── Form fields ── */
 .field { display: grid; gap: 8px; }
@@ -927,6 +945,9 @@ select {
 
   .step-num { background: var(--border); color: var(--text-muted); }
 
+  .dashboard-refresh-btn { background: var(--surface); border-color: var(--border); }
+  .dashboard-refresh-btn:active { background: var(--border); }
+
   .skeleton-line { background: var(--border); }
   .skeleton-card { background: var(--surface); }
 
@@ -1029,6 +1050,67 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(32,137,92,0.15);
 }
+
+/* ── Spinner ── */
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  display: inline-block;
+}
+.spinner-inline {
+  width: 16px; height: 16px;
+  vertical-align: middle;
+  margin-right: 4px;
+  border-top-color: white;
+  border-color: rgba(255,255,255,0.3);
+  border-top-color: white;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Dashboard refresh button ── */
+.dashboard-refresh-btn {
+  width: 36px; height: 36px;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  background: var(--card);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease, background var(--transition);
+  box-shadow: var(--shadow);
+}
+.dashboard-refresh-btn:active { background: var(--bg); }
+.dashboard-refresh-btn.is-spinning {
+  animation: spin 0.6s linear infinite;
+  pointer-events: none;
+}
+
+/* ── Scroll to top button ── */
+.scroll-top-btn {
+  position: fixed;
+  bottom: calc(72px + env(safe-area-inset-bottom) + 64px);
+  right: 16px;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: var(--primary);
+  color: white;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 150;
+  box-shadow: 0 4px 14px rgba(32,137,92,0.35);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity var(--transition), transform var(--transition);
+  opacity: 1;
+}
+.scroll-top-btn:active { transform: scale(0.9); }
+.scroll-top-btn.hidden { opacity: 0; pointer-events: none; display: flex !important; }
 
 /* ── Utilities ── */
 .small { font-size: 0.85rem; color: var(--text-muted); }
