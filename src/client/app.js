@@ -79,6 +79,19 @@ function loadLocal(key) {
   try { return localStorage.getItem('kwangdong_' + key) || ''; } catch { return ''; }
 }
 
+// ── Favorite stores ──
+function getFavoriteStores() {
+  try { return JSON.parse(localStorage.getItem('kwangdong_favoriteStores') || '[]'); } catch { return []; }
+}
+function saveFavoriteStores(stores) {
+  try { localStorage.setItem('kwangdong_favoriteStores', JSON.stringify(stores.slice(-10))); } catch {}
+}
+function addFavoriteStore(store) {
+  const stores = getFavoriteStores().filter((s) => s.storeName !== store.storeName);
+  stores.push(store);
+  saveFavoriteStores(stores);
+}
+
 // ── Price field naming ──
 function priceFieldName(productId, size) {
   return `${productId}__${size}`;
@@ -158,6 +171,13 @@ function renderStep1(config) {
         </div>
         <input type="hidden" name="storeType" value="${escapeHtml(state.selectedStoreType)}" />
       </div>
+      ${getFavoriteStores().length > 0 ? `
+      <div class="field" id="favorite-stores-section">
+        <label>\u2B50 자주 가는 매장</label>
+        <div class="favorite-chips" style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${getFavoriteStores().map((f, i) => `<button type="button" class="btn btn-secondary favorite-chip" data-fav-idx="${i}" style="font-size:.85rem;padding:4px 12px;border-radius:16px;">${escapeHtml(f.storeName)}</button>`).join('')}
+        </div>
+      </div>` : ''}
       <div class="field">
         <label>매장 이름</label>
         <div class="address-search-wrap">
@@ -276,6 +296,37 @@ function renderStep1(config) {
     if (!item) return;
     storeNameInput.value = item.dataset.storeName;
     storeDropdown.style.display = 'none';
+  });
+
+  // Favorite store chips
+  formStepContainer.querySelectorAll('.favorite-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const favs = getFavoriteStores();
+      const fav = favs[Number(chip.dataset.favIdx)];
+      if (!fav) return;
+      // Fill store type
+      const storeTypeBtn = formStepContainer.querySelector(`.store-type-btn[data-label="${fav.storeType}"]`);
+      if (storeTypeBtn) {
+        formStepContainer.querySelectorAll('.store-type-btn').forEach((b) => b.classList.remove('is-active'));
+        storeTypeBtn.classList.add('is-active');
+        state.selectedStoreType = fav.storeType;
+        formStepContainer.querySelector('[name="storeType"]').value = fav.storeType;
+        const posVal = storeTypeBtn.dataset.pos;
+        formStepContainer.querySelector('#pos-input').value = posVal;
+        formStepContainer.querySelector('#pos-display').textContent = posVal;
+      }
+      // Fill store name
+      formStepContainer.querySelector('#store-name-input').value = fav.storeName;
+      // Fill POS count
+      if (fav.posCount) {
+        formStepContainer.querySelector('#pos-input').value = fav.posCount;
+        formStepContainer.querySelector('#pos-display').textContent = fav.posCount;
+      }
+      // Fill display location
+      const dispInput = formStepContainer.querySelector('[name="displayLocation"]');
+      if (dispInput && fav.displayLocation) dispInput.value = fav.displayLocation;
+      showToast(`${fav.storeName} 정보를 불러왔어요!`, 'success');
+    });
   });
 
   formStepContainer.querySelectorAll('.store-type-btn').forEach((btn) => {
@@ -597,6 +648,8 @@ async function handleSubmit(config) {
     // Check badge before reload
     const oldBadgeIdx = state.previousBadgeIndex;
     showSuccess(result);
+    // Ask to add to favorites
+    promptFavoriteStore(state.step1Data);
     await loadBootstrap();
     // Check if badge upgraded
     const newSubs = getMySubmissions(state.bootstrap.submissions || []);
@@ -625,6 +678,36 @@ async function handleSubmit(config) {
     }
     submitBtn.disabled = false;
   }
+}
+
+function promptFavoriteStore(step1Data) {
+  if (!step1Data || !step1Data.storeName) return;
+  const existing = getFavoriteStores();
+  if (existing.some((s) => s.storeName === step1Data.storeName)) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'price-reminder-overlay';
+  overlay.innerHTML = `
+    <div class="price-reminder-dialog">
+      <p>\u2B50 <strong>${escapeHtml(step1Data.storeName)}</strong>을(를) 즐겨찾기에 추가할까요?</p>
+      <p class="small">다음에 더 빠르게 기록할 수 있어요!</p>
+      <div class="price-reminder-actions">
+        <button type="button" class="btn btn-secondary" id="fav-no">괜찮아요</button>
+        <button type="button" class="btn btn-primary" id="fav-yes">추가할게요!</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#fav-no').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#fav-yes').addEventListener('click', () => {
+    addFavoriteStore({
+      storeType: step1Data.storeType || '',
+      storeName: step1Data.storeName,
+      posCount: step1Data.posCount || '1',
+      displayLocation: step1Data.displayLocation || ''
+    });
+    showToast(`${step1Data.storeName} 즐겨찾기 추가! \u2B50`, 'success');
+    overlay.remove();
+  });
 }
 
 function showSuccess(result) {
@@ -909,6 +992,105 @@ function renderMyRecords(submissions) {
   `;
 }
 
+// ── Photo Gallery ──
+function renderPhotoGallery(submissions) {
+  let container = document.querySelector('#photo-gallery');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'photo-gallery';
+    container.style.marginTop = '12px';
+    const myRecords = document.querySelector('#my-records');
+    if (myRecords) {
+      myRecords.parentNode.insertBefore(container, myRecords.nextSibling);
+    } else {
+      const recentActivity = document.querySelector('#recent-activity');
+      if (recentActivity) recentActivity.parentNode.insertBefore(container, recentActivity.nextSibling);
+    }
+  }
+
+  const mySubs = getMySubmissions(submissions);
+  const photosData = mySubs
+    .filter((s) => s.photoDataUrl)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 12)
+    .map((s) => ({
+      url: s.photoDataUrl,
+      storeName: s.survey.storeName,
+      date: new Date(s.createdAt).toLocaleDateString('ko-KR')
+    }));
+
+  if (photosData.length === 0) {
+    container.innerHTML = `
+      <div class="card stack">
+        <h2>\u{1F4F8} 최근 사진</h2>
+        <div class="empty-state">
+          <div class="empty-icon">\u{1F4F7}</div>
+          <p>아직 사진이 없어요 \u{1F4F7} 매장 사진을 찍어보세요!</p>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="card stack">
+      <h2>\u{1F4F8} 최근 사진</h2>
+      <div class="photo-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+        ${photosData.map((p, i) => `<div class="photo-thumb" data-photo-idx="${i}" style="width:100%;aspect-ratio:1;overflow:hidden;border-radius:8px;cursor:pointer;"><img src="${p.url}" alt="${escapeHtml(p.storeName)}" style="width:100%;height:100%;object-fit:cover;" /></div>`).join('')}
+      </div>
+    </div>
+  `;
+
+  // Lightbox
+  container.querySelectorAll('.photo-thumb').forEach((thumb) => {
+    thumb.addEventListener('click', () => {
+      openLightbox(photosData, Number(thumb.dataset.photoIdx));
+    });
+  });
+}
+
+function openLightbox(photos, startIdx) {
+  let idx = startIdx;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;';
+
+  function render() {
+    const p = photos[idx];
+    overlay.innerHTML = `
+      <div style="position:absolute;top:12px;right:16px;color:#fff;font-size:1.5rem;cursor:pointer;z-index:10001;" id="lb-close">\u2715</div>
+      ${photos.length > 1 ? `<div style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#fff;font-size:2rem;cursor:pointer;z-index:10001;padding:8px;" id="lb-prev">\u2039</div>` : ''}
+      ${photos.length > 1 ? `<div style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#fff;font-size:2rem;cursor:pointer;z-index:10001;padding:8px;" id="lb-next">\u203A</div>` : ''}
+      <img src="${p.url}" alt="${escapeHtml(p.storeName)}" style="max-width:90%;max-height:75vh;border-radius:8px;object-fit:contain;" />
+      <div style="color:#fff;text-align:center;margin-top:12px;font-size:.9rem;">
+        <strong>${escapeHtml(p.storeName)}</strong><br/>${p.date}
+      </div>
+    `;
+    overlay.querySelector('#lb-close').addEventListener('click', () => overlay.remove());
+    const prevBtn = overlay.querySelector('#lb-prev');
+    const nextBtn = overlay.querySelector('#lb-next');
+    if (prevBtn) prevBtn.addEventListener('click', (e) => { e.stopPropagation(); idx = (idx - 1 + photos.length) % photos.length; render(); });
+    if (nextBtn) nextBtn.addEventListener('click', (e) => { e.stopPropagation(); idx = (idx + 1) % photos.length; render(); });
+  }
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  // Swipe support
+  let touchStartX = 0;
+  overlay.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+  overlay.addEventListener('touchend', (e) => {
+    const diff = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(diff) > 50 && photos.length > 1) {
+      idx = diff > 0 ? (idx - 1 + photos.length) % photos.length : (idx + 1) % photos.length;
+      render();
+    }
+  });
+
+  render();
+  document.body.appendChild(overlay);
+}
+
 // ── Dashboard rendering ──
 function renderDashboard(config) {
   const submissions = config.submissions || [];
@@ -1016,6 +1198,9 @@ function renderDashboard(config) {
 
   // 7. My Records
   renderMyRecords(submissions);
+
+  // 8. Photo Gallery
+  renderPhotoGallery(submissions);
 }
 
 // ── Helpers ──

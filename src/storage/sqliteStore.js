@@ -48,6 +48,11 @@ CREATE TABLE IF NOT EXISTS geocode_cache (
   address TEXT NOT NULL,
   cached_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 const SUBMISSION_COLUMN_MIGRATIONS = [
@@ -302,6 +307,21 @@ export class SQLiteStore {
     this._ensureDb();
     this.db.prepare('DELETE FROM assignment_overrides WHERE submission_id = ?').run(submissionId);
     this.db.prepare('DELETE FROM submissions WHERE id = ?').run(submissionId);
+  }
+
+  async getSetting(key) {
+    this._ensureDb();
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+    if (!row) return null;
+    return JSON.parse(row.value);
+  }
+
+  async setSetting(key, value) {
+    this._ensureDb();
+    this.db.prepare(`
+      INSERT INTO settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(key, JSON.stringify(value));
   }
 
   close() {

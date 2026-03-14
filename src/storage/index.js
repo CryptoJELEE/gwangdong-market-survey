@@ -64,4 +64,12 @@ export class SurveyStore {
   async deleteSubmission(submissionId) {
     return this.localStore.deleteSubmission(submissionId);
   }
+
+  async getSetting(key) {
+    return this.localStore.getSetting(key);
+  }
+
+  async setSetting(key, value) {
+    return this.localStore.setSetting(key, value);
+  }
 }

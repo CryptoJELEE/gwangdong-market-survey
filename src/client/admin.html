@@ -18,8 +18,23 @@
       .week-compare-delta.positive{background:#e8f5e9;color:#2e7d32}
       .week-compare-delta.negative{background:#ffeaea;color:#c62828}
       .week-compare-delta.neutral{background:var(--bg);color:var(--text-muted)}
+      .chip-list{display:flex;flex-wrap:wrap;gap:6px}
+      .chip{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg);border:1px solid var(--border);border-radius:16px;font-size:13px;font-weight:500}
+      .chip button{background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-muted);padding:0 2px;line-height:1}
+      .chip button:hover{color:var(--error)}
+      .settings-group h3{font-size:14px;font-weight:700;margin-bottom:8px;color:var(--text)}
+      .product-card{padding:10px 12px;background:var(--bg);border-radius:var(--radius-sm);margin-bottom:8px}
+      .product-card .product-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+      .product-card .product-name{font-weight:700;font-size:14px}
+      .product-card .product-brand{font-size:12px;color:var(--text-muted)}
+      .product-card .size-chip{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;background:var(--card);border:1px solid var(--border);border-radius:12px;font-size:12px;margin:2px}
+      .product-card .size-chip button{background:none;border:none;cursor:pointer;font-size:12px;color:var(--text-muted);padding:0;line-height:1}
+      .product-card .size-chip button:hover{color:var(--error)}
+      .product-card .add-size-row{display:flex;gap:4px;margin-top:6px}
+      .product-card .add-size-row input{flex:1;font-size:12px;padding:4px 8px}
+      .product-card .add-size-row button{font-size:12px;padding:4px 8px}
       @media print{
-        .status-bar,.logout-btn,#login-section,#csv-btn,#backup-btn,.filter-bar,#submission-list,.sub-actions,.btn,.btn-submit,.new-submission-banner,#researcher-stats,.no-print{display:none!important}
+        .status-bar,.logout-btn,#login-section,#csv-btn,#backup-btn,.filter-bar,#submission-list,.sub-actions,.btn,.btn-submit,.new-submission-banner,#researcher-stats,.no-print,#settings-section{display:none!important}
         #admin-section{display:block!important}
         #admin-section .hidden{display:block!important}
         body{background:#fff;color:#000;font-size:12pt}
@@ -82,6 +97,43 @@
         </div>
 
         <div id="researcher-stats" class="card stack" style="margin-top:12px;"></div>
+
+        <div id="settings-section" class="card stack" style="margin-top:12px;">
+          <h2>설정 ⚙️</h2>
+
+          <div id="settings-areas" class="settings-group">
+            <h3>지역 관리</h3>
+            <div id="area-chips" class="chip-list"></div>
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              <input type="text" id="new-area-input" placeholder="새 지역명" style="flex:1;" />
+              <button class="btn btn-primary" id="add-area-btn">추가</button>
+            </div>
+          </div>
+
+          <div id="settings-store-types" class="settings-group" style="margin-top:16px;">
+            <h3>매장유형 관리</h3>
+            <div id="store-type-chips" class="chip-list"></div>
+            <div style="display:flex;gap:6px;margin-top:8px;">
+              <input type="text" id="new-store-type-label" placeholder="매장유형명" style="flex:1;" />
+              <input type="number" id="new-store-type-pos" placeholder="기본 POS" style="width:80px;" min="0" value="1" />
+              <button class="btn btn-primary" id="add-store-type-btn">추가</button>
+            </div>
+          </div>
+
+          <div id="settings-products" class="settings-group" style="margin-top:16px;">
+            <h3>제품 관리</h3>
+            <div id="product-list-manage"></div>
+            <div style="display:grid;gap:6px;margin-top:8px;">
+              <input type="text" id="new-product-label" placeholder="제품명" />
+              <select id="new-product-brand">
+                <option value="광동제약">자사 (광동제약)</option>
+                <option value="경쟁사">경쟁사</option>
+              </select>
+              <input type="text" id="new-product-sizes" placeholder="사이즈 (쉼표 구분, 예: 캔 240ml, PET 500ml)" />
+              <button class="btn btn-primary" id="add-product-btn">제품 추가</button>
+            </div>
+          </div>
+        </div>
 
         <div class="card stack" style="margin-top:12px;">
           <div class="admin-header">

@@ -80,7 +80,9 @@ async function showAdmin() {
   loginSection.classList.add('hidden');
   adminSection.classList.remove('hidden');
   logoutBtn.classList.remove('hidden');
+  await loadSettings();
   await loadAdminData();
+  renderAllSettings();
 }
 
 // ── Verify token on load ──
@@ -663,6 +665,208 @@ function renderWeekCompare() {
     <div class="week-compare-delta ${deltaClass}">${deltaText}</div>
   `;
 }
+
+// ── Settings management ──
+let settingsData = { customAreas: null, customProducts: null, customStoreTypes: null };
+
+async function loadSettings() {
+  try {
+    const res = await authFetch('/api/admin/settings');
+    if (!res.ok) return;
+    settingsData = await res.json();
+  } catch { /* ignore */ }
+}
+
+async function saveSetting(key, value) {
+  const res = await authFetch('/api/admin/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, value })
+  });
+  if (!res.ok) {
+    showToast('설정 저장에 실패했어요.', 'error');
+    return false;
+  }
+  showToast('설정이 저장되었어요.');
+  return true;
+}
+
+function getActiveAreas() {
+  return settingsData.customAreas || adminData?.areas || [];
+}
+
+function getActiveStoreTypes() {
+  return settingsData.customStoreTypes || adminData?.storeTypeTemplates || [];
+}
+
+function getActiveProducts() {
+  return settingsData.customProducts || adminData?.products || [];
+}
+
+function renderSettingsAreas() {
+  const areas = getActiveAreas();
+  const container = document.querySelector('#area-chips');
+  container.innerHTML = areas.map((area) =>
+    `<span class="chip">${escapeHtml(area)}<button data-remove-area="${escapeHtml(area)}" title="삭제">\u2715</button></span>`
+  ).join('');
+
+  container.querySelectorAll('[data-remove-area]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const areaName = btn.dataset.removeArea;
+      const updated = getActiveAreas().filter((a) => a !== areaName);
+      if (await saveSetting('customAreas', updated)) {
+        settingsData.customAreas = updated;
+        renderSettingsAreas();
+        await loadAdminData();
+      }
+    });
+  });
+}
+
+function renderSettingsStoreTypes() {
+  const types = getActiveStoreTypes();
+  const container = document.querySelector('#store-type-chips');
+  container.innerHTML = types.map((t) =>
+    `<span class="chip">${escapeHtml(t.label)} (POS ${t.defaultPosCount})<button data-remove-st="${escapeHtml(t.id)}" title="삭제">\u2715</button></span>`
+  ).join('');
+
+  container.querySelectorAll('[data-remove-st]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const stId = btn.dataset.removeSt;
+      const updated = getActiveStoreTypes().filter((t) => t.id !== stId);
+      if (await saveSetting('customStoreTypes', updated)) {
+        settingsData.customStoreTypes = updated;
+        renderSettingsStoreTypes();
+        await loadAdminData();
+      }
+    });
+  });
+}
+
+function renderSettingsProducts() {
+  const products = getActiveProducts();
+  const container = document.querySelector('#product-list-manage');
+  container.innerHTML = products.map((p) => `
+    <div class="product-card" data-pid="${escapeHtml(p.id)}">
+      <div class="product-header">
+        <span><span class="product-name">${escapeHtml(p.label)}</span> <span class="product-brand">(${escapeHtml(p.brand)})</span></span>
+        <button data-remove-product="${escapeHtml(p.id)}" style="background:none;border:none;cursor:pointer;color:var(--error);font-weight:700;">삭제</button>
+      </div>
+      <div class="chip-list">
+        ${p.sizes.map((s) => `<span class="size-chip">${escapeHtml(s)}<button data-remove-size="${escapeHtml(p.id)}|${escapeHtml(s)}">\u2715</button></span>`).join('')}
+      </div>
+      <div class="add-size-row">
+        <input type="text" placeholder="새 사이즈" data-size-input="${escapeHtml(p.id)}" />
+        <button data-add-size="${escapeHtml(p.id)}" class="btn btn-primary">+</button>
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('[data-remove-product]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const pid = btn.dataset.removeProduct;
+      const updated = getActiveProducts().filter((p) => p.id !== pid);
+      if (await saveSetting('customProducts', updated)) {
+        settingsData.customProducts = updated;
+        renderSettingsProducts();
+        await loadAdminData();
+      }
+    });
+  });
+
+  container.querySelectorAll('[data-remove-size]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const [pid, size] = btn.dataset.removeSize.split('|');
+      const updated = getActiveProducts().map((p) =>
+        p.id === pid ? { ...p, sizes: p.sizes.filter((s) => s !== size) } : p
+      );
+      if (await saveSetting('customProducts', updated)) {
+        settingsData.customProducts = updated;
+        renderSettingsProducts();
+        await loadAdminData();
+      }
+    });
+  });
+
+  container.querySelectorAll('[data-add-size]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const pid = btn.dataset.addSize;
+      const input = container.querySelector(`[data-size-input="${pid}"]`);
+      const size = input.value.trim();
+      if (!size) return;
+      const updated = getActiveProducts().map((p) =>
+        p.id === pid ? { ...p, sizes: [...p.sizes, size] } : p
+      );
+      if (await saveSetting('customProducts', updated)) {
+        settingsData.customProducts = updated;
+        renderSettingsProducts();
+        await loadAdminData();
+      }
+    });
+  });
+}
+
+function renderAllSettings() {
+  renderSettingsAreas();
+  renderSettingsStoreTypes();
+  renderSettingsProducts();
+}
+
+// Area add button
+document.querySelector('#add-area-btn').addEventListener('click', async () => {
+  const input = document.querySelector('#new-area-input');
+  const name = input.value.trim();
+  if (!name) return;
+  const updated = [...getActiveAreas(), name];
+  if (await saveSetting('customAreas', updated)) {
+    settingsData.customAreas = updated;
+    input.value = '';
+    renderSettingsAreas();
+    await loadAdminData();
+  }
+});
+
+// Store type add button
+document.querySelector('#add-store-type-btn').addEventListener('click', async () => {
+  const labelInput = document.querySelector('#new-store-type-label');
+  const posInput = document.querySelector('#new-store-type-pos');
+  const label = labelInput.value.trim();
+  if (!label) return;
+  const defaultPosCount = Number(posInput.value) || 1;
+  const id = label.toLowerCase().replace(/[^a-z0-9가-힣]/g, '-').replace(/-+/g, '-');
+  const updated = [...getActiveStoreTypes(), { id, label, defaultPosCount }];
+  if (await saveSetting('customStoreTypes', updated)) {
+    settingsData.customStoreTypes = updated;
+    labelInput.value = '';
+    posInput.value = '1';
+    renderSettingsStoreTypes();
+    await loadAdminData();
+  }
+});
+
+// Product add button
+document.querySelector('#add-product-btn').addEventListener('click', async () => {
+  const labelInput = document.querySelector('#new-product-label');
+  const brandInput = document.querySelector('#new-product-brand');
+  const sizesInput = document.querySelector('#new-product-sizes');
+  const label = labelInput.value.trim();
+  if (!label) return;
+  const brand = brandInput.value;
+  const sizes = sizesInput.value.split(',').map((s) => s.trim()).filter(Boolean);
+  if (sizes.length === 0) {
+    showToast('사이즈를 하나 이상 입력해주세요.', 'error');
+    return;
+  }
+  const id = label.toLowerCase().replace(/[^a-z0-9가-힣]/g, '-').replace(/-+/g, '-');
+  const updated = [...getActiveProducts(), { id, label, brand, sizes }];
+  if (await saveSetting('customProducts', updated)) {
+    settingsData.customProducts = updated;
+    labelInput.value = '';
+    sizesInput.value = '';
+    renderSettingsProducts();
+    await loadAdminData();
+  }
+});
 
 // ── Init ──
 init();

@@ -322,13 +322,52 @@ export function createApp(config = loadConfig(), options = {}) {
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/api/admin/settings') {
+        if (!checkAuth(request)) {
+          json(response, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const [customAreas, customProducts, customStoreTypes] = await Promise.all([
+          store.getSetting('customAreas'),
+          store.getSetting('customProducts'),
+          store.getSetting('customStoreTypes')
+        ]);
+        json(response, 200, { customAreas, customProducts, customStoreTypes });
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/admin/settings') {
+        if (!checkAuth(request)) {
+          json(response, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const body = await collectJsonBody(request, MAX_BODY_BYTES);
+        const allowedKeys = ['customAreas', 'customProducts', 'customStoreTypes'];
+        if (!body.key || !allowedKeys.includes(body.key)) {
+          json(response, 400, { error: 'Invalid setting key.' });
+          return;
+        }
+        if (!Array.isArray(body.value)) {
+          json(response, 400, { error: 'Value must be an array.' });
+          return;
+        }
+        await store.setSetting(body.key, body.value);
+        json(response, 200, { ok: true });
+        return;
+      }
+
       if (request.method === 'GET' && url.pathname === '/api/bootstrap') {
         const submissions = await store.listSubmissions();
         const assignmentOverrides = await store.listAssignmentOverrides();
+        const [customAreas, customProducts, customStoreTypes] = await Promise.all([
+          store.getSetting('customAreas'),
+          store.getSetting('customProducts'),
+          store.getSetting('customStoreTypes')
+        ]);
         json(response, 200, {
-          areas: config.areas,
-          products: config.products,
-          storeTypeTemplates: config.storeTypeTemplates,
+          areas: customAreas || config.areas,
+          products: customProducts || config.products,
+          storeTypeTemplates: customStoreTypes || config.storeTypeTemplates,
           submissions,
           assignmentOverrides,
           adminTokenConfigured: Boolean(config.adminToken)
@@ -365,10 +404,12 @@ export function createApp(config = loadConfig(), options = {}) {
       }
 
       if (request.method === 'GET' && url.pathname === '/api/survey-stats') {
+        const customAreas = await store.getSetting('customAreas');
+        const activeAreas = customAreas || config.areas;
         const submissionCounts = await store.getSubmissionCounts();
-        const areaCoordinates = await geocodeAreas(config.areas);
+        const areaCoordinates = await geocodeAreas(activeAreas);
         json(response, 200, {
-          areas: config.areas.map((area) => ({
+          areas: activeAreas.map((area) => ({
             area,
             submissionCount: submissionCounts[area] || 0,
             coordinates: areaCoordinates[area]
@@ -382,16 +423,19 @@ export function createApp(config = loadConfig(), options = {}) {
 
       if (request.method === 'POST' && url.pathname === '/api/submissions') {
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
-        const payload = validateSubmission(body, config);
+        const customAreas = await store.getSetting('customAreas');
+        const activeAreas = customAreas || config.areas;
+        const dynamicConfig = { ...config, areas: activeAreas };
+        const payload = validateSubmission(body, dynamicConfig);
         const submissionCounts = await store.getSubmissionCounts();
         const [residenceCoord, surveyCoord, areaCoords] = await Promise.all([
           geocoder.tryGeocode(payload.researcher.residenceArea),
           geocoder.tryGeocode(payload.survey.region),
-          geocodeAreas(config.areas)
+          geocodeAreas(activeAreas)
         ]);
 
         const hasDistanceInputs =
-          Boolean(residenceCoord) && Object.keys(areaCoords).length === config.areas.length;
+          Boolean(residenceCoord) && Object.keys(areaCoords).length === activeAreas.length;
 
         const assignment = hasDistanceInputs
           ? assignAreaByDistance({
@@ -401,7 +445,7 @@ export function createApp(config = loadConfig(), options = {}) {
             })
           : assignArea({
               residenceArea: payload.researcher.residenceArea,
-              areas: config.areas,
+              areas: activeAreas,
               submissionCounts
             });
 
