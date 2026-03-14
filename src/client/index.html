@@ -148,6 +148,11 @@
       </button>
     </nav>
 
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+      }
+    </script>
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=cd597c4c6f2cb58323e670a8bcef366b&autoload=false&libraries=services,clusterer"></script>
     <script type="module" src="/app.js"></script>
     <script>

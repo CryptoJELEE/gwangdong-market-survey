@@ -364,6 +364,9 @@ function renderAdmin() {
   filterStore.addEventListener('input', doFilter);
   renderSubmissionList('', '', '', '');
   renderCharts();
+  renderStoreProductChart();
+  renderActivityHeatmap();
+  renderRegionCompare();
   renderWeekCompare();
   bindResearcherDetails();
   renderPriceTrendDropdowns();
@@ -538,6 +541,212 @@ function renderPriceTrend(productId, size) {
       <div class="trend-stat"><div class="ts-label">평균가</div><div class="ts-value">\u20A9${Math.round(avg).toLocaleString()}</div></div>
     </div>
   `;
+}
+
+// ── Store-type x Product grouped bar chart ──
+function renderStoreProductChart() {
+  if (!adminData) return;
+  const container = document.querySelector('#chart-store-product');
+  const { submissions } = adminData;
+  const products = getActiveProducts();
+  if (!submissions.length || !products.length) {
+    container.innerHTML = '<h2>🏪 매장유형별 제품 보유율</h2><div class="notice">데이터가 없어요.</div>';
+    return;
+  }
+
+  // Count submissions per store type, and per store type+product
+  const storeTypes = {};
+  submissions.forEach((s) => {
+    const st = s.survey.storeType;
+    if (!st) return;
+    if (!storeTypes[st]) storeTypes[st] = { total: 0, products: {} };
+    storeTypes[st].total++;
+    const priceProducts = new Set((s.prices || []).map((p) => p.productLabel));
+    products.forEach((prod) => {
+      if (priceProducts.has(prod.label)) {
+        storeTypes[st].products[prod.label] = (storeTypes[st].products[prod.label] || 0) + 1;
+      }
+    });
+  });
+
+  const stEntries = Object.entries(storeTypes).sort((a, b) => b[1].total - a[1].total);
+  const colors = ['#0066cc', '#ff6b35', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f'];
+
+  // Build insights
+  const insights = [];
+  stEntries.forEach(([st, data]) => {
+    products.forEach((prod) => {
+      const rate = data.total ? Math.round(((data.products[prod.label] || 0) / data.total) * 100) : 0;
+      if (rate >= 70) insights.push(`${st}에서 ${prod.label} 보유율: ${rate}%`);
+    });
+  });
+
+  container.innerHTML = `
+    <h2>🏪 매장유형별 제품 보유율</h2>
+    <div class="group-bar-section">
+      ${stEntries.map(([st, data]) => {
+        return `
+        <div class="group-bar-row">
+          <span class="group-bar-label">${escapeHtml(st)}</span>
+          <div class="group-bar-bars">
+            ${products.map((prod, pi) => {
+              const rate = data.total ? Math.round(((data.products[prod.label] || 0) / data.total) * 100) : 0;
+              return `<div class="group-bar-seg" style="width:${Math.max(rate, 2)}%;background:${colors[pi % colors.length]};" data-tip="${escapeHtml(prod.label)}: ${rate}%"></div>`;
+            }).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="group-bar-legend">
+      ${products.map((prod, pi) => `
+        <span class="group-bar-legend-item"><span class="group-bar-legend-dot" style="background:${colors[pi % colors.length]};"></span>${escapeHtml(prod.label)}</span>
+      `).join('')}
+    </div>
+    ${insights.length ? `<div class="group-bar-insight">💡 ${insights.map((i) => escapeHtml(i)).join(' · ')}</div>` : ''}
+  `;
+}
+
+// ── Activity heatmap (day x hour) ──
+function renderActivityHeatmap() {
+  if (!adminData) return;
+  const container = document.querySelector('#chart-activity-heatmap');
+  const { submissions } = adminData;
+  if (!submissions.length) {
+    container.innerHTML = '<h2>⏰ 활동 시간대</h2><div class="notice">데이터가 없어요.</div>';
+    return;
+  }
+
+  const dayNames = ['월', '화', '수', '목', '금', '토', '일'];
+  // grid[day][hour] — day 0=Mon
+  const grid = Array.from({ length: 7 }, () => Array(24).fill(0));
+  let maxVal = 0;
+
+  submissions.forEach((s) => {
+    const d = new Date(s.createdAt);
+    const jsDay = d.getDay(); // 0=Sun
+    const day = jsDay === 0 ? 6 : jsDay - 1; // 0=Mon ... 6=Sun
+    const hour = d.getHours();
+    grid[day][hour]++;
+    if (grid[day][hour] > maxVal) maxVal = grid[day][hour];
+  });
+
+  const cellColor = (val) => {
+    if (val === 0) return 'var(--border)';
+    const intensity = Math.round((val / maxVal) * 200 + 55);
+    return `rgb(${255 - intensity}, ${Math.min(200, 100 + intensity)}, ${255 - intensity * 1.2 < 0 ? 0 : Math.round(255 - intensity * 1.2)})`;
+  };
+
+  // Header row
+  let headerHtml = '<div class="heatmap-day-label"></div>';
+  for (let h = 0; h < 24; h++) {
+    headerHtml += `<div class="heatmap-header">${h}</div>`;
+  }
+
+  let gridHtml = headerHtml;
+  for (let d = 0; d < 7; d++) {
+    gridHtml += `<div class="heatmap-day-label">${dayNames[d]}</div>`;
+    for (let h = 0; h < 24; h++) {
+      const val = grid[d][h];
+      gridHtml += `<div class="heatmap-cell" style="background:${cellColor(val)};" title="${dayNames[d]} ${h}시: ${val}건">${val || ''}</div>`;
+    }
+  }
+
+  container.innerHTML = `
+    <h2>⏰ 활동 시간대</h2>
+    <div class="heatmap-grid">${gridHtml}</div>
+  `;
+}
+
+// ── Region comparison table ──
+let regionSortCol = 0;
+let regionSortAsc = false;
+
+function renderRegionCompare() {
+  if (!adminData) return;
+  const container = document.querySelector('#chart-region-compare');
+  const { submissions } = adminData;
+  const areas = getActiveAreas();
+  if (!submissions.length || !areas.length) {
+    container.innerHTML = '<h2>📊 지역별 상세 비교</h2><div class="notice">데이터가 없어요.</div>';
+    return;
+  }
+
+  // Build per-area stats
+  const areaStats = areas.map((area) => {
+    const mine = submissions.filter((s) => s.assignment?.currentArea === area);
+    const total = mine.length;
+    const researchers = new Set(mine.map((s) => s.researcher.name)).size;
+
+    // Average ionkick price
+    const ionkickPrices = [];
+    mine.forEach((s) => {
+      (s.prices || []).forEach((p) => {
+        if (p.productLabel && p.productLabel.includes('이온킥') && p.price) {
+          const num = Number(String(p.price).replace(/[^0-9]/g, ''));
+          if (num > 0) ionkickPrices.push(num);
+        }
+      });
+    });
+    const avgPrice = ionkickPrices.length ? Math.round(ionkickPrices.reduce((a, b) => a + b, 0) / ionkickPrices.length) : 0;
+
+    // Photo rate
+    const withPhoto = mine.filter((s) => s.photo).length;
+    const photoRate = total ? Math.round((withPhoto / total) * 100) : 0;
+
+    return { area, total, researchers, avgPrice, photoRate };
+  }).filter((a) => a.total > 0);
+
+  // Sort
+  const cols = ['area', 'total', 'researchers', 'avgPrice', 'photoRate'];
+  const sortKey = cols[regionSortCol] || 'total';
+  areaStats.sort((a, b) => {
+    const va = a[sortKey];
+    const vb = b[sortKey];
+    if (typeof va === 'string') return regionSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return regionSortAsc ? va - vb : vb - va;
+  });
+
+  const arrows = cols.map((_, i) => i === regionSortCol ? (regionSortAsc ? '▲' : '▼') : '');
+
+  container.innerHTML = `
+    <h2>📊 지역별 상세 비교</h2>
+    <div style="overflow-x:auto;">
+      <table class="region-table">
+        <thead><tr>
+          <th data-col="0">지역 <span class="sort-arrow">${arrows[0]}</span></th>
+          <th data-col="1">총 제출 <span class="sort-arrow">${arrows[1]}</span></th>
+          <th data-col="2">조사자 수 <span class="sort-arrow">${arrows[2]}</span></th>
+          <th data-col="3">평균 가격(이온킥) <span class="sort-arrow">${arrows[3]}</span></th>
+          <th data-col="4">사진 첨부율 <span class="sort-arrow">${arrows[4]}</span></th>
+        </tr></thead>
+        <tbody>
+          ${areaStats.map((a) => `
+            <tr>
+              <td style="font-weight:600;">${escapeHtml(a.area)}</td>
+              <td>${a.total}건</td>
+              <td>${a.researchers}명</td>
+              <td>${a.avgPrice ? '₩' + a.avgPrice.toLocaleString() : '-'}</td>
+              <td>${a.photoRate}%</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  // Bind sort
+  container.querySelectorAll('th[data-col]').forEach((th) => {
+    th.addEventListener('click', () => {
+      const col = Number(th.dataset.col);
+      if (regionSortCol === col) {
+        regionSortAsc = !regionSortAsc;
+      } else {
+        regionSortCol = col;
+        regionSortAsc = col === 0; // area ascending by default, others descending
+      }
+      renderRegionCompare();
+    });
+  });
 }
 
 function applyDateFilter(submissions, dateFilter) {

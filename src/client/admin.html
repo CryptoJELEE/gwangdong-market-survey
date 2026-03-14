@@ -56,8 +56,29 @@
       .trend-stat{padding:8px 12px;background:var(--bg);border-radius:var(--radius-sm);text-align:center;flex:1;min-width:80px}
       .trend-stat .ts-label{font-size:11px;color:var(--text-muted);font-weight:600}
       .trend-stat .ts-value{font-size:18px;font-weight:800;color:var(--primary);margin-top:2px}
+      .group-bar-section{display:grid;gap:12px}
+      .group-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+      .group-bar-label{min-width:100px;font-size:13px;font-weight:600;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .group-bar-bars{flex:1;display:flex;gap:3px;align-items:end;height:28px}
+      .group-bar-seg{height:100%;border-radius:4px;transition:width .4s ease;position:relative}
+      .group-bar-seg:hover::after{content:attr(data-tip);position:absolute;bottom:110%;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:3px 8px;border-radius:4px;font-size:11px;white-space:nowrap;z-index:10}
+      .group-bar-legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+      .group-bar-legend-item{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:500}
+      .group-bar-legend-dot{width:10px;height:10px;border-radius:3px}
+      .group-bar-insight{margin-top:10px;padding:8px 12px;background:var(--bg);border-radius:var(--radius-sm);font-size:13px;color:var(--text);line-height:1.6}
+      .heatmap-grid{display:grid;grid-template-columns:50px repeat(24,1fr);gap:2px;overflow-x:auto}
+      .heatmap-header{font-size:10px;font-weight:600;color:var(--text-muted);text-align:center;padding:2px 0}
+      .heatmap-day-label{font-size:12px;font-weight:600;color:var(--text);display:flex;align-items:center;justify-content:flex-end;padding-right:6px}
+      .heatmap-cell{aspect-ratio:1;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--text-muted);transition:background .2s;cursor:default;min-width:16px}
+      .heatmap-cell:hover{outline:2px solid var(--primary);z-index:1}
+      .region-table{width:100%;border-collapse:collapse;font-size:13px}
+      .region-table th{padding:10px 8px;text-align:left;border-bottom:2px solid var(--border);font-weight:700;cursor:pointer;user-select:none;white-space:nowrap}
+      .region-table th:hover{color:var(--primary)}
+      .region-table th .sort-arrow{margin-left:4px;font-size:10px}
+      .region-table td{padding:8px;border-bottom:1px solid var(--border)}
+      .region-table tr:hover td{background:var(--bg)}
       @media print{
-        .status-bar,.logout-btn,#login-section,#csv-btn,#backup-btn,.filter-bar,#submission-list,.sub-actions,.btn,.btn-submit,.new-submission-banner,#researcher-stats,.no-print,#settings-section,#price-trend-section{display:none!important}
+        .status-bar,.logout-btn,#login-section,#csv-btn,#backup-btn,.filter-bar,#submission-list,.sub-actions,.btn,.btn-submit,.new-submission-banner,#researcher-stats,.no-print,#settings-section,#price-trend-section,#chart-activity-heatmap{display:none!important}
         #admin-section{display:block!important}
         #admin-section .hidden{display:block!important}
         body{background:#fff;color:#000;font-size:12pt}
@@ -109,6 +130,10 @@
           <div class="card stack" id="chart-area"></div>
           <div class="card stack" id="chart-quality"></div>
         </div>
+
+        <div id="chart-store-product" class="card stack" style="margin-top:12px;"></div>
+        <div id="chart-activity-heatmap" class="card stack" style="margin-top:12px;"></div>
+        <div id="chart-region-compare" class="card stack" style="margin-top:12px;"></div>
 
         <div id="week-compare-section" class="card stack" style="margin-top:12px;"></div>
 

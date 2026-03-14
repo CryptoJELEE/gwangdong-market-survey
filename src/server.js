@@ -273,6 +273,16 @@ export function createApp(config = loadConfig(), options = {}) {
         await serveStatic(response, path.resolve('src/client/manifest.json'));
         return;
       }
+      if (request.method === 'GET' && url.pathname === '/sw.js') {
+        const swPath = path.resolve('src/client/sw.js');
+        const contents = await readFile(swPath);
+        response.writeHead(200, {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'Cache-Control': 'no-cache'
+        });
+        response.end(contents);
+        return;
+      }
       if (request.method === 'GET' && (url.pathname === '/icon-192.png' || url.pathname === '/icon-512.png')) {
         await serveStatic(response, path.resolve('src/client', url.pathname.slice(1)));
         return;
