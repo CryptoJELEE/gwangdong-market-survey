@@ -35,6 +35,7 @@
 
     <div class="status-bar">
       <span class="gps-status" id="gps-status">위치 찾는 중...</span>
+      <span id="clock" class="status-clock"></span>
       <span class="researcher-name" id="status-researcher"></span>
     </div>
 
@@ -45,7 +46,7 @@
         <p class="subhead">현장의 눈이 되어주셔서 감사합니다 🏃</p>
       </header>
 
-      <section id="survey" class="panel is-active">
+      <section id="survey" class="panel is-active" role="tabpanel" aria-labelledby="tab-survey">
         <div id="step-indicator" class="step-indicator"></div>
         <form id="survey-form">
           <div id="form-step-container"></div>
@@ -53,7 +54,7 @@
         <div id="success-view" class="card hidden"></div>
       </section>
 
-      <section id="dashboard" class="panel">
+      <section id="dashboard" class="panel" role="tabpanel" aria-labelledby="tab-dashboard">
         <div id="quick-stats" class="quick-stats"></div>
 
         <div class="card stack" style="margin-top:12px;">
@@ -128,12 +129,12 @@
       </div>
     </div>
 
-    <nav class="bottom-nav">
-      <button class="nav-tab is-active" data-tab="survey">
+    <nav class="bottom-nav" role="tablist">
+      <button class="nav-tab is-active" data-tab="survey" role="tab" aria-selected="true" aria-controls="survey" id="tab-survey">
         <span class="nav-icon">&#x1F4CD;</span>
         <span>현장기록</span>
       </button>
-      <button class="nav-tab" data-tab="dashboard">
+      <button class="nav-tab" data-tab="dashboard" role="tab" aria-selected="false" aria-controls="dashboard" id="tab-dashboard">
         <span class="nav-icon">&#x1F4CA;</span>
         <span>대시보드</span>
       </button>
@@ -147,6 +148,38 @@
         var el = document.getElementById('loading-skeleton');
         if (el) el.remove();
       });
+
+      // Status bar clock — updates every minute
+      (function() {
+        var clockEl = document.getElementById('clock');
+        function updateClock() {
+          var now = new Date();
+          var h = String(now.getHours()).padStart(2, '0');
+          var m = String(now.getMinutes()).padStart(2, '0');
+          clockEl.textContent = h + ':' + m;
+        }
+        updateClock();
+        setInterval(updateClock, 60000);
+      })();
+
+      // Network status — show toast on offline/online
+      (function() {
+        function showNetToast(msg, type) {
+          var old = document.querySelector('.toast-network');
+          if (old) old.remove();
+          var t = document.createElement('div');
+          t.className = 'toast toast-' + type + ' toast-network';
+          t.textContent = msg;
+          document.body.appendChild(t);
+          setTimeout(function() { t.remove(); }, 3000);
+        }
+        window.addEventListener('offline', function() {
+          showNetToast('오프라인 상태입니다', 'error');
+        });
+        window.addEventListener('online', function() {
+          showNetToast('온라인으로 복구되었습니다', 'success');
+        });
+      })();
     </script>
   </body>
 </html>

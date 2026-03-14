@@ -29,6 +29,12 @@ body {
 }
 button, input, select, textarea { font: inherit; }
 input, select, textarea { -webkit-appearance: none; appearance: none; }
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
 
 /* ── Status bar ── */
 .status-bar {
@@ -45,6 +51,7 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
   z-index: 100;
 }
 .status-bar .gps-status { display: flex; align-items: center; gap: 4px; }
+.status-bar .status-clock { font-variant-numeric: tabular-nums; }
 .status-bar .researcher-name { opacity: 0.85; }
 
 /* ── Shell ── */
@@ -83,6 +90,11 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
   cursor: pointer;
   transition: color var(--transition);
 }
+.bottom-nav .nav-tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
 .bottom-nav .nav-tab .nav-icon { font-size: 22px; }
 .bottom-nav .nav-tab.is-active { color: var(--primary); }
 
@@ -97,6 +109,13 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
   border-radius: var(--radius);
   padding: 20px 16px;
   box-shadow: var(--shadow);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+@media (hover: hover) {
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
 }
 .stack { display: grid; gap: 16px; }
 
@@ -137,7 +156,7 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
 .step-indicator .step-arrow { margin: 0 8px; color: var(--border); font-size: 14px; }
 
 /* ── Form fields ── */
-.field { display: grid; gap: 6px; }
+.field { display: grid; gap: 8px; }
 .field label { font-weight: 600; font-size: 13px; color: var(--text); }
 .field input, .field select, .field textarea {
   width: 100%;
@@ -273,7 +292,7 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
   cursor: pointer;
   min-height: 56px;
 }
-.btn-submit:active { background: var(--primary-dark); }
+.btn-submit:active { background: var(--primary-dark); transform: scale(0.97); }
 .btn-submit:disabled { opacity: 0.5; pointer-events: none; }
 
 /* ── Product accordion ── */
@@ -300,8 +319,19 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
   color: var(--text-muted);
 }
 .product-accordion.is-open .accordion-arrow { transform: rotate(180deg); }
-.product-body { display: none; padding: 12px 14px; gap: 10px; }
-.product-accordion.is-open .product-body { display: grid; }
+.product-body {
+  display: grid;
+  padding: 0 14px;
+  gap: 10px;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease, padding 0.25s ease;
+  overflow: hidden;
+}
+.product-body > * { overflow: hidden; }
+.product-accordion.is-open .product-body {
+  grid-template-rows: 1fr;
+  padding: 12px 14px;
+}
 .price-field {
   display: flex;
   align-items: center;
@@ -629,13 +659,18 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
   font-size: 14px;
   font-weight: 600;
   z-index: 200;
-  animation: toastIn 0.3s ease, toastOut 0.3s ease 2.7s forwards;
+  animation: toastSlideIn 0.3s cubic-bezier(0.22,1,0.36,1), toastSlideOut 0.3s ease 2.7s forwards;
   white-space: nowrap;
 }
 .toast-success { background: var(--success); }
 .toast-error { background: var(--error); }
-@keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
-@keyframes toastOut { to { opacity: 0; transform: translateX(-50%) translateY(10px); } }
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(20px) scale(0.95); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+@keyframes toastSlideOut {
+  to { opacity: 0; transform: translateX(-50%) translateY(20px) scale(0.95); }
+}
 
 /* ── Address Autocomplete ── */
 .address-search-wrap { position: relative; }
@@ -894,7 +929,62 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
 
   .skeleton-line { background: var(--border); }
   .skeleton-card { background: var(--surface); }
+
+  .achievement-card { background: var(--surface); }
 }
+
+/* ── Achievement Card ── */
+.achievement-card {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.achievement-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.achievement-badge-emoji { font-size: 36px; }
+.achievement-info { flex: 1; }
+.achievement-name { font-weight: 700; font-size: 15px; }
+.achievement-count { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.achievement-progress-track {
+  width: 100%;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.achievement-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--primary);
+  transition: width 0.8s ease;
+}
+.achievement-next {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.achievement-max { color: var(--gold); }
+
+/* ── My Records ── */
+.my-records-list { display: grid; gap: 0; }
+.my-record-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.my-record-item:last-child { border-bottom: none; }
+.my-record-main { display: flex; flex-direction: column; gap: 2px; }
+.my-record-store { font-weight: 700; font-size: 14px; }
+.my-record-date { font-size: 12px; color: var(--text-muted); }
+.my-record-meta { font-size: 12px; color: var(--primary); font-weight: 600; white-space: nowrap; }
 
 /* ── Loading Skeleton ── */
 .loading-skeleton {
@@ -927,6 +1017,17 @@ input, select, textarea { -webkit-appearance: none; appearance: none; }
 @keyframes skeleton-pulse {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
+}
+
+/* ── Focus-visible ── */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(32,137,92,0.15);
 }
 
 /* ── Utilities ── */

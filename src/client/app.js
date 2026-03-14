@@ -5,7 +5,9 @@ const state = {
   gps: { lat: null, lng: null, status: 'pending' },
   currentStep: 1,
   photoDataUrl: '',
-  selectedStoreType: ''
+  selectedStoreType: '',
+  pollTimer: null,
+  previousBadgeIndex: -1
 };
 
 // ── DOM refs ──
@@ -482,8 +484,18 @@ async function handleSubmit(config) {
       submitBtn.disabled = false;
       return;
     }
+    // Check badge before reload
+    const oldBadgeIdx = state.previousBadgeIndex;
     showSuccess(result);
     await loadBootstrap();
+    // Check if badge upgraded
+    const newSubs = getMySubmissions(state.bootstrap.submissions || []);
+    const newBadgeIdx = getBadgeIndex(newSubs.length);
+    if (newBadgeIdx > oldBadgeIdx && newBadgeIdx >= 0) {
+      const newBadge = BADGES[newBadgeIdx];
+      showToast(`🎉 축하해요! ${newBadge.label} 뱃지를 획득했어요!`, 'success');
+    }
+    state.previousBadgeIndex = newBadgeIdx;
     // 대시보드 자동 갱신 후 탭 전환
     navTabs.forEach((t) => t.classList.toggle('is-active', t.dataset.tab === 'dashboard'));
     panels.forEach((p) => p.classList.toggle('is-active', p.id === 'dashboard'));
@@ -618,6 +630,134 @@ function relativeTime(dateStr) {
   return `${days}일 전`;
 }
 
+// ── Badge system ──
+const BADGES = [
+  { emoji: '🌱', label: '새싹', min: 1, max: 2 },
+  { emoji: '🌿', label: '성장', min: 3, max: 4 },
+  { emoji: '🌳', label: '베테랑', min: 5, max: 9 },
+  { emoji: '⭐', label: '스타', min: 10, max: 19 },
+  { emoji: '🏆', label: '챔피언', min: 20, max: Infinity }
+];
+
+function getBadgeIndex(count) {
+  return BADGES.findIndex((b) => count >= b.min && count <= b.max);
+}
+
+function getMySubmissions(submissions) {
+  const myName = loadLocal('researcherName');
+  if (!myName) return [];
+  return submissions.filter((s) => s.researcher.name === myName);
+}
+
+function renderMyAchievement(submissions) {
+  let container = document.querySelector('#my-achievement');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'my-achievement';
+    const quickStats = document.querySelector('#quick-stats');
+    quickStats.parentNode.insertBefore(container, quickStats.nextSibling);
+  }
+
+  const myName = loadLocal('researcherName');
+  if (!myName) { container.innerHTML = ''; return; }
+
+  const mySubs = getMySubmissions(submissions);
+  const count = mySubs.length;
+  const badgeIdx = getBadgeIndex(count);
+  const badge = badgeIdx >= 0 ? BADGES[badgeIdx] : null;
+
+  // Update previous badge index for comparison
+  if (state.previousBadgeIndex === -1) {
+    state.previousBadgeIndex = badgeIdx;
+  }
+
+  // Next badge info
+  let nextBadgeHtml = '';
+  const nextIdx = badgeIdx + 1;
+  if (nextIdx < BADGES.length) {
+    const next = BADGES[nextIdx];
+    const remaining = next.min - count;
+    nextBadgeHtml = `<div class="achievement-next">${next.emoji} ${next.label}까지 ${remaining}건 남았어요!</div>`;
+  } else if (badgeIdx === BADGES.length - 1) {
+    nextBadgeHtml = '<div class="achievement-next achievement-max">최고 등급 달성!</div>';
+  }
+
+  // Progress bar
+  let progressPct = 0;
+  if (badge) {
+    const rangeSize = badge.max === Infinity ? badge.min : (badge.max - badge.min + 1);
+    const inRange = count - badge.min;
+    progressPct = badge.max === Infinity ? 100 : Math.min(100, Math.round((inRange / rangeSize) * 100));
+  }
+
+  container.innerHTML = `
+    <div class="achievement-card" style="margin-top:12px;">
+      <div class="achievement-header">
+        <span class="achievement-badge-emoji">${badge ? badge.emoji : '🌱'}</span>
+        <div class="achievement-info">
+          <div class="achievement-name">${escapeHtml(myName)}님의 기록</div>
+          <div class="achievement-count">${count}건 ${badge ? `· ${badge.label}` : ''}</div>
+        </div>
+      </div>
+      <div class="achievement-progress-track">
+        <div class="achievement-progress-fill" style="width:${progressPct}%"></div>
+      </div>
+      ${nextBadgeHtml}
+    </div>
+  `;
+}
+
+function renderMyRecords(submissions) {
+  let container = document.querySelector('#my-records');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'my-records';
+    container.style.marginTop = '12px';
+    const recentActivity = document.querySelector('#recent-activity');
+    recentActivity.parentNode.insertBefore(container, recentActivity.nextSibling);
+  }
+
+  const myName = loadLocal('researcherName');
+  if (!myName) { container.innerHTML = ''; return; }
+
+  const mySubs = getMySubmissions(submissions);
+  const sorted = [...mySubs].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  if (sorted.length === 0) {
+    container.innerHTML = `
+      <div class="card stack">
+        <h2>내 기록 📋</h2>
+        <div class="empty-state">
+          <div class="empty-icon">🏃</div>
+          <p>아직 기록이 없어요</p>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="card stack">
+      <h2>내 기록 📋</h2>
+      <div class="my-records-list">
+        ${sorted.map((sub) => {
+    const date = new Date(sub.createdAt).toLocaleDateString('ko-KR');
+    const priceCount = sub.prices ? sub.prices.length : 0;
+    return `
+            <div class="my-record-item">
+              <div class="my-record-main">
+                <span class="my-record-store">${escapeHtml(sub.survey.storeName)}</span>
+                <span class="my-record-date">${date}</span>
+              </div>
+              <div class="my-record-meta">가격 ${priceCount}건</div>
+            </div>
+          `;
+  }).join('')}
+      </div>
+    </div>
+  `;
+}
+
 // ── Dashboard rendering ──
 function renderDashboard(config) {
   const submissions = config.submissions || [];
@@ -719,6 +859,12 @@ function renderDashboard(config) {
   } else {
     activityEl.innerHTML = '<h2>최근 활동 🕐</h2><p class="small">아직 활동이 없어요.</p>';
   }
+
+  // 6. My Achievement Card
+  renderMyAchievement(submissions);
+
+  // 7. My Records
+  renderMyRecords(submissions);
 }
 
 // ── Helpers ──
@@ -959,8 +1105,46 @@ function initHelpSheet() {
   backdrop.addEventListener('click', close);
 }
 
+// ── Dashboard auto-refresh (30s polling) ──
+function getActiveTab() {
+  const active = navTabs.find((t) => t.classList.contains('is-active'));
+  return active ? active.dataset.tab : '';
+}
+
+function startDashboardPolling() {
+  stopDashboardPolling();
+  state.pollTimer = setInterval(async () => {
+    if (document.hidden) return;
+    if (getActiveTab() !== 'dashboard') return;
+    try {
+      const response = await fetch('/api/bootstrap');
+      const data = await response.json();
+      const oldCount = (state.bootstrap?.submissions || []).length;
+      const newCount = (data.submissions || []).length;
+      state.bootstrap = data;
+      if (newCount !== oldCount) {
+        renderDashboard(state.bootstrap);
+      }
+    } catch { /* silent fail on poll */ }
+  }, 30000);
+}
+
+function stopDashboardPolling() {
+  if (state.pollTimer) {
+    clearInterval(state.pollTimer);
+    state.pollTimer = null;
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && getActiveTab() === 'dashboard') {
+    startDashboardPolling();
+  }
+});
+
 // ── Init ──
 initGps();
 loadBootstrap();
 initOnboarding();
 initHelpSheet();
+startDashboardPolling();
