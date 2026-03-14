@@ -1146,6 +1146,108 @@ function openLightbox(photos, startIdx) {
   document.body.appendChild(overlay);
 }
 
+// ── Streak management ──
+function getStreakData() {
+  try { return JSON.parse(localStorage.getItem('kwangdong_streak') || '{}'); } catch { return {}; }
+}
+
+function saveStreakData(data) {
+  try { localStorage.setItem('kwangdong_streak', JSON.stringify(data)); } catch {}
+}
+
+function updateStreak(hasTodaySubmission) {
+  const streak = getStreakData();
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (!hasTodaySubmission) {
+    // Check if streak is broken (last date is not today or yesterday)
+    if (streak.lastDate) {
+      const last = new Date(streak.lastDate);
+      const now = new Date(today);
+      const diffDays = Math.floor((now - last) / 86400000);
+      if (diffDays > 1) {
+        saveStreakData({ days: 0, lastDate: null });
+        return 0;
+      }
+    }
+    return streak.days || 0;
+  }
+
+  if (streak.lastDate === today) return streak.days || 1;
+
+  if (streak.lastDate) {
+    const last = new Date(streak.lastDate);
+    const now = new Date(today);
+    const diffDays = Math.floor((now - last) / 86400000);
+    if (diffDays === 1) {
+      const newDays = (streak.days || 0) + 1;
+      saveStreakData({ days: newDays, lastDate: today });
+      return newDays;
+    } else if (diffDays > 1) {
+      saveStreakData({ days: 1, lastDate: today });
+      return 1;
+    }
+    return streak.days || 1;
+  }
+
+  saveStreakData({ days: 1, lastDate: today });
+  return 1;
+}
+
+// ── Today's highlight card ──
+async function renderTodayHighlight() {
+  let container = document.querySelector('#today-highlight');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'today-highlight';
+    container.style.marginTop = '12px';
+    const quickStats = document.querySelector('#quick-stats');
+    quickStats.parentNode.insertBefore(container, quickStats.nextSibling);
+  }
+
+  try {
+    const res = await fetch('/api/daily-summary');
+    const data = await res.json();
+    const { totalSubmissions, uniqueResearchers, topResearcher, topStore, averagePrices } = data;
+
+    const streakDays = updateStreak(totalSubmissions > 0);
+
+    if (totalSubmissions === 0) {
+      container.innerHTML = `
+        <div class="card stack" style="text-align:center;padding:16px;">
+          <h3 style="margin:0 0 8px 0;">📋 오늘의 하이라이트</h3>
+          <p>오늘은 아직 기록이 없어요. 첫 번째 기록을 남겨볼까요? 🏃</p>
+        </div>
+      `;
+      return;
+    }
+
+    const lines = [];
+    lines.push(`오늘 ${uniqueResearchers}명이 ${totalSubmissions}건 기록했어요!`);
+    if (topResearcher) lines.push(`가장 열심히 한 사람: ${escapeHtml(topResearcher.name)} (${topResearcher.count}건) 🏆`);
+    if (topStore) lines.push(`가장 많이 조사된 매장: ${escapeHtml(topStore.name)}`);
+
+    const ionKickPrice = averagePrices.find((p) => p.label && p.label.includes('이온킥'));
+    if (ionKickPrice) {
+      lines.push(`이온킥 평균가: ₩${ionKickPrice.avg.toLocaleString()} (${ionKickPrice.size} 기준)`);
+    }
+
+    const streakHtml = streakDays > 0
+      ? `<div style="margin-top:8px;font-weight:600;color:var(--gold,#f39c12);">🔥 ${streakDays}일 연속 기록 중!</div>`
+      : '';
+
+    container.innerHTML = `
+      <div class="card stack" style="padding:16px;">
+        <h3 style="margin:0 0 8px 0;">📋 오늘의 하이라이트</h3>
+        ${lines.map((l) => `<div style="margin:4px 0;">${l}</div>`).join('')}
+        ${streakHtml}
+      </div>
+    `;
+  } catch {
+    container.innerHTML = '';
+  }
+}
+
 // ── Dashboard rendering ──
 function renderDashboard(config) {
   const submissions = config.submissions || [];
@@ -1189,6 +1291,9 @@ function renderDashboard(config) {
       <div class="quick-stat"><span class="qs-icon">📍</span><span class="qs-value">${coveredAreas}/${areas.length}</span><span class="qs-label">지역</span></div>
     `;
   }
+
+  // 2.5 Today's Highlight Card + Streak
+  renderTodayHighlight();
 
   // 3. Product Leaderboard
   const productStats = calcProductStats(submissions, products);

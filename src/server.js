@@ -356,6 +356,58 @@ export function createApp(config = loadConfig(), options = {}) {
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/api/daily-summary') {
+        const dateParam = url.searchParams.get('date');
+        const targetDate = dateParam || new Date().toISOString().slice(0, 10);
+        const submissions = await store.listSubmissions();
+        const daySubs = submissions.filter((s) => {
+          const d = new Date(s.createdAt);
+          const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          return ymd === targetDate;
+        });
+
+        const totalSubmissions = daySubs.length;
+        const researcherSet = new Set(daySubs.map((s) => s.researcher.name));
+        const uniqueResearchers = researcherSet.size;
+        const areaSet = new Set(daySubs.map((s) => s.assignment?.currentArea).filter(Boolean));
+        const areasCovered = areaSet.size;
+
+        // Average prices per product (today only)
+        const priceMap = {};
+        daySubs.forEach((s) => {
+          if (!s.prices) return;
+          s.prices.forEach((p) => {
+            const key = `${p.productLabel || p.productId}|${p.size}`;
+            if (!priceMap[key]) priceMap[key] = { label: p.productLabel || p.productId, size: p.size, prices: [] };
+            const num = Number(String(p.price).replace(/[^0-9]/g, ''));
+            if (num > 0) priceMap[key].prices.push(num);
+          });
+        });
+        const averagePrices = Object.values(priceMap)
+          .filter((v) => v.prices.length > 0)
+          .map((v) => ({
+            label: v.label,
+            size: v.size,
+            avg: Math.round(v.prices.reduce((a, b) => a + b, 0) / v.prices.length),
+            count: v.prices.length
+          }));
+
+        // Top researcher
+        const researcherCounts = {};
+        daySubs.forEach((s) => { researcherCounts[s.researcher.name] = (researcherCounts[s.researcher.name] || 0) + 1; });
+        const topResearcherEntry = Object.entries(researcherCounts).sort((a, b) => b[1] - a[1])[0];
+        const topResearcher = topResearcherEntry ? { name: topResearcherEntry[0], count: topResearcherEntry[1] } : null;
+
+        // Top store
+        const storeCounts = {};
+        daySubs.forEach((s) => { storeCounts[s.survey.storeName] = (storeCounts[s.survey.storeName] || 0) + 1; });
+        const topStoreEntry = Object.entries(storeCounts).sort((a, b) => b[1] - a[1])[0];
+        const topStore = topStoreEntry ? { name: topStoreEntry[0], count: topStoreEntry[1] } : null;
+
+        json(response, 200, { date: targetDate, totalSubmissions, uniqueResearchers, areasCovered, averagePrices, topResearcher, topStore });
+        return;
+      }
+
       if (request.method === 'GET' && url.pathname === '/api/bootstrap') {
         const submissions = await store.listSubmissions();
         const assignmentOverrides = await store.listAssignmentOverrides();

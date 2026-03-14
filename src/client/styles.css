@@ -1112,6 +1112,124 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .scroll-top-btn:active { transform: scale(0.9); }
 .scroll-top-btn.hidden { opacity: 0; pointer-events: none; display: flex !important; }
 
+/* ── Bar Chart Animation ── */
+.ps-bar-fill {
+  animation: barGrow 0.6s ease-out forwards;
+}
+.trend-bar-fill {
+  animation: barGrow 0.6s ease-out forwards;
+}
+@keyframes barGrow {
+  from { width: 0; }
+}
+
+/* ── Card Interaction: Ripple ── */
+.card {
+  position: relative;
+  overflow: hidden;
+}
+.card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--ripple-x, 50%) var(--ripple-y, 50%), rgba(32,137,92,0.12) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+.card:active::after {
+  opacity: 1;
+}
+
+/* ── Active Card Left Border ── */
+.card.is-active-card {
+  border-left: 3px solid var(--primary);
+}
+
+/* ── Accordion Fade-in + Slide-down ── */
+.product-accordion.is-open .product-body > * {
+  animation: accordionFadeSlide 0.3s ease forwards;
+}
+@keyframes accordionFadeSlide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Stat Value Count-up Ready ── */
+.qs-value {
+  transition: all 0.3s ease-out;
+}
+
+/* ── Gallery: Thumbnail Hover Zoom ── */
+.photo-thumb {
+  transition: transform var(--transition);
+}
+.photo-thumb:hover {
+  transform: scale(1.05);
+  z-index: 1;
+}
+
+/* ── Lightbox Fade-in ── */
+.lightbox-overlay {
+  opacity: 0;
+  animation: lightboxFadeIn 0.25s ease forwards;
+}
+@keyframes lightboxFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.lightbox-overlay img {
+  transform: scale(0.92);
+  animation: lightboxZoom 0.3s ease forwards;
+}
+@keyframes lightboxZoom {
+  from { transform: scale(0.92); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* ── Badge Card: Current Badge Glow ── */
+.achievement-card.is-current {
+  box-shadow: 0 0 16px rgba(32,137,92,0.25), var(--shadow);
+}
+
+/* ── Badge Progress Bar Gradient ── */
+.achievement-progress-fill {
+  background: linear-gradient(90deg, var(--success), var(--gold)) !important;
+}
+
+/* ── Badge Upgrade Pulse ── */
+.achievement-card.is-upgraded {
+  animation: badgePulse 0.8s ease;
+}
+@keyframes badgePulse {
+  0% { box-shadow: 0 0 0 0 rgba(32,137,92,0.4); }
+  50% { box-shadow: 0 0 0 12px rgba(32,137,92,0); }
+  100% { box-shadow: var(--shadow); }
+}
+
+/* ── Responsive Grid: Tablet (768px+) ── */
+@media (min-width: 768px) {
+  .stack {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  #photo-gallery {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+}
+
+/* ── Responsive Grid: Desktop (1024px+) ── */
+@media (min-width: 1024px) {
+  .stack {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  #photo-gallery {
+    grid-template-columns: repeat(6, 1fr) !important;
+  }
+  .shell {
+    max-width: 960px;
+  }
+}
+
 /* ── Utilities ── */
 .small { font-size: 0.85rem; color: var(--text-muted); }
 .text-center { text-align: center; }
