@@ -17,6 +17,9 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <!-- Skip to content -->
+    <a href="#main-content" class="skip-to-content">본문으로 건너뛰기</a>
+
     <!-- Loading skeleton (replaced by JS on init) -->
     <div class="loading-skeleton" id="loading-skeleton">
       <div class="status-bar">
@@ -43,7 +46,7 @@
       <span class="researcher-name" id="status-researcher"></span>
     </div>
 
-    <main class="shell">
+    <main class="shell" id="main-content" tabindex="-1">
       <header class="hero">
         <p class="eyebrow">이온로드 🏃</p>
         <h1>오늘도 현장을 달려볼까요?</h1>
@@ -182,6 +185,8 @@
           if (old) old.remove();
           var t = document.createElement('div');
           t.className = 'toast toast-' + type + ' toast-network';
+          t.setAttribute('role', 'alert');
+          t.setAttribute('aria-live', 'assertive');
           t.textContent = msg;
           document.body.appendChild(t);
           setTimeout(function() { t.remove(); }, 3000);

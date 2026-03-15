@@ -1268,6 +1268,182 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   50% { opacity: 0.8; }
 }
 
+/* ── Skip to content ── */
+.skip-to-content {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 999;
+  padding: 12px 20px;
+  background: var(--primary);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  transition: top 0.2s ease;
+}
+.skip-to-content:focus {
+  top: 8px;
+}
+
+/* ── High Contrast Mode ── */
+@media (prefers-contrast: high) {
+  :root {
+    --text: #000000;
+    --text-muted: #333333;
+    --border: #666666;
+  }
+
+  body { color: #000; }
+
+  .card, .product-accordion, .submission-card, .filter-chip,
+  .store-type-btn, .stepper, .quick-stat, .achievement-card {
+    border: 2px solid #333;
+  }
+
+  .field input, .field select, .field textarea,
+  .price-field input, .filter-bar input, .filter-bar select {
+    border-width: 2px;
+    border-color: #333;
+    color: #000;
+  }
+
+  :focus-visible {
+    outline: 3px solid #000 !important;
+    outline-offset: 2px;
+  }
+  input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 3px solid #000 !important;
+    box-shadow: 0 0 0 4px rgba(0,0,0,0.2);
+  }
+
+  .btn, .btn-submit, .gps-btn, .store-type-btn, .nav-tab {
+    border: 2px solid currentColor;
+  }
+
+  .product-header { border-bottom: 2px solid #333; }
+
+  .step-indicator .step-line { height: 3px; }
+
+  .toast { border: 2px solid #000; }
+}
+
+@media (prefers-color-scheme: dark) and (prefers-contrast: high) {
+  :root {
+    --text: #ffffff;
+    --text-muted: #cccccc;
+    --border: #999999;
+  }
+
+  body { color: #fff; }
+
+  .card, .product-accordion, .submission-card, .filter-chip,
+  .store-type-btn, .stepper, .quick-stat, .achievement-card {
+    border: 2px solid #ccc;
+  }
+
+  .field input, .field select, .field textarea,
+  .price-field input, .filter-bar input, .filter-bar select {
+    border-color: #ccc;
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 3px solid #fff !important;
+  }
+  input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 3px solid #fff !important;
+    box-shadow: 0 0 0 4px rgba(255,255,255,0.3);
+  }
+
+  .btn, .btn-submit, .gps-btn, .store-type-btn, .nav-tab {
+    border: 2px solid currentColor;
+  }
+
+  .toast { border: 2px solid #fff; }
+}
+
+/* ── Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  html { scroll-behavior: auto; }
+
+  .panel.is-active { animation: none; }
+  .help-sheet { animation: none; }
+  .onboarding-slide.is-active { animation: none; }
+  .toast { animation: none; opacity: 1; }
+  .confetti-piece { display: none; }
+  .skeleton-line { animation: none; opacity: 0.6; }
+  .spinner, .spinner-inline { animation: none; }
+  .dashboard-refresh-btn.is-spinning { animation: none; }
+  .scroll-top-btn { transition: none; }
+}
+
+/* ── Touch Targets: minimum 44x44px ── */
+.photo-slot-remove,
+.photo-remove {
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
+}
+
+.filter-chip {
+  min-height: 44px;
+  padding: 10px 16px;
+}
+
+.favorite-chip {
+  min-height: 44px !important;
+  min-width: 44px;
+}
+
+.help-admin-link {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboarding-skip {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.faq-item {
+  min-height: 44px;
+}
+
+.address-item {
+  min-height: 44px;
+}
+
+.logout-btn {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.dashboard-refresh-btn {
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
+}
+
+.submission-card .sub-actions button {
+  min-height: 44px;
+}
+
+.btn-danger-sm {
+  min-height: 44px;
+}
+
 /* ── Utilities ── */
 .small { font-size: 0.85rem; color: var(--text-muted); }
 .text-center { text-align: center; }

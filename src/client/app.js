@@ -422,7 +422,7 @@ function renderStep2(config) {
       <div class="stack" id="product-list">
         ${config.products.map((product, idx) => `
           <div class="product-accordion ${idx === 0 ? 'is-open' : ''}" data-product="${product.id}">
-            <div class="product-header">
+            <div class="product-header" tabindex="0" role="button" aria-expanded="${idx === 0 ? 'true' : 'false'}">
               <div>
                 <span class="product-name">${product.label}</span>
                 <span class="product-brand">${product.brand}</span>
@@ -454,7 +454,9 @@ function renderStep2(config) {
 
   formStepContainer.querySelectorAll('.product-header').forEach((header) => {
     header.addEventListener('click', () => {
-      header.closest('.product-accordion').classList.toggle('is-open');
+      const accordion = header.closest('.product-accordion');
+      accordion.classList.toggle('is-open');
+      header.setAttribute('aria-expanded', accordion.classList.contains('is-open'));
     });
   });
 
@@ -654,7 +656,7 @@ function renderStep3(config) {
         <button type="button" class="btn btn-secondary" id="prev-step3">\u2190 이전</button>
       </div>
       <button type="button" class="btn-submit" id="submit-btn">✅ 기록 완료!</button>
-      <div id="submit-status" class="small text-center"></div>
+      <div id="submit-status" class="small text-center" role="status" aria-live="polite"></div>
     </div>
   `;
 
@@ -888,9 +890,9 @@ function showSuccess(result) {
       .share-btn { margin-top: 8px; background: none; border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 8px 16px; cursor: pointer; font-size: .9rem; color: inherit; }
       .share-btn:active { opacity: .7; }
     </style>
-    <div class="success-card">
-      <div class="confetti-wrap" id="confetti-wrap"></div>
-      <div class="success-check">✅</div>
+    <div class="success-card" aria-label="기록 완료">
+      <div class="confetti-wrap" id="confetti-wrap" aria-hidden="true"></div>
+      <div class="success-check" aria-hidden="true">✅</div>
       <h3>수고했어요!</h3>
       <div class="assigned-area">다음 추천 지역: ${escapeHtml(result.assignment.currentArea)}</div>
       <div class="success-actions">
@@ -1581,6 +1583,8 @@ function showToast(message, type) {
   if (existing) existing.remove();
   const toast = document.createElement('div');
   toast.className = `toast toast-${type || 'success'}`;
+  toast.setAttribute('role', 'alert');
+  toast.setAttribute('aria-live', 'assertive');
   toast.textContent = message;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
@@ -1920,6 +1924,57 @@ function initScrollToTop() {
   }, { passive: true });
 }
 
+// ── Keyboard navigation ──
+function initKeyboardNav() {
+  document.addEventListener('keydown', (e) => {
+    // Escape: close overlays/modals/bottom sheets
+    if (e.key === 'Escape') {
+      // Lightbox
+      const lightbox = document.querySelector('[style*="z-index:9999"]');
+      if (lightbox) { lightbox.remove(); return; }
+      // Price reminder overlay
+      const priceReminder = document.querySelector('.price-reminder-overlay');
+      if (priceReminder) { priceReminder.remove(); return; }
+      // Onboarding overlay
+      const onboarding = document.getElementById('onboarding-overlay');
+      if (onboarding && !onboarding.classList.contains('hidden')) {
+        onboarding.classList.add('hidden');
+        saveLocal('onboarded', 'true');
+        return;
+      }
+      // Help bottom sheet
+      const helpSheet = document.getElementById('help-sheet');
+      const helpBackdrop = document.getElementById('help-backdrop');
+      if (helpSheet && !helpSheet.classList.contains('hidden')) {
+        helpSheet.classList.add('hidden');
+        helpBackdrop.classList.add('hidden');
+        return;
+      }
+    }
+
+    // Arrow keys for tab switching (when a nav-tab is focused)
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.target.classList.contains('nav-tab')) {
+      e.preventDefault();
+      const currentIdx = navTabs.indexOf(e.target);
+      const nextIdx = e.key === 'ArrowRight'
+        ? (currentIdx + 1) % navTabs.length
+        : (currentIdx - 1 + navTabs.length) % navTabs.length;
+      navTabs[nextIdx].focus();
+      navTabs[nextIdx].click();
+    }
+  });
+
+  // Enter/Space on product accordion headers
+  document.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('product-header')) {
+      e.preventDefault();
+      const accordion = e.target.closest('.product-accordion');
+      accordion.classList.toggle('is-open');
+      e.target.setAttribute('aria-expanded', accordion.classList.contains('is-open'));
+    }
+  });
+}
+
 // ── Init ──
 initGps();
 loadBootstrap();
@@ -1927,3 +1982,4 @@ initOnboarding();
 initHelpSheet();
 startDashboardPolling();
 initScrollToTop();
+initKeyboardNav();

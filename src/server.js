@@ -11,6 +11,8 @@ import { collectJsonBody, json } from './utils.js';
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
 const MAX_PHOTO_BYTES = 500 * 1024; // 500 KB
+const SERVER_STARTED_AT = new Date().toISOString();
+const PKG_VERSION = JSON.parse(await readFile(path.resolve('package.json'), 'utf8')).version;
 
 // ── Rate Limiter ──
 function createRateLimiter() {
@@ -249,7 +251,12 @@ export function createApp(config = loadConfig(), options = {}) {
       }
 
       if (request.method === 'GET' && url.pathname === '/health') {
-        json(response, 200, { status: 'ok' });
+        json(response, 200, {
+          status: 'ok',
+          uptime: Math.floor(process.uptime()),
+          startedAt: SERVER_STARTED_AT,
+          version: PKG_VERSION
+        });
         return;
       }
 
@@ -420,6 +427,121 @@ export function createApp(config = loadConfig(), options = {}) {
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/api/daily-report') {
+        const dateParam = url.searchParams.get('date');
+        const targetDate = dateParam || new Date().toISOString().slice(0, 10);
+        const submissions = await store.listSubmissions();
+        const daySubs = submissions.filter((s) => {
+          const d = new Date(s.createdAt);
+          const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          return ymd === targetDate;
+        });
+
+        const totalSubmissions = daySubs.length;
+        const researcherSet = new Set(daySubs.map((s) => s.researcher.name));
+        const uniqueResearchers = researcherSet.size;
+        const regionSet = new Set(daySubs.map((s) => s.survey.region).filter(Boolean));
+        const regionsCovered = regionSet.size;
+
+        // Average prices per product
+        const priceMap = {};
+        daySubs.forEach((s) => {
+          if (!s.prices) return;
+          s.prices.forEach((p) => {
+            const key = `${p.productLabel || p.productId}|${p.size}`;
+            if (!priceMap[key]) priceMap[key] = { label: p.productLabel || p.productId, size: p.size, prices: [] };
+            const num = Number(String(p.price).replace(/[^0-9]/g, ''));
+            if (num > 0) priceMap[key].prices.push(num);
+          });
+        });
+        const avgPrices = Object.values(priceMap)
+          .filter((v) => v.prices.length > 0)
+          .map((v) => ({
+            label: v.label,
+            size: v.size,
+            avg: Math.round(v.prices.reduce((a, b) => a + b, 0) / v.prices.length),
+            count: v.prices.length
+          }));
+
+        // Researcher contributions
+        const researcherCounts = {};
+        daySubs.forEach((s) => { researcherCounts[s.researcher.name] = (researcherCounts[s.researcher.name] || 0) + 1; });
+        const researcherList = Object.entries(researcherCounts).sort((a, b) => b[1] - a[1]);
+
+        const priceRows = avgPrices.map((p) =>
+          `<tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${p.label}</td>` +
+          `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${p.size}</td>` +
+          `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">${p.avg.toLocaleString()}원</td>` +
+          `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${p.count}</td></tr>`
+        ).join('');
+
+        const researcherRows = researcherList.map(([name, count]) =>
+          `<tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${name}</td>` +
+          `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${count}건</td></tr>`
+        ).join('');
+
+        const html = `<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff">
+<tr><td style="background:#1e40af;padding:24px;text-align:center">
+<h1 style="color:#ffffff;margin:0;font-size:22px">&#127758; 이온로드 일일 시장조사 리포트</h1>
+<p style="color:#93c5fd;margin:8px 0 0;font-size:14px">${targetDate}</p>
+</td></tr>
+<tr><td style="padding:24px">
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+<tr>
+<td style="width:33%;text-align:center;padding:16px;background:#eff6ff;border-radius:8px">
+<div style="font-size:28px;font-weight:bold;color:#1e40af">${totalSubmissions}</div>
+<div style="font-size:12px;color:#6b7280;margin-top:4px">총 제출</div>
+</td>
+<td style="width:8px"></td>
+<td style="width:33%;text-align:center;padding:16px;background:#f0fdf4;border-radius:8px">
+<div style="font-size:28px;font-weight:bold;color:#166534">${uniqueResearchers}</div>
+<div style="font-size:12px;color:#6b7280;margin-top:4px">조사자</div>
+</td>
+<td style="width:8px"></td>
+<td style="width:33%;text-align:center;padding:16px;background:#fefce8;border-radius:8px">
+<div style="font-size:28px;font-weight:bold;color:#854d0e">${regionsCovered}</div>
+<div style="font-size:12px;color:#6b7280;margin-top:4px">지역 커버리지</div>
+</td>
+</tr>
+</table>
+${avgPrices.length > 0 ? `<h2 style="font-size:16px;color:#1f2937;margin:0 0 12px;border-bottom:2px solid #1e40af;padding-bottom:8px">제품별 평균 가격</h2>
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;font-size:14px">
+<tr style="background:#f9fafb">
+<th style="padding:8px 12px;text-align:left;font-weight:600;border-bottom:2px solid #d1d5db">제품</th>
+<th style="padding:8px 12px;text-align:left;font-weight:600;border-bottom:2px solid #d1d5db">규격</th>
+<th style="padding:8px 12px;text-align:right;font-weight:600;border-bottom:2px solid #d1d5db">평균가</th>
+<th style="padding:8px 12px;text-align:center;font-weight:600;border-bottom:2px solid #d1d5db">샘플</th>
+</tr>
+${priceRows}
+</table>` : '<p style="color:#6b7280;font-size:14px">오늘 가격 데이터가 없습니다.</p>'}
+${researcherList.length > 0 ? `<h2 style="font-size:16px;color:#1f2937;margin:0 0 12px;border-bottom:2px solid #1e40af;padding-bottom:8px">조사자별 기여도</h2>
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;font-size:14px">
+<tr style="background:#f9fafb">
+<th style="padding:8px 12px;text-align:left;font-weight:600;border-bottom:2px solid #d1d5db">조사자</th>
+<th style="padding:8px 12px;text-align:center;font-weight:600;border-bottom:2px solid #d1d5db">제출 수</th>
+</tr>
+${researcherRows}
+</table>` : ''}
+<div style="text-align:center;margin-top:24px">
+<a href="/admin" style="display:inline-block;background:#1e40af;color:#ffffff;text-decoration:none;padding:12px 32px;border-radius:8px;font-size:14px;font-weight:600">관리자 대시보드 보기</a>
+</div>
+</td></tr>
+<tr><td style="background:#f9fafb;padding:16px;text-align:center;font-size:12px;color:#9ca3af">
+이온로드 시장조사 시스템 &bull; 자동 생성 리포트
+</td></tr>
+</table>
+</body>
+</html>`;
+
+        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        response.end(html);
+        return;
+      }
+
       if (request.method === 'GET' && url.pathname === '/api/bootstrap') {
         const submissions = await store.listSubmissions();
         const assignmentOverrides = await store.listAssignmentOverrides();
@@ -529,6 +651,35 @@ export function createApp(config = loadConfig(), options = {}) {
             method: hasDistanceInputs ? 'distance-fairness-blend' : 'residence-proximity-then-fairness'
           }
         });
+
+        // Fire-and-forget webhook notification
+        (async () => {
+          try {
+            const [webhookUrl, webhookEvents] = await Promise.all([
+              store.getSetting('webhookUrl'),
+              store.getSetting('webhookEvents')
+            ]);
+            if (!webhookUrl) return;
+            const events = webhookEvents || ['new_submission', 'daily_summary'];
+            if (!events.includes('new_submission')) return;
+            const fetchFn = options.fetchImpl || fetch;
+            await fetchFn(webhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                event: 'new_submission',
+                data: {
+                  researcher: payload.researcher.name,
+                  store: payload.survey.storeName,
+                  region: payload.survey.region,
+                  priceCount: payload.prices.length,
+                  timestamp: new Date().toISOString()
+                }
+              })
+            });
+          } catch { /* fire-and-forget */ }
+        })();
+
         json(response, 201, submission);
         return;
       }
@@ -584,6 +735,24 @@ export function createApp(config = loadConfig(), options = {}) {
         }
         const result = await store.importSubmissions(body.submissions);
         json(response, 200, result);
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/admin/webhook') {
+        if (!checkAuth(request)) {
+          json(response, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const body = await collectJsonBody(request, MAX_BODY_BYTES);
+        if (!body.url || typeof body.url !== 'string') {
+          json(response, 400, { error: 'url is required.' });
+          return;
+        }
+        const validEvents = ['new_submission', 'daily_summary'];
+        const events = Array.isArray(body.events) ? body.events.filter((e) => validEvents.includes(e)) : validEvents;
+        await store.setSetting('webhookUrl', body.url);
+        await store.setSetting('webhookEvents', events);
+        json(response, 200, { ok: true, url: body.url, events });
         return;
       }
 
