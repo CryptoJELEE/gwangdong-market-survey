@@ -850,7 +850,6 @@ function startSubmitCountdown(config) {
     submitBtn.dataset.counting = 'false';
     submitBtn.classList.remove('btn-submit-countdown');
     submitBtn.textContent = originalText;
-    submitBtn.removeEventListener('click', cancelCountdown);
     showToast('제출을 취소했어요', 'info');
   }
   // Replace the click handler temporarily
@@ -1477,6 +1476,7 @@ function renderPhotoGallery(submissions) {
 function openLightbox(photos, startIdx) {
   let idx = startIdx;
   const overlay = document.createElement('div');
+  overlay.className = 'lightbox-overlay';
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;';
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
@@ -2328,6 +2328,7 @@ function startDashboardPolling() {
     if (getActiveTab() !== 'dashboard') return;
     try {
       const response = await fetch('/api/bootstrap');
+      if (!response.ok) return;
       const data = await response.json();
       const oldCount = (state.bootstrap?.submissions || []).length;
       const newCount = (data.submissions || []).length;
@@ -2646,7 +2647,7 @@ function initKeyboardNav() {
     // Escape: close overlays/modals/bottom sheets
     if (e.key === 'Escape') {
       // Lightbox
-      const lightbox = document.querySelector('[style*="z-index:9999"]');
+      const lightbox = document.querySelector('.lightbox-overlay');
       if (lightbox) { lightbox.remove(); return; }
       // Price reminder overlay
       const priceReminder = document.querySelector('.price-reminder-overlay');
