@@ -2200,9 +2200,14 @@ async function loadBootstrap() {
   if (refreshBtn) refreshBtn.classList.add('is-spinning');
   try {
     const response = await fetch('/api/bootstrap');
+    if (!response.ok) throw new Error(`서버 오류 (${response.status})`);
     state.bootstrap = await response.json();
     renderForm(state.bootstrap);
     renderDashboard(state.bootstrap);
+    // Remove retry banner if visible
+    document.querySelector('#bootstrap-retry-banner')?.remove();
+  } catch (err) {
+    showBootstrapRetryBanner(err.name === 'TypeError' ? '인터넷 연결을 확인해주세요 📶' : (err.message || '데이터를 불러오지 못했어요'));
   } finally {
     if (refreshBtn) refreshBtn.classList.remove('is-spinning');
     // Hide splash screen on first load
@@ -2213,6 +2218,21 @@ async function loadBootstrap() {
       setTimeout(() => splash.remove(), 380);
     }
   }
+}
+
+function showBootstrapRetryBanner(msg) {
+  let banner = document.querySelector('#bootstrap-retry-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'bootstrap-retry-banner';
+    banner.setAttribute('role', 'alert');
+    banner.setAttribute('aria-live', 'assertive');
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9990;background:#e67e22;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;font-size:.88rem;gap:12px;';
+    document.body.prepend(banner);
+  }
+  banner.innerHTML = `<span>📡 ${escapeHtml(msg)}</span>`
+    + `<button type="button" style="background:rgba(255,255,255,.25);border:none;color:#fff;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:.85rem;white-space:nowrap;" id="bootstrap-retry-btn">다시 시도</button>`;
+  banner.querySelector('#bootstrap-retry-btn').addEventListener('click', () => loadBootstrap());
 }
 
 // Save step 1 field values to localStorage before navigating away

@@ -400,12 +400,14 @@ function renderCharts() {
 }
 
 function renderAdminSummaryWidget({ topResearcher, topArea, weekCount, total, areas }) {
+  const adminStats = document.querySelector('#admin-stats');
+  if (!adminStats) return;
   let widget = document.querySelector('#admin-summary-widget');
   if (!widget) {
     widget = document.createElement('div');
     widget.id = 'admin-summary-widget';
+    widget.setAttribute('aria-label', '이번 주 핵심 요약');
     widget.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;';
-    const adminStats = document.querySelector('#admin-stats');
     adminStats.parentNode.insertBefore(widget, adminStats);
   }
 
