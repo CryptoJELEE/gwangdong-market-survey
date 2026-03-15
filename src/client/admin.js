@@ -466,7 +466,7 @@ function renderAdmin() {
     const scoreColor = avgScore >= 80 ? 'var(--success,#27ae60)' : avgScore >= 50 ? '#f39c12' : 'var(--error,#e74c3c)';
     const medals = ['🥇', '🥈', '🥉'];
     return `
-            <tr style="border-bottom:1px solid var(--border,#eee);">
+            <tr class="researcher-row" data-researcher="${escapeHtml(name)}" style="border-bottom:1px solid var(--border,#eee);cursor:pointer;" title="${escapeHtml(name)} 상세 보기">
               <td style="padding:8px;">${medals[idx] || `#${idx + 1}`}</td>
               <td style="padding:8px;font-weight:600;">${escapeHtml(name)}</td>
               <td style="padding:8px;text-align:right;">${count}건</td>
@@ -476,20 +476,33 @@ function renderAdmin() {
                 </div>
               </td>
               <td style="padding:8px;text-align:right;color:${scoreColor};font-weight:600;">${avgScore}점</td>
-              <td style="padding:8px;color:var(--text-muted);font-size:.8rem;">${lastDate}</td>
+              <td style="padding:8px;color:var(--text-muted);font-size:.8rem;">${lastDate} <span style="font-size:.7rem;color:var(--primary);">\u25BC</span></td>
+            </tr>
+            <tr class="researcher-detail-row" id="rd-${escapeHtml(name)}" style="display:none;">
+              <td colspan="6" style="padding:0 8px 8px;background:var(--bg-alt,#f8f8f8);"></td>
             </tr>`;
   }).join('')}
         </tbody>
       </table>
     </div>
-    <h3 style="margin-top:16px;">지역별 현황</h3>
+    <h3 style="margin-top:16px;">지역별 커버리지 <span style="font-size:.78rem;color:var(--text-muted);font-weight:normal;">(주간 목표 5건)</span></h3>
     <div class="area-cards">
-      ${areas.map((area) => `
+      ${areas.map((area) => {
+    const totalCount = areaCounts[area] || 0;
+    const weekAgoTs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const weekCount = submissions.filter((s) => s.assignment?.currentArea === area && new Date(s.createdAt).getTime() >= weekAgoTs).length;
+    const pct = Math.min(100, Math.round((weekCount / 5) * 100));
+    const barColor = pct >= 100 ? 'var(--success,#27ae60)' : pct >= 60 ? '#f39c12' : 'var(--error,#e74c3c)';
+    return `
         <div class="area-card">
           <div class="area-name">${escapeHtml(area)}</div>
-          <div class="area-count">${areaCounts[area] || 0}건</div>
-        </div>
-      `).join('')}
+          <div class="area-count">${totalCount}건</div>
+          <div style="font-size:.72rem;color:var(--text-muted);margin-top:2px;">이번주 ${weekCount}/5</div>
+          <div style="height:4px;background:var(--border,#eee);border-radius:2px;margin-top:5px;">
+            <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px;transition:width .4s;"></div>
+          </div>
+        </div>`;
+  }).join('')}
     </div>
   `;
   renderIntegrityCheck(submissions);
@@ -639,20 +652,20 @@ function renderProgressDashboard(submissions, areas) {
 // ── Researcher detail profile ──
 function bindResearcherDetails() {
   if (!adminData) return;
-  const cards = document.querySelectorAll('.area-card[data-researcher]');
-  cards.forEach((card, idx) => {
-    card.addEventListener('click', () => {
-      const detail = document.querySelector(`#rd-${idx}`);
-      if (!detail) return;
-      if (detail.classList.contains('open')) {
-        detail.classList.remove('open');
-        return;
+  document.querySelectorAll('.researcher-row').forEach((row) => {
+    row.addEventListener('click', () => {
+      const name = row.dataset.researcher;
+      const detailRow = document.querySelector(`#rd-${CSS.escape(name)}`);
+      if (!detailRow) return;
+      const isOpen = detailRow.style.display !== 'none';
+      // Close all others
+      document.querySelectorAll('.researcher-detail-row').forEach((r) => { r.style.display = 'none'; });
+      document.querySelectorAll('.researcher-row').forEach((r) => r.classList.remove('is-expanded'));
+      if (!isOpen) {
+        detailRow.querySelector('td').innerHTML = buildResearcherDetail(name);
+        detailRow.style.display = '';
+        row.classList.add('is-expanded');
       }
-      // Close others
-      document.querySelectorAll('.researcher-detail.open').forEach((d) => d.classList.remove('open'));
-      const name = card.dataset.researcher;
-      detail.innerHTML = buildResearcherDetail(name);
-      detail.classList.add('open');
     });
   });
 }
@@ -692,13 +705,44 @@ function buildResearcherDetail(name) {
   const firstDate = new Date(Math.min(...dates)).toLocaleDateString('ko-KR');
   const lastDate = new Date(Math.max(...dates)).toLocaleDateString('ko-KR');
 
+  // 7-day activity bars
+  const today = new Date();
+  const dayLabels = ['일', '월', '화', '수', '목', '금', '토'];
+  const weekBars = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (6 - i));
+    const dayStr = d.toDateString();
+    const count = mine.filter((s) => new Date(s.createdAt).toDateString() === dayStr).length;
+    return { count, label: dayLabels[d.getDay()] };
+  });
+  const maxBar = Math.max(...weekBars.map((b) => b.count), 1);
+  const barsHtml = weekBars.map(({ count, label }) => {
+    const h = count > 0 ? Math.max(4, Math.round((count / maxBar) * 36)) : 0;
+    return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;">
+      <div style="height:36px;display:flex;align-items:flex-end;">
+        <div style="width:14px;height:${h}px;background:var(--primary,#0066cc);border-radius:2px 2px 0 0;"></div>
+      </div>
+      <span style="font-size:.65rem;color:var(--text-muted);">${label}</span>
+      ${count > 0 ? `<span style="font-size:.65rem;font-weight:700;">${count}</span>` : '<span style="font-size:.65rem;color:transparent;">0</span>'}
+    </div>`;
+  }).join('');
+
+  // Avg prices per submission
+  const totalPrices = mine.reduce((sum, s) => sum + (s.prices || []).length, 0);
+  const avgPrices = total > 0 ? (totalPrices / total).toFixed(1) : 0;
+
   return `
-    <div class="rd-grid">
+    <div style="padding:8px 0;">
+      <div style="font-size:.78rem;color:var(--text-muted);font-weight:600;margin-bottom:6px;">최근 7일 활동</div>
+      <div style="display:flex;gap:4px;align-items:flex-end;height:60px;">${barsHtml}</div>
+    </div>
+    <div class="rd-grid" style="margin-top:8px;">
       <div class="rd-item"><div class="rd-label">총 제출</div><div class="rd-value">${total}건</div></div>
       <div class="rd-item"><div class="rd-label">가격 입력률</div><div class="rd-value">${priceRate}%</div></div>
+      <div class="rd-item"><div class="rd-label">평균 가격수</div><div class="rd-value">${avgPrices}개</div></div>
       <div class="rd-item"><div class="rd-label">사진 첨부율</div><div class="rd-value">${photoRate}%</div></div>
-      <div class="rd-item"><div class="rd-label">활동 기간</div><div class="rd-value" style="font-size:12px;">${firstDate} ~ ${lastDate}</div></div>
     </div>
+    <div style="font-size:.75rem;color:var(--text-muted);margin:4px 0 8px;">활동 기간: ${firstDate} ~ ${lastDate}</div>
     <div class="rd-label" style="margin-bottom:4px;">주요 조사 지역</div>
     <div class="rd-tags">${topAreas.map(([a, c]) => `<span class="rd-tag">${escapeHtml(a)} (${c})</span>`).join('')}</div>
     <div class="rd-label" style="margin-top:8px;margin-bottom:4px;">주요 매장유형</div>

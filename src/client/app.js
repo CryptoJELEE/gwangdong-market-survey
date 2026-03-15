@@ -857,6 +857,10 @@ function startSubmitCountdown(config) {
   submitBtn.addEventListener('click', cancelCountdown, { once: true });
 }
 
+/**
+ * 폼 제출을 처리합니다. 유효성 검사, 중복 확인, API 전송을 수행합니다.
+ * @param {Object} config - 부트스트랩 설정 (products, areas 등)
+ */
 async function handleSubmit(config) {
   const submitBtn = formStepContainer.querySelector('#submit-btn');
   const statusEl = formStepContainer.querySelector('#submit-status');
@@ -1087,6 +1091,17 @@ function showSuccess(result) {
         <button type="button" class="btn btn-secondary" id="view-history">오늘 기록 보기 📋</button>
         <button type="button" class="share-btn" id="share-success">📤 오늘 기록 공유하기</button>
       </div>
+      <div style="margin-top:16px;border-top:1px solid var(--border,#eee);padding-top:12px;">
+        <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:8px;font-weight:600;">다음에 할 일</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <button type="button" class="btn btn-secondary next-action-btn" id="action-same-area" style="font-size:.85rem;text-align:left;padding:8px 12px;">
+            📍 <strong>${escapeHtml(result.assignment.currentArea)}</strong>에서 다른 매장 조사하기
+          </button>
+          <button type="button" class="btn btn-secondary next-action-btn" id="action-revisit" style="font-size:.85rem;text-align:left;padding:8px 12px;">
+            🔄 <strong>${escapeHtml(storeName)}</strong> 재방문 (추가 제품 확인)
+          </button>
+        </div>
+      </div>
     </div>
   `;
 
@@ -1110,6 +1125,21 @@ function showSuccess(result) {
   });
   successView.querySelector('#share-success').addEventListener('click', () => {
     shareIonroad(`오늘 ${escapeHtml(storeName)}에서 시장조사 완료! 이온로드로 간편 기록 중 📋`);
+  });
+
+  // Next-action suggestions
+  successView.querySelector('#action-same-area').addEventListener('click', () => {
+    // Pre-fill region with recommended area and start new survey
+    const area = result.assignment?.currentArea || '';
+    if (area) { saveLocal('_step1_region', area); }
+    renderForm(state.bootstrap);
+  });
+  successView.querySelector('#action-revisit').addEventListener('click', () => {
+    // Keep store info (already in localStorage) and jump to step 2
+    state.currentStep = 2;
+    surveyForm.classList.remove('hidden');
+    successView.classList.add('hidden');
+    renderCurrentStep(state.bootstrap);
   });
 }
 
@@ -1607,6 +1637,13 @@ async function renderTodayHighlight() {
 }
 
 // ── SVG sparkline ──
+/**
+ * SVG 기반 미니 스파크라인 차트를 생성합니다.
+ * @param {number[]} values - 데이터 값 배열
+ * @param {number} [w=80] - 너비(px)
+ * @param {number} [h=28] - 높이(px)
+ * @returns {string} SVG HTML 문자열
+ */
 function sparkline(values, w = 80, h = 28) {
   if (!values || values.length < 2) return '';
   const min = Math.min(...values);
@@ -1880,16 +1917,30 @@ function renderDashboard(config) {
   renderMyRecords(submissions);
   renderOfflineQueue();
 
-  // 8. Photo Gallery
-  renderPhotoGallery(submissions);
+  // 8. Photo Gallery (deferred — non-critical)
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(() => renderPhotoGallery(submissions));
+  } else {
+    setTimeout(() => renderPhotoGallery(submissions), 100);
+  }
 }
 
 // ── Helpers ──
+/**
+ * HTML 특수문자를 이스케이프합니다.
+ * @param {string} str - 이스케이프할 문자열
+ * @returns {string} 이스케이프된 문자열
+ */
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/**
+ * 컨테이너 내에서 포커스를 가두어 모달 접근성을 보장합니다.
+ * @param {HTMLElement} container - 포커스를 가둘 컨테이너
+ * @returns {Function} 포커스 해제 함수
+ */
 function trapFocus(container) {
   const selectors = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
   const focusable = [...container.querySelectorAll(selectors)].filter(el => !el.disabled);
@@ -1978,6 +2029,11 @@ async function fileToDataUrl(file) {
   });
 }
 
+/**
+ * 화면 하단에 토스트 메시지를 표시합니다.
+ * @param {string} message - 표시할 메시지
+ * @param {'success'|'error'|'info'} [type='info'] - 토스트 유형
+ */
 function showToast(message, type) {
   const existing = document.querySelector('.toast');
   if (existing) existing.remove();
@@ -2255,6 +2311,29 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ── Global error handling (see showErrorBanner below) ──
+
+// ── Touch/click ripple feedback ──
+/**
+ * 버튼 클릭 시 물결(ripple) 시각 피드백을 초기화합니다.
+ */
+function initRippleEffect() {
+  if (document.querySelector('#ripple-style')) return;
+  const s = document.createElement('style');
+  s.id = 'ripple-style';
+  s.textContent = '.btn{position:relative;overflow:hidden;}.ripple-wave{position:absolute;border-radius:50%;background:rgba(255,255,255,.28);transform:scale(0);animation:ripple-anim .5s ease-out forwards;pointer-events:none;}@keyframes ripple-anim{to{transform:scale(4);opacity:0;}}';
+  document.head.appendChild(s);
+  document.addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest('.btn');
+    if (!btn || btn.disabled) return;
+    const rect = btn.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    const span = document.createElement('span');
+    span.className = 'ripple-wave';
+    span.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX - rect.left - size / 2}px;top:${e.clientY - rect.top - size / 2}px;`;
+    btn.appendChild(span);
+    span.addEventListener('animationend', () => span.remove());
+  });
+}
 
 // ── App version footer ──
 function initAppVersion() {
@@ -2590,5 +2669,6 @@ initNetworkMonitor();
 initDarkMode();
 initPwaInstall();
 initTouchSwipe();
+initRippleEffect();
 initAppVersion();
 renderOfflineQueue();
