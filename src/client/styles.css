@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════
    광동 시장조사 — Modern UI System v2
    8px grid · 4.5:1 contrast · system fonts
-   Rounds 1–26 | 5,100+ lines
+   Rounds 1–30 | 5,900+ lines | Production Ready
    ═══════════════════════════════════════════════
 
    TABLE OF CONTENTS
@@ -122,6 +122,7 @@
 
   /* Extended radius */
   --radius-lg: 20px;
+  --radius-pill: 999px; /* fully rounded — use instead of magic number */
 
   /* Chart palette */
   --chart-1: #16785a;
@@ -774,7 +775,7 @@ select {
   padding: var(--sp-2) var(--sp-4);
   background: var(--color-primary-subtle);
   color: var(--color-primary);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-weight: 700;
   font-size: 14px;
   margin: var(--sp-2) 0 var(--sp-5);
@@ -1035,7 +1036,7 @@ select {
   left: 50%;
   transform: translateX(-50%);
   padding: var(--sp-3) var(--sp-6);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: white;
   font-size: 14px;
   font-weight: 600;
@@ -1696,7 +1697,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .filter-chip {
   padding: var(--sp-3) var(--sp-4);
   border: 1.5px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--card);
   color: var(--text-muted);
   font-size: 13px;
@@ -2136,7 +2137,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .badge-error { background: rgba(220,38,38,0.1); color: var(--error); }
 .badge-neutral { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
 .badge-info { background: var(--color-info-subtle); color: var(--color-info); }
-.badge-pill { border-radius: 999px; padding: 2px var(--sp-3); }
+.badge-pill { border-radius: var(--radius-pill); padding: 2px var(--sp-3); }
 
 /* ── Tags ── */
 .tag {
@@ -2144,7 +2145,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   align-items: center;
   gap: var(--sp-1);
   padding: var(--sp-1) var(--sp-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 600;
   background: var(--bg);
@@ -2356,7 +2357,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   .quick-stats .quick-stat { min-width: 80px; }
 }
 
-/* ── Dark mode: Round 17 additions ── */
+/* ── Dark Mode: Extended Components ── */
 @media (prefers-color-scheme: dark) {
   .table th { background: var(--surface); }
   .table.is-striped tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
@@ -2635,7 +2636,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   font-size: 11px;
   font-weight: 700;
   padding: 1px var(--sp-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   min-width: 20px;
   text-align: center;
 }
@@ -2678,7 +2679,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   width: 100%;
   padding: 11px var(--sp-4) 11px 40px;
   border: 1.5px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--card);
   font-size: 14px;
   color: var(--text);
@@ -2724,7 +2725,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   width: 44px;
   height: 26px;
   background: var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   transition: background 0.2s var(--ease-out);
   flex-shrink: 0;
 }
@@ -2806,7 +2807,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   margin-top: var(--sp-3);
 }
 
-/* ── Dark mode: Round 18 additions ── */
+/* ── Dark Mode: Progress / Alert / Avatar / Dropdown ── */
 @media (prefers-color-scheme: dark) {
   .alert-success { background: rgba(34,160,107,0.12); border-color: rgba(34,160,107,0.3); color: #6ee7b7; }
   .alert-warning { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.3); color: #fcd34d; }
@@ -3067,7 +3068,7 @@ img.is-loaded { animation: imgFadeIn 0.3s ease; }
 .img-aspect-4-3 { aspect-ratio: 4/3; object-fit: cover; }
 .img-aspect-square { aspect-ratio: 1; object-fit: cover; }
 
-/* ── Dark mode: Round 19 additions ── */
+/* ── Dark Mode: Scroll Snap / Container / Fluid Typography ── */
 @media (prefers-color-scheme: dark) {
   .image-grid-item { background: var(--border); }
   .skeleton-avatar,
@@ -3181,7 +3182,7 @@ button, a, [role="button"] { -webkit-touch-callout: none; }
   align-items: center;
   gap: var(--sp-1);
   padding: 3px var(--sp-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 700;
 }
@@ -3698,7 +3699,7 @@ button, a, [role="button"] { -webkit-touch-callout: none; }
   100% { transform: scale(1); }
 }
 
-/* ── Dark mode: Round 21 additions ── */
+/* ── Dark Mode: Glass / Patterns / Custom Inputs ── */
 @media (prefers-color-scheme: dark) {
   .card-glass {
     background: rgba(26,29,40,0.75);
@@ -3996,7 +3997,7 @@ button, a, [role="button"] { -webkit-touch-callout: none; }
   color: var(--color-primary);
   background: var(--color-primary-subtle);
   padding: var(--sp-1) var(--sp-3);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 .countdown-inline.is-urgent { color: var(--error); background: rgba(220,38,38,0.08); animation: countdownPulse 1s ease infinite; }
 
@@ -4018,7 +4019,7 @@ button, a, [role="button"] { -webkit-touch-callout: none; }
   align-items: center;
   gap: 3px;
   padding: 2px var(--sp-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -4143,7 +4144,7 @@ button, a, [role="button"] { -webkit-touch-callout: none; }
   top: -4px; right: -4px;
   min-width: 18px; height: 18px;
   padding: 0 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--error);
   color: white;
   font-size: 10px;
@@ -4181,7 +4182,7 @@ button, a, [role="button"] { -webkit-touch-callout: none; }
   .justify-between { justify-content: space-between; }
 }
 
-/* ── Dark Mode: Round 22 additions ── */
+/* ── Dark Mode: Sidebar / Offcanvas / Breadcrumb / Wizard ── */
 @media (prefers-color-scheme: dark) {
   .offcanvas { background: var(--card); }
   .offcanvas-close { background: var(--border); }
@@ -4199,7 +4200,7 @@ button, a, [role="button"] { -webkit-touch-callout: none; }
   .notif-count { border-color: var(--card); }
 }
 
-/* ── Reduced Motion: Round 22 ── */
+/* ── Reduced Motion: Sidebar / Wizard / Scroll Progress ── */
 @media (prefers-reduced-motion: reduce) {
   .offcanvas { transition: none; }
   .scroll-progress { transition: none; }
@@ -4503,7 +4504,7 @@ a:not([class]):hover { text-decoration-thickness: 2px; }
   a:not([class]) { color: var(--color-primary-light); }
 }
 
-/* ── Reduced Motion: Round 23 ── */
+/* ── Reduced Motion: Card / Chart / A11y ── */
 @media (prefers-reduced-motion: reduce) {
   .empty-illustration-icon { animation: none !important; }
   .notif-dot::after { animation: none; }
@@ -4917,7 +4918,7 @@ a:not([class]):hover { text-decoration-thickness: 2px; }
   }
 }
 
-/* ── Reduced Motion: Round 24 ── */
+/* ── Reduced Motion: Visual Flourishes ── */
 @media (prefers-reduced-motion: reduce) {
   .hero.has-mesh::before                   { animation: none; }
   .card-glow:hover::before                 { animation: none; --glow-angle: 45deg; }
@@ -5191,7 +5192,7 @@ textarea:disabled {
     .field { &.is-error { ... } }
 */
 
-/* ── Reduced Motion: Round 25 ── */
+/* ── Reduced Motion: Modern CSS / Touch / Hover ── */
 @media (prefers-reduced-motion: reduce) {
   .gps-btn { transition: none; }
   .btn:not(:disabled) { transition: background var(--duration-fast) linear, color var(--duration-fast) linear; }
@@ -5818,7 +5819,7 @@ textarea:disabled {
   font-feature-settings: "tnum" 1, "zero" 1; /* slashed zero for clarity */
 }
 
-/* ── Dark Mode: Round 28 ── */
+/* ── Dark Mode: Korean / IME / Number Format ── */
 @media (prefers-color-scheme: dark) {
   .field :is(input, textarea).is-composing {
     border-color: #38bdf8;
@@ -5828,7 +5829,7 @@ textarea:disabled {
   .price-display .price-unit { color: var(--text-muted); }
 }
 
-/* ── Reduced Motion: Round 28 ── */
+/* ── Reduced Motion: Korean IME ── */
 @media (prefers-reduced-motion: reduce) {
   .field.is-composing-active::after { animation: none; }
 }
@@ -5839,27 +5840,10 @@ textarea:disabled {
    ═══════════════════════════════════════════════ */
 
 /* ── CSS Custom Property Fallback Audit ── */
-/* Critical tokens — explicit fallbacks ensure graceful degradation
-   if a CSS file is partially loaded or :root is overridden */
-:root {
-  /* Confirm presence of all tokens referenced without fallbacks in component CSS */
-  --color-primary:        var(--color-primary,        #16785a);
-  --color-primary-light:  var(--color-primary-light,  #1e9970);
-  --color-primary-dark:   var(--color-primary-dark,   #115f47);
-  --color-primary-subtle: var(--color-primary-subtle, #eef8f3);
-  --color-primary-ghost:  var(--color-primary-ghost,  rgba(22,120,90,0.08));
-  --surface:              var(--surface,              #ffffff);
-  --surface-raised:       var(--surface-raised,       #fafbfc);
-  --surface-sunken:       var(--surface-sunken,       #f0f2f1);
-  --border:               var(--border,               #dfe3e8);
-  --border-hover:         var(--border-hover,         #c4cad2);
-  --text:                 var(--text,                 #1b1f23);
-  --text-muted:           var(--text-muted,           #5a6370);
-  --shadow:               var(--shadow,               0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04));
-  --radius:               var(--radius,               14px);
-  --radius-sm:            var(--radius-sm,            10px);
-  --transition:           var(--transition,           0.18s cubic-bezier(0.22,1,0.36,1));
-}
+/* NOTE: CSS custom properties cannot self-reference (circular ref → invalid).
+   Fallbacks are specified at point-of-use: var(--token, fallback).
+   All critical tokens are defined in §01 :root — no redefinition needed here.
+   For @property-based type checking, see the --glow-angle declaration above. */
 
 /* ── Performance: will-change Audit ── */
 /* Rule: only keep will-change on elements that animate continuously.
@@ -5944,21 +5928,42 @@ textarea:disabled {
 
 /* ── Production Readiness Checklist ── */
 /*
-  ✓ Design tokens: 45+ custom properties in :root
-  ✓ Dark mode: 12 @media blocks + final :root token set
-  ✓ Reduced motion: every animation block covered
-  ✓ Forced colors: ::before/::after fallbacks present
-  ✓ High contrast: prefers-contrast: more block present
-  ✓ Print: @page + full component hide/flatten
-  ✓ Safe areas: top + bottom + left + right env() values
-  ✓ Touch: @media (hover: none) hover cleanup
-  ✓ Korean: :lang(ko) + word-break + IME state
-  ✓ Accessibility: :focus-visible unified, .sr-only, .tap-target
-  ✓ Performance: will-change scoped, GPU compositing audited
-  ✓ z-index: all 14 global values use --z-* tokens
-  ✓ Selectors: :is() applied to repetitive field selectors
-  ✓ Modern CSS: @layer, :has(), CSS nesting, color-mix, oklch,
-                anchor positioning, view-transitions, popover API
-  ✓ Themes: 5 colour schemes + high-contrast
+  ✓ Design tokens: 50+ custom properties in :root (incl. --radius-pill)
+  ✓ Dark mode: consolidated :root tokens + per-component overrides
+  ✓ Reduced motion: every animation section covered
+  ✓ Forced colors / high contrast: @media blocks present
+  ✓ Print: @page + full component hide/flatten + safe margin
+  ✓ Safe areas: all 4 inset directions handled (top/bottom/left/right)
+  ✓ Touch: @media (hover: none) and (pointer: coarse) cleanup
+  ✓ Korean: :lang(ko) + IME composition state
+  ✓ Numbers: font-variant-numeric tabular-nums global + per-component
+  ✓ Accessibility: :focus-visible unified, .sr-only, .tap-target, WCAG AA
+  ✓ Performance: will-change audited, GPU compositing scoped
+  ✓ z-index: 14 global values fully tokenised → --z-* variables
+  ✓ Magic numbers: border-radius:999px → var(--radius-pill) everywhere
+  ✓ Circular var() bug fixed: no self-referential custom property assignments
+  ✓ Selectors: :is() compression on field inputs
+  ✓ Modern CSS: @layer, :has(), nesting, color-mix, oklch,
+                anchor-position, view-transitions, popover API
+  ✓ Themes: 5 colour schemes + high-contrast via class modifier
   ✓ Keyframes: 45 defined, 0 unused
+  ✓ Comments: round-tracking labels replaced with semantic descriptions
+*/
+
+/* ── §41 Round 30: Final File Summary ── */
+/*
+  광동 시장조사 UI System — Completed Rounds 1–30
+  ─────────────────────────────────────────────
+  Started: ~1,665 lines (bare styles)
+  Final:   ~5,950 lines (enterprise design system)
+  Added:   ~4,285 lines of design system over 30 rounds
+
+  Key milestones:
+  R01–15  Core app styles + dark mode foundation
+  R16–20  Design tokens · animations · component library
+  R21–23  Custom inputs · wizard · data viz · A11y
+  R24–26  Visual flourishes · Modern CSS API coverage
+  R27–29  Animation master · Korean optimisation · quality audit
+  R30     Final optimisation: --radius-pill, comment cleanup,
+          circular var() fix, production checklist
 */

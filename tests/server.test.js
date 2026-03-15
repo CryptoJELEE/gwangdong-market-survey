@@ -2744,3 +2744,136 @@ describe('Round 29: /api/stats averagePrices', () => {
     assert.equal(vita.count, 2);
   });
 });
+
+describe('Round 30: static file routes', () => {
+  test('manifest.json returns JSON content-type', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await fetch(`${baseUrl}/manifest.json`);
+    // File exists in the project — should return 200 with JSON content-type
+    assert.ok([200, 304].includes(res.status), 'manifest.json should return 200 or 304');
+    if (res.status === 200) {
+      assert.ok(res.headers.get('content-type')?.includes('application/json'));
+    }
+  });
+
+  test('favicon.svg route is served', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await fetch(`${baseUrl}/favicon.svg`);
+    assert.ok([200, 304].includes(res.status), 'favicon.svg should return 200 or 304');
+  });
+
+  test('/admin page route returns HTML', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await fetch(`${baseUrl}/admin`);
+    assert.ok([200, 304].includes(res.status), '/admin should return HTML page');
+    if (res.status === 200) {
+      assert.ok(res.headers.get('content-type')?.includes('text/html'));
+    }
+  });
+});
+
+describe('Round 30: assignment override reflected in bootstrap', () => {
+  test('overrideAssignment appears in bootstrap assignmentOverrides', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    // Create a submission first
+    const subRes = await postSubmission(baseUrl);
+    const sub = await subRes.json();
+
+    // Override its assignment
+    const overrideRes = await fetch(`${baseUrl}/api/assignments/override`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submissionId: sub.id,
+        assignedArea: '서울 동부',
+        reason: '테스트 변경'
+      })
+    });
+    assert.equal(overrideRes.status, 200);
+
+    // Bootstrap should now include the override
+    const bootstrapRes = await fetch(`${baseUrl}/api/bootstrap`);
+    const bootstrap = await bootstrapRes.json();
+    assert.ok(bootstrap.assignmentOverrides.length > 0, 'should have at least one override');
+    const ourOverride = bootstrap.assignmentOverrides.find((o) => o.submissionId === sub.id);
+    assert.ok(ourOverride, 'our override should appear in assignmentOverrides');
+    assert.equal(ourOverride.assignedArea, '서울 동부');
+  });
+});
+
+describe('Round 30: /api/admin/verify response shape', () => {
+  test('valid token returns success:true and ok:true', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/verify`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.success, true);
+    assert.strictEqual(data.ok, true);
+  });
+
+  test('expired/unknown token returns success:false', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/api/admin/verify`, {
+      headers: { Authorization: 'Bearer unknown-token-xyz' }
+    });
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+  });
+});
+
+describe('Round 30: /api/admin/settings key validation', () => {
+  test('invalid setting key returns 400', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/settings`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'invalidKey', value: ['x'] })
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+    assert.ok(data.error);
+  });
+
+  test('non-array value for settings returns 400', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/settings`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'customAreas', value: 'not-an-array' })
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+  });
+
+  test('customStoreTypes setting round-trips correctly', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const storeTypes = ['편의점', '약국', '마트'];
+    await fetch(`${baseUrl}/api/admin/settings`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'customStoreTypes', value: storeTypes })
+    });
+
+    const res = await fetch(`${baseUrl}/api/admin/settings`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    assert.deepEqual(data.customStoreTypes, storeTypes);
+  });
+});
