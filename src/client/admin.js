@@ -196,7 +196,13 @@ async function loadAdminData() {
     loadingBanner.setAttribute('role', 'status');
     loadingBanner.setAttribute('aria-live', 'polite');
     loadingBanner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9990;background:var(--primary,#0066cc);color:#fff;text-align:center;padding:6px;font-size:.85rem;transition:opacity .3s;';
-    loadingBanner.textContent = '⏳ 데이터 불러오는 중...';
+    loadingBanner.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite;">&#x21BB;</span> \uB370\uC774\uD130 \uBD88\uB7EC\uC624\uB294 \uC911...';
+  if (!document.querySelector('#admin-spin-style')) {
+    const s = document.createElement('style');
+    s.id = 'admin-spin-style';
+    s.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(s);
+  }
     document.body.prepend(loadingBanner);
   }
   loadingBanner.style.opacity = '1';
@@ -233,6 +239,17 @@ function startPolling() {
 
 function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+// ── Admin notes (localStorage) ──
+function getAdminNotes() {
+  try { return JSON.parse(localStorage.getItem('kwangdong_adminNotes') || '{}'); } catch { return {}; }
+}
+function saveAdminNote(id, note) {
+  const notes = getAdminNotes();
+  if (note.trim()) notes[id] = note.trim();
+  else delete notes[id];
+  try { localStorage.setItem('kwangdong_adminNotes', JSON.stringify(notes)); } catch {}
 }
 
 async function pollNewSubmissions() {
@@ -1094,6 +1111,109 @@ function applyDateFilter(submissions, dateFilter) {
   return submissions;
 }
 
+// ── Submission detail modal ──
+function showSubmissionDetailModal(sub, areas) {
+  const savedNote = getAdminNotes()[sub.id] || '';
+  const gps = sub.gps || sub.location;
+  const gpsText = gps ? `${gps.lat?.toFixed(5)}, ${gps.lng?.toFixed(5)}` : '-';
+  const priceRows = (sub.prices || []).map((p) =>
+    `<tr><td style="padding:5px 4px;">${escapeHtml(p.productLabel)}</td><td style="padding:5px 4px;">${escapeHtml(p.size)}</td><td style="padding:5px 4px;text-align:right;">\u20A9${Number(p.price).toLocaleString()}</td></tr>`
+  ).join('');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'price-reminder-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', 'sub-detail-title');
+  overlay.innerHTML = `
+    <div class="price-reminder-dialog" style="max-width:520px;width:90vw;max-height:80vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+        <h3 id="sub-detail-title" style="margin:0;font-size:1rem;">${escapeHtml(sub.survey.storeName)}${savedNote ? ' \uD83D\uDCDD' : ''}</h3>
+        <button type="button" id="sub-modal-close" aria-label="닫기" style="background:none;border:none;font-size:1.4rem;cursor:pointer;line-height:1;color:var(--text-muted);">\xD7</button>
+      </div>
+      <p style="font-size:.83rem;color:var(--text-muted);margin:0 0 12px;">
+        ${escapeHtml(sub.researcher.name)} \u00B7 ${escapeHtml(sub.researcher.residenceArea)} \u2192 <strong>${escapeHtml(sub.assignment?.currentArea || '')}</strong><br/>
+        ${new Date(sub.createdAt).toLocaleString('ko-KR')} \u00B7 ${escapeHtml(sub.survey.region)} \u00B7 ${escapeHtml(sub.survey.storeType)} \u00B7 POS ${sub.survey.posCount}
+        ${sub.survey.displayLocation ? `<br/>\uC9C4\uC5F4\uC704\uCE58: ${escapeHtml(sub.survey.displayLocation)}` : ''}
+      </p>
+      ${priceRows ? `
+      <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px;">
+        <thead><tr style="border-bottom:1.5px solid var(--border,#eee);text-align:left;">
+          <th style="padding:5px 4px;">\uC81C\uD488</th><th style="padding:5px 4px;">\uC0AC\uC774\uC988</th><th style="padding:5px 4px;text-align:right;">\uAC00\uACA9</th>
+        </tr></thead>
+        <tbody>${priceRows}</tbody>
+      </table>` : '<p style="font-size:.83rem;color:var(--text-muted);margin-bottom:12px;">\uAC00\uACA9 \uB370\uC774\uD130 \uC5C6\uC74C</p>'}
+      ${sub.photo ? `<img src="${sub.photo.url}" alt="${escapeHtml(sub.survey.storeName)}" loading="lazy" style="width:100%;border-radius:8px;margin-bottom:12px;display:block;" />` : ''}
+      ${sub.notes ? `<div style="font-size:.83rem;background:var(--bg-alt,#f5f5f5);border-radius:6px;padding:8px 12px;margin-bottom:12px;">\uD83D\uDCAC \uC870\uC0AC\uC790 \uBA54\uBAA8: ${escapeHtml(sub.notes)}</div>` : ''}
+      <p style="font-size:.82rem;color:var(--text-muted);margin:0 0 12px;">GPS: ${gpsText}</p>
+      <hr style="border:none;border-top:1px solid var(--border,#eee);margin-bottom:12px;"/>
+      <label for="admin-note-input" style="font-size:.85rem;font-weight:600;display:block;margin-bottom:6px;">\uD83D\uDCDD \uAD00\uB9AC\uC790 \uBA54\uBAA8</label>
+      <textarea id="admin-note-input" rows="3" style="width:100%;border:1px solid var(--border,#ddd);border-radius:6px;padding:8px;font-size:.85rem;resize:vertical;box-sizing:border-box;" placeholder="\uC870\uC0AC\uC790\uC5D0\uAC8C \uB0A8\uAE38 \uD53C\uB4DC\uBC31\uC774\uB098 \uBA54\uBAA8...">${escapeHtml(savedNote)}</textarea>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="detail-area-select" aria-label="\uC9C0\uC5ED \uBCC0\uACBD" style="padding:6px 8px;border:1px solid var(--border,#ddd);border-radius:6px;font-size:.85rem;">
+            ${areas.map((a) => `<option value="${escapeHtml(a)}" ${a === sub.assignment?.currentArea ? 'selected' : ''}>${escapeHtml(a)}</option>`).join('')}
+          </select>
+          <button type="button" id="detail-override-btn" class="btn btn-secondary" style="font-size:.8rem;padding:4px 10px;">\uC9C0\uC5ED \uBCC0\uACBD</button>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button type="button" id="detail-save-note-btn" class="btn btn-primary" style="font-size:.8rem;padding:4px 12px;">\uBA54\uBAA8 \uC800\uC7A5</button>
+          <button type="button" id="detail-delete-btn" style="font-size:.8rem;padding:4px 10px;background:none;border:1px solid var(--error,#e74c3c);color:var(--error,#e74c3c);border-radius:6px;cursor:pointer;">\uC0AD\uC81C</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#sub-modal-close').focus();
+
+  function close() { overlay.remove(); }
+  overlay.querySelector('#sub-modal-close').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+
+  overlay.querySelector('#detail-save-note-btn').addEventListener('click', () => {
+    saveAdminNote(sub.id, overlay.querySelector('#admin-note-input').value);
+    showToast('\uBA54\uBAA8\uAC00 \uC800\uC7A5\uB418\uC5C8\uC5B4\uC694. \u2713', 'success');
+    close();
+  });
+
+  overlay.querySelector('#detail-override-btn').addEventListener('click', async () => {
+    const select = overlay.querySelector('#detail-area-select');
+    const response = await fetch('/api/assignments/override', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submissionId: sub.id, assignedArea: select.value, reason: 'Admin override', adminName: 'Admin' })
+    });
+    if (response.ok) {
+      showToast('\uC9C0\uC5ED\uC774 \uBCC0\uACBD\uB418\uC5C8\uC5B4\uC694. \u2713', 'success');
+      close();
+      await loadAdminData();
+    }
+  });
+
+  const deleteBtn = overlay.querySelector('#detail-delete-btn');
+  deleteBtn.addEventListener('click', async () => {
+    if (deleteBtn.dataset.confirm !== 'yes') {
+      deleteBtn.dataset.confirm = 'yes';
+      deleteBtn.textContent = '\uC815\uB9D0 \uC0AD\uC81C?';
+      setTimeout(() => { if (overlay.isConnected) { deleteBtn.dataset.confirm = ''; deleteBtn.textContent = '\uC0AD\uC81C'; } }, 3000);
+      return;
+    }
+    const response = await authFetch('/api/submissions/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submissionId: sub.id })
+    });
+    if (response.ok) {
+      showToast('\uC0AD\uC81C\uB418\uC5C8\uC5B4\uC694. \u2713', 'success');
+      close();
+      await loadAdminData();
+    } else {
+      showToast('\uC0AD\uC81C\uC5D0 \uC2E4\uD328\uD588\uC5B4\uC694.', 'error');
+    }
+  });
+}
+
 function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFilter, page) {
   if (!adminData) return;
   page = page || submissionPage || 1;
@@ -1153,53 +1273,31 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
     </div>
   `;
 
+  const adminNotes = getAdminNotes();
   const cardsHtml = paginated.length
     ? paginated.map((sub) => {
         const isSelected = selectedSubmissionIds.has(sub.id);
-        const priceRows = (sub.prices || []).map((p) =>
-          `<tr><td>${escapeHtml(p.productLabel)}</td><td>${escapeHtml(p.size)}</td><td style="text-align:right;">\u20A9${Number(p.price).toLocaleString()}</td></tr>`
-        ).join('');
-        const gps = sub.gps || sub.location;
-        const gpsText = gps ? `${gps.lat?.toFixed(5)}, ${gps.lng?.toFixed(5)}` : '-';
+        const hasNote = !!adminNotes[sub.id];
+        const priceCount = (sub.prices || []).length;
+        const score = sub.completenessScore ?? 0;
+        const scoreDot = score >= 90 ? '\uD83D\uDFE2' : score >= 60 ? '\uD83D\uDFE1' : '\uD83D\uDD34';
         const checkboxHtml = bulkSelectMode
-          ? `<input type="checkbox" class="bulk-checkbox" data-id="${sub.id}" ${isSelected ? 'checked' : ''} style="margin-right:8px;width:16px;height:16px;cursor:pointer;" aria-label="${escapeHtml(sub.survey.storeName)} 선택" />`
+          ? `<input type="checkbox" class="bulk-checkbox" data-id="${sub.id}" ${isSelected ? 'checked' : ''} style="margin-right:8px;width:16px;height:16px;cursor:pointer;" aria-label="${escapeHtml(sub.survey.storeName)} \uC120\uD0DD" />`
           : '';
-
         return `
       <article class="submission-card" data-id="${sub.id}" ${isSelected ? 'style="outline:2px solid var(--primary);"' : ''}>
-        <div class="sub-header" style="cursor:pointer;display:flex;align-items:center;" data-toggle="${sub.id}">
+        <div class="sub-header" style="cursor:pointer;display:flex;align-items:center;gap:6px;" data-open-modal="${sub.id}">
           ${checkboxHtml}
           <span class="store-name">${highlightMatch(sub.survey.storeName, storeFilter)}</span>
+          ${hasNote ? '<span title="\uAD00\uB9AC\uC790 \uBA54\uBAA8 \uC788\uC74C" style="font-size:.8rem;">\uD83D\uDCDD</span>' : ''}
           <span class="sub-date" style="margin-left:auto;">${new Date(sub.createdAt).toLocaleDateString('ko-KR')}</span>
         </div>
-        <div class="sub-meta">
-          ${escapeHtml(sub.researcher.name)} \u00B7 ${escapeHtml(sub.researcher.residenceArea)} \u2192 <strong>${escapeHtml(sub.assignment?.currentArea || '')}</strong>
-        </div>
-        <div class="sub-meta">${escapeHtml(sub.survey.region)} \u00B7 ${escapeHtml(sub.survey.storeType)} \u00B7 POS ${sub.survey.posCount}</div>
-        <div class="sub-detail hidden" id="detail-${sub.id}">
-          ${sub.survey.displayLocation ? `<div class="sub-meta" style="margin-top:6px;">진열위치: ${escapeHtml(sub.survey.displayLocation)}</div>` : ''}
-          ${priceRows ? `
-          <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;">
-            <thead><tr style="border-bottom:1.5px solid var(--border);text-align:left;">
-              <th style="padding:6px 4px;">제품</th><th style="padding:6px 4px;">사이즈</th><th style="padding:6px 4px;text-align:right;">가격</th>
-            </tr></thead>
-            <tbody>${priceRows}</tbody>
-          </table>` : '<div class="sub-meta" style="margin-top:8px;">가격 데이터 없음</div>'}
-          ${sub.photo ? `<img class="sub-photo" src="${sub.photo.url}" alt="${escapeHtml(sub.survey.storeName)}" loading="lazy" />` : ''}
-          ${sub.notes ? `<div class="sub-meta" style="margin-top:6px;">메모: ${escapeHtml(sub.notes)}</div>` : ''}
-          <div class="sub-meta" style="margin-top:6px;">GPS: ${gpsText}</div>
-          <div class="sub-actions">
-            <select data-submission-id="${sub.id}">
-              ${areas.map((a) => `<option value="${a}" ${a === sub.assignment?.currentArea ? 'selected' : ''}>${a}</option>`).join('')}
-            </select>
-            <button data-action="override" data-submission-id="${sub.id}">지역 변경</button>
-            <button data-action="delete" data-submission-id="${sub.id}" class="btn-danger-sm">삭제</button>
-          </div>
-        </div>
+        <div class="sub-meta">${escapeHtml(sub.researcher.name)} \u00B7 ${escapeHtml(sub.researcher.residenceArea)} \u2192 <strong>${escapeHtml(sub.assignment?.currentArea || '')}</strong></div>
+        <div class="sub-meta">${escapeHtml(sub.survey.region)} \u00B7 ${escapeHtml(sub.survey.storeType)} \u00B7 POS ${sub.survey.posCount} \u00B7 ${scoreDot} ${score}\uC810 \u00B7 \uAC00\uACA9 ${priceCount}\uAC74</div>
       </article>
     `;
       }).join('')
-    : '<div class="notice">기록이 없어요.</div>';
+    : '<div class="notice">\uAE30\uB85D\uC774 \uC5C6\uC5B4\uC694.</div>';
 
   // Pagination controls
   const paginationHtml = totalPages > 1 ? `
@@ -1214,69 +1312,12 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
 
   submissionList.innerHTML = quickStatsRow + bulkBar + cardsHtml + paginationHtml;
 
-  // Toggle detail
-  submissionList.querySelectorAll('[data-toggle]').forEach((header) => {
+  // Card click → open detail modal (skip in bulk mode)
+  submissionList.querySelectorAll('[data-open-modal]').forEach((header) => {
     header.addEventListener('click', () => {
-      const detail = document.querySelector(`#detail-${header.dataset.toggle}`);
-      if (detail) detail.classList.toggle('hidden');
-    });
-  });
-
-  submissionList.querySelectorAll('[data-action="override"]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const select = submissionList.querySelector(`select[data-submission-id="${button.dataset.submissionId}"]`);
-      const response = await fetch('/api/assignments/override', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          submissionId: button.dataset.submissionId,
-          assignedArea: select.value,
-          reason: 'Admin override',
-          adminName: 'Admin'
-        })
-      });
-      if (response.ok) {
-        showToast('지역이 변경되었어요. ✓', 'success');
-        await loadAdminData();
-      }
-    });
-  });
-
-  submissionList.querySelectorAll('[data-action="delete"]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const confirmed = await new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'price-reminder-overlay';
-        overlay.innerHTML = `
-          <div class="price-reminder-dialog" role="alertdialog" aria-modal="true" aria-labelledby="del-dialog-title">
-            <p id="del-dialog-title">이 기록을 삭제할까요?<br/><span style="font-size:.85rem;color:var(--text-muted,#666);">되돌릴 수 없어요.</span></p>
-            <div class="price-reminder-actions">
-              <button type="button" class="btn btn-secondary" id="del-cancel-btn">취소</button>
-              <button type="button" class="btn btn-primary" style="background:var(--error,#e74c3c);border-color:var(--error,#e74c3c);" id="del-confirm-btn">삭제</button>
-            </div>
-          </div>
-        `;
-        document.body.appendChild(overlay);
-        const keyHandler = (e) => {
-          if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', keyHandler); resolve(false); }
-        };
-        document.addEventListener('keydown', keyHandler);
-        overlay.querySelector('#del-cancel-btn').addEventListener('click', () => { overlay.remove(); document.removeEventListener('keydown', keyHandler); resolve(false); });
-        overlay.querySelector('#del-confirm-btn').addEventListener('click', () => { overlay.remove(); document.removeEventListener('keydown', keyHandler); resolve(true); });
-        overlay.querySelector('#del-confirm-btn').focus();
-      });
-      if (!confirmed) return;
-      const response = await authFetch('/api/submissions/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ submissionId: button.dataset.submissionId })
-      });
-      if (response.ok) {
-        showToast('삭제되었어요. ✓', 'success');
-        await loadAdminData();
-      } else {
-        showToast('삭제에 실패했어요.', 'error');
-      }
+      if (bulkSelectMode) return;
+      const sub = paginated.find((s) => s.id === header.dataset.openModal);
+      if (sub) showSubmissionDetailModal(sub, areas);
     });
   });
 

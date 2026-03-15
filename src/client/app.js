@@ -1891,6 +1891,7 @@ function renderDashboard(config) {
 
   // 7. My Records
   renderMyRecords(submissions);
+  renderOfflineQueue();
 
   // 8. Photo Gallery
   renderPhotoGallery(submissions);
@@ -2268,6 +2269,20 @@ document.addEventListener('visibilitychange', () => {
 
 // ── Global error handling (see showErrorBanner below) ──
 
+// ── App version footer ──
+function initAppVersion() {
+  let footer = document.querySelector('#app-version-footer');
+  if (!footer) {
+    footer = document.createElement('div');
+    footer.id = 'app-version-footer';
+    footer.setAttribute('role', 'contentinfo');
+    footer.style.cssText = 'text-align:center;padding:12px 16px;font-size:.72rem;color:var(--text-muted,#999);border-top:1px solid var(--border,#eee);margin-top:24px;';
+    document.body.appendChild(footer);
+  }
+  const buildDate = new Date().toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' });
+  footer.textContent = `이온로드 v24.03 · ${buildDate} 빌드`;
+}
+
 // ── Offline submission queue ──
 function getPendingSubmissions() {
   try {
@@ -2277,6 +2292,40 @@ function getPendingSubmissions() {
 
 function savePendingSubmissions(queue) {
   try { localStorage.setItem('kwangdong_pendingSubmissions', JSON.stringify(queue)); } catch {}
+}
+
+function renderOfflineQueue() {
+  const queue = getPendingSubmissions();
+  let card = document.querySelector('#offline-queue-card');
+  if (queue.length === 0) { if (card) card.remove(); return; }
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'offline-queue-card';
+    card.style.marginTop = '12px';
+    const myRecords = document.querySelector('#my-records') || document.querySelector('#recent-activity');
+    if (myRecords) myRecords.parentNode.insertBefore(card, myRecords);
+    else document.querySelector('#dashboard')?.appendChild(card);
+  }
+  card.innerHTML = `
+    <div class="card stack" style="border-left:3px solid var(--warning,#e67e22);">
+      <h3 style="margin:0 0 8px;font-size:.9rem;">\uD83D\uDCF6 \uC624\uD504\uB77C\uC778 \uB300\uAE30 \uC911 (${queue.length}\uAC74)</h3>
+      <div>${queue.map((item, i) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border,#eee);font-size:.84rem;">
+          <span>${escapeHtml(item.survey?.storeName || '\uC54C \uC218 \uC5C6\uC74C')} &middot; ${new Date(item.createdAt || Date.now()).toLocaleDateString('ko-KR')}</span>
+          <button type="button" class="offline-del-btn" data-idx="${i}" aria-label="\uB300\uAE30 \uD56D\uBAA9 \uC81C\uAC70" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:.9rem;padding:2px 6px;">&times;</button>
+        </div>`).join('')}
+      </div>
+      <p style="margin:8px 0 0;font-size:.8rem;color:var(--text-muted);">\uC628\uB77C\uC778 \uC5F0\uACB0 \uC2DC \uC790\uB3D9\uC73C\uB85C \uC804\uC1A1\uB429\uB2C8\uB2E4.</p>
+    </div>
+  `;
+  card.querySelectorAll('.offline-del-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const updated = getPendingSubmissions();
+      updated.splice(Number(btn.dataset.idx), 1);
+      savePendingSubmissions(updated);
+      renderOfflineQueue();
+    });
+  });
 }
 
 async function flushPendingSubmissions() {
@@ -2554,3 +2603,5 @@ initNetworkMonitor();
 initDarkMode();
 initPwaInstall();
 initTouchSwipe();
+initAppVersion();
+renderOfflineQueue();
