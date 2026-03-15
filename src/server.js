@@ -19,6 +19,13 @@ const PAGINATION_MAX_LIMIT = 200;
 const SERVER_STARTED_AT = new Date().toISOString();
 const PKG_VERSION = JSON.parse(await readFile(path.resolve('package.json'), 'utf8')).version;
 
+// Structured logger — keeps log levels distinct for filtering/aggregation
+const log = {
+  info:  (...args) => console.log('[INFO] ', ...args),
+  warn:  (...args) => console.warn('[WARN] ', ...args),
+  error: (...args) => console.error('[ERROR]', ...args)
+};
+
 class ValidationError extends Error {
   constructor(message) {
     super(message);
@@ -81,7 +88,16 @@ function buildAveragePrices(submissions) {
     }));
 }
 
-// ── gzip/deflate JSON response ──
+/**
+ * Serialise `payload` as JSON and write it to `response`.
+ * Automatically compresses with gzip or deflate when the payload exceeds
+ * COMPRESSION_THRESHOLD and the client signals support via Accept-Encoding.
+ *
+ * @param {http.IncomingMessage} request
+ * @param {http.ServerResponse}  response
+ * @param {number}               statusCode  HTTP status code to send
+ * @param {unknown}              payload     Value to JSON-serialise
+ */
 async function sendJson(request, response, statusCode, payload) {
   const body = Buffer.from(JSON.stringify(payload));
   const headers = { 'Content-Type': 'application/json; charset=utf-8' };
@@ -129,6 +145,18 @@ async function hashPassword(password) {
   return `${SCRYPT_PREFIX}${salt}$${hash}`;
 }
 
+/**
+ * Verify a plaintext `provided` password against a `stored` value.
+ * Supports two storage formats for backward compatibility:
+ *   - Scrypt:    "scrypt$<hex-salt>$<hex-hash>"  (set by hashPassword)
+ *   - Plaintext: any other string                 (env default / legacy)
+ *
+ * Both branches use timing-safe comparison to prevent timing attacks.
+ *
+ * @param {string} provided  Plaintext password from the request
+ * @param {string} stored    Value from DB or config
+ * @returns {Promise<boolean>}
+ */
 async function verifyPassword(provided, stored) {
   if (!stored || !stored.startsWith(SCRYPT_PREFIX)) {
     // Plain text stored (config default or legacy) — use timing-safe comparison
@@ -171,6 +199,20 @@ function getClientIp(request) {
   return request.socket?.remoteAddress || 'unknown';
 }
 
+/**
+ * Validate and normalise a raw submission body.
+ * Throws a {@link ValidationError} (HTTP 400) on any constraint violation.
+ *
+ * Checks performed:
+ *   - Required fields present (researcher name/area, store region/type/name)
+ *   - Field length limits (name ≤50, storeName ≤100, region ≤200, notes ≤2000)
+ *   - Photo size ≤ MAX_PHOTO_BYTES (estimated from base64 length)
+ *   - Price values in range 0–999 999
+ *
+ * @param {object} body    Raw request body (already JSON-parsed)
+ * @param {object} config  App config; must include `areas` array
+ * @returns {{ researcher, survey, prices, photoDataUrl, notes }} Normalised payload
+ */
 function validateSubmission(body, config) {
   const required = [
     body.researcher?.name,
@@ -180,7 +222,7 @@ function validateSubmission(body, config) {
     body.survey?.storeName
   ];
   if (required.some((item) => !item)) {
-    throw new ValidationError('Missing required submission fields.');
+    throw new ValidationError('필수 제출 항목을 모두 입력해주세요.');
   }
 
   // Input length validation
@@ -413,7 +455,7 @@ export function createApp(config = loadConfig(), options = {}) {
         logged = true;
         const ms = Date.now() - startMs;
         recordMetric(response.statusCode, ms);
-        console.log(`[${request.method}] ${url.pathname} ${response.statusCode} (${ms}ms, ${clientIp}, ${requestId})`);
+        log.info(`[${request.method}] ${url.pathname} ${response.statusCode} (${ms}ms, ${clientIp}, ${requestId})`);
       }
       return originalEnd(...args);
     };
@@ -429,7 +471,7 @@ export function createApp(config = loadConfig(), options = {}) {
 
     // Rate limiting
     if (applyRateLimits(request, url, clientIp)) {
-      console.warn(`[RATE] rate limited (${clientIp}) ${request.method} ${url.pathname}`);
+      log.warn(`[RATE] rate limited (${clientIp}) ${request.method} ${url.pathname}`);
       await sendJson(request, response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
       return;
     }
@@ -470,7 +512,7 @@ export function createApp(config = loadConfig(), options = {}) {
 
       if (request.method === 'GET' && url.pathname === '/api/metrics') {
         if (!checkAuth(request)) {
-          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
         const times = metrics.responseTimes;
@@ -557,14 +599,14 @@ export function createApp(config = loadConfig(), options = {}) {
         if (checkAuth(request)) {
           await sendJson(request, response, 200, { ok: true });
         } else {
-          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
         }
         return;
       }
 
       if (request.method === 'GET' && url.pathname === '/api/admin/submissions') {
         if (!checkAuth(request)) {
-          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
         const all = await store.listSubmissions();
@@ -584,7 +626,7 @@ export function createApp(config = loadConfig(), options = {}) {
 
       if (request.method === 'GET' && url.pathname === '/api/admin/settings') {
         if (!checkAuth(request)) {
-          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
         const [customAreas, customProducts, customStoreTypes] = await Promise.all([
@@ -598,17 +640,17 @@ export function createApp(config = loadConfig(), options = {}) {
 
       if (request.method === 'POST' && url.pathname === '/api/admin/settings') {
         if (!checkAuth(request)) {
-          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
         const body = await collectJsonBody(request, MAX_SETTINGS_BODY_BYTES);
         const allowedKeys = ['customAreas', 'customProducts', 'customStoreTypes'];
         if (!body.key || !allowedKeys.includes(body.key)) {
-          await sendJson(request, response, 400, { error: 'Invalid setting key.' });
+          await sendJson(request, response, 400, { error: '유효하지 않은 설정 키입니다.' });
           return;
         }
         if (!Array.isArray(body.value)) {
-          await sendJson(request, response, 400, { error: 'Value must be an array.' });
+          await sendJson(request, response, 400, { error: '값은 배열 형식이어야 합니다.' });
           return;
         }
         await store.setSetting(body.key, body.value);
@@ -763,7 +805,7 @@ ${researcherRows}
         const lat = url.searchParams.get('lat');
         const lng = url.searchParams.get('lng');
         if (!lat || !lng) {
-          await sendJson(request, response, 400, { error: 'lat and lng are required.' });
+          await sendJson(request, response, 400, { error: 'lat과 lng 파라미터가 필요합니다.' });
           return;
         }
         const kakaoUrl = `https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${lng}&y=${lat}`;
@@ -886,7 +928,7 @@ ${researcherRows}
 
       if (request.method === 'POST' && url.pathname === '/api/assignments/override') {
         if (!checkAuth(request)) {
-          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
@@ -905,7 +947,7 @@ ${researcherRows}
 
       if (request.method === 'GET' && url.pathname === '/api/backup') {
         if (!checkAuth(request)) {
-          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
         const submissions = await store.listSubmissions();
@@ -917,7 +959,7 @@ ${researcherRows}
 
       if (request.method === 'POST' && url.pathname === '/api/submissions/delete') {
         if (!checkAuth(request)) {
-          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
@@ -929,7 +971,7 @@ ${researcherRows}
 
       if (request.method === 'POST' && url.pathname === '/api/admin/import') {
         if (!checkAuth(request)) {
-          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
@@ -944,12 +986,12 @@ ${researcherRows}
 
       if (request.method === 'POST' && url.pathname === '/api/admin/webhook') {
         if (!checkAuth(request)) {
-          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
         const body = await collectJsonBody(request, MAX_SETTINGS_BODY_BYTES);
         if (!body.url || typeof body.url !== 'string') {
-          await sendJson(request, response, 400, { error: 'url is required.' });
+          await sendJson(request, response, 400, { error: 'URL을 입력해주세요.' });
           return;
         }
         const validEvents = ['new_submission', 'daily_summary'];
@@ -962,7 +1004,7 @@ ${researcherRows}
 
       if (request.method === 'POST' && url.pathname === '/api/admin/change-password') {
         if (!checkAuth(request)) {
-          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
         const body = await collectJsonBody(request, MAX_AUTH_BODY_BYTES);
@@ -987,18 +1029,18 @@ ${researcherRows}
         return;
       }
 
-      await sendJson(request, response, 404, { error: 'Not found' });
+      await sendJson(request, response, 404, { error: '요청하신 경로를 찾을 수 없습니다.' });
     } catch (error) {
       const isClientError = error.isValidationError ||
         error instanceof SyntaxError ||
         error.message === 'Request body too large.';
       if (isClientError) {
-        console.warn(`[400] ${request.method} ${url.pathname} (${clientIp}): ${error.message}`);
+        log.warn(`[400] ${request.method} ${url.pathname} (${clientIp}): ${error.message}`);
         await sendJson(request, response, 400, { error: error.message });
       } else {
-        console.error(`[500] ${request.method} ${url.pathname} (${clientIp}): ${error.message}`);
-        console.error(error.stack);
-        await sendJson(request, response, 500, { error: 'Internal server error' });
+        log.error(`[500] ${request.method} ${url.pathname} (${clientIp}): ${error.message}`);
+        log.error(error.stack);
+        await sendJson(request, response, 500, { error: '서버 오류가 발생했습니다.' });
       }
     }
   });
@@ -1015,28 +1057,40 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   // Pre-warm the DB and perform a basic integrity check before accepting traffic
   server._store.init().then(async () => {
     await server._store.getSubmissionCounts();
-    console.log('[DB] integrity check passed');
+    log.info('[DB] integrity check passed');
   }).catch((err) => {
-    console.error('[DB] integrity check failed:', err.message);
+    log.error('[DB] integrity check failed:', err.message);
     process.exit(1);
   });
 
   server.listen(config.port, host, () => {
-    console.log(`Market survey app running at http://${host}:${config.port}`);
+    const sheetsStatus = config.googleSheets?.enabled ? '✓ 활성' : '✗ 비활성';
+    const tokenStatus  = config.adminToken ? '✓ 설정됨' : '✗ 미설정 (비밀번호 로그인만 가능)';
+    log.info([
+      '',
+      '┌─────────────────────────────────────────────────┐',
+      `│  이온로드 시장조사 v${PKG_VERSION.padEnd(6)}                         │`,
+      '├─────────────────────────────────────────────────┤',
+      `│  URL      : http://${host}:${String(config.port).padEnd(29)}│`,
+      `│  DB       : ${path.relative(process.cwd(), config.dbFile).padEnd(36)}│`,
+      `│  Sheets   : ${sheetsStatus.padEnd(36)}│`,
+      `│  AdminTkn : ${tokenStatus.padEnd(36)}│`,
+      `│  Started  : ${SERVER_STARTED_AT.padEnd(36)}│`,
+      '└─────────────────────────────────────────────────┘'
+    ].join('\n'));
   });
 
   function shutdown(signal) {
-    console.log(`
-${signal} received - shutting down gracefully...`);
+    log.info(`${signal} received - shutting down gracefully...`);
     closeApp(server).then(() => {
-      console.log('Server closed.');
+      log.info('Server closed.');
       process.exit(0);
     }).catch((error) => {
-      console.error('Graceful shutdown failed.', error);
+      log.error('Graceful shutdown failed.', error);
       process.exit(1);
     });
     setTimeout(() => {
-      console.error('Forceful shutdown after timeout.');
+      log.error('Forceful shutdown after timeout.');
       process.exit(1);
     }, 5000);
   }

@@ -839,3 +839,119 @@ test('Vary: Accept-Encoding is set on gzip-compressed responses', async (t) => {
   assert.ok(response.headers.get('vary')?.includes('Accept-Encoding'),
     'Vary: Accept-Encoding should be present on compressed response');
 });
+
+// ── Edge-case tests ──────────────────────────────────────────────────────────
+
+test('empty DB: bootstrap returns empty submissions array', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/bootstrap`);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.ok(Array.isArray(data.submissions), 'submissions should be an array');
+  assert.equal(data.submissions.length, 0, 'fresh DB should have no submissions');
+  assert.ok(Array.isArray(data.areas), 'areas should be populated from config');
+});
+
+test('empty DB: daily-summary returns zeros', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/daily-summary?date=2099-01-01`);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.totalSubmissions, 0);
+  assert.equal(data.uniqueResearchers, 0);
+  assert.equal(data.areasCovered, 0);
+  assert.deepEqual(data.averagePrices, []);
+  assert.equal(data.topResearcher, null);
+  assert.equal(data.topStore, null);
+});
+
+test('empty DB: /api/admin/submissions returns empty array', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  // Login first
+  const loginRes = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginRes.json();
+
+  const response = await fetch(`${baseUrl}/api/admin/submissions`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.ok(Array.isArray(data), 'should return array when no pagination params');
+  assert.equal(data.length, 0);
+});
+
+test('large data: paginated submissions return correct slice', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  // Insert 25 submissions
+  for (let i = 0; i < 25; i++) {
+    await fetch(`${baseUrl}/api/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        researcher: { name: `Researcher${i}`, residenceArea: '서울 중부' },
+        survey: { region: `Region${i}`, storeType: 'Mart', storeName: `Store${i}` },
+        prices: []
+      })
+    });
+  }
+
+  const loginRes = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginRes.json();
+
+  // Page 1 — 10 items
+  const page1 = await fetch(`${baseUrl}/api/admin/submissions?page=1&limit=10`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(page1.status, 200);
+  const d1 = await page1.json();
+  assert.equal(d1.total, 25);
+  assert.equal(d1.page, 1);
+  assert.equal(d1.limit, 10);
+  assert.equal(d1.items.length, 10);
+
+  // Page 3 — last 5 items
+  const page3 = await fetch(`${baseUrl}/api/admin/submissions?page=3&limit=10`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(page3.status, 200);
+  const d3 = await page3.json();
+  assert.equal(d3.items.length, 5);
+});
+
+test('Korean error messages: missing fields returns Korean error', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ researcher: {}, survey: {} })
+  });
+  assert.equal(response.status, 400);
+  const data = await response.json();
+  assert.ok(data.error.includes('필수'), `Expected Korean error, got: ${data.error}`);
+});
+
+test('Korean error messages: 401 response is Korean', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/admin/submissions`);
+  assert.equal(response.status, 401);
+  const data = await response.json();
+  assert.ok(data.error.includes('인증'), `Expected Korean auth error, got: ${data.error}`);
+});
+
+test('Korean error messages: 404 response is Korean', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/nonexistent-endpoint`);
+  assert.equal(response.status, 404);
+  const data = await response.json();
+  assert.ok(data.error.length > 0, 'Should have Korean 404 message');
+  assert.ok(!data.error.includes('Not found'), 'Should not contain English "Not found"');
+});
