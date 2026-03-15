@@ -239,6 +239,7 @@ async function loadAdminData() {
     knownCount = submissions.length;
     renderAdmin();
     startPolling();
+    window._resetPollingIndicator?.();
   } catch {
     showToast('데이터를 불러올 수 없어요.', 'error');
   } finally {
@@ -1998,6 +1999,47 @@ document.querySelector('#change-password-btn').addEventListener('click', async (
   }
 });
 
+// ── Polling last-updated indicator ──
+function initPollingIndicator() {
+  if (document.getElementById('polling-indicator')) return;
+  const el = document.createElement('div');
+  el.id = 'polling-indicator';
+  el.setAttribute('aria-live', 'polite');
+  el.setAttribute('aria-atomic', 'true');
+  el.style.cssText = 'position:fixed;bottom:72px;right:16px;z-index:800;display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--text-muted,#888);background:var(--bg-card,#fff);border:1px solid var(--border,#eee);border-radius:20px;padding:4px 10px;box-shadow:0 1px 4px rgba(0,0,0,.08);pointer-events:none;';
+  el.innerHTML = '<span id="poll-dot" style="width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0;animation:pollPulse 2s ease-in-out infinite;"></span>'
+    + '<span id="poll-label">방금 갱신됨</span>';
+  const style = document.createElement('style');
+  style.textContent = '@keyframes pollPulse{0%,100%{opacity:1}50%{opacity:.35}}';
+  document.head.appendChild(style);
+  document.body.appendChild(el);
+
+  let lastUpdated = Date.now();
+
+  function updateLabel() {
+    const diff = Math.round((Date.now() - lastUpdated) / 60000);
+    const label = document.getElementById('poll-label');
+    if (label) label.textContent = diff < 1 ? '방금 갱신됨' : `${diff}분 전 갱신`;
+  }
+
+  // Patch loadAdminData calls to update timestamp
+  const origLoad = window._adminDataLoaded;
+  document.addEventListener('adminDataLoaded', () => {
+    lastUpdated = Date.now();
+    updateLabel();
+    const dot = document.getElementById('poll-dot');
+    if (dot) { dot.style.background = '#22c55e'; }
+  });
+
+  setInterval(updateLabel, 30000);
+
+  // Expose reset for loadAdminData to call
+  window._resetPollingIndicator = () => {
+    lastUpdated = Date.now();
+    updateLabel();
+  };
+}
+
 // ── Dark mode (admin) ──
 function initAdminDarkMode() {
   const saved = localStorage.getItem('kwangdong_theme');
@@ -2029,4 +2071,5 @@ function initAdminDarkMode() {
 
 // ── Init ──
 initAdminDarkMode();
+initPollingIndicator();
 init();

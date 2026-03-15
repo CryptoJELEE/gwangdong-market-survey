@@ -1074,8 +1074,8 @@ function showSuccess(result) {
       .success-check { font-size: 3rem; animation: successPop .5s cubic-bezier(.17,.67,.24,1.3) both; }
       @keyframes successPop { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
       .confetti-wrap { position: relative; height: 0; overflow: visible; pointer-events: none; }
-      .confetti-piece { position: absolute; width: 8px; height: 8px; border-radius: 2px; opacity: 0; animation: confettiFall 1.2s ease-out forwards; }
-      @keyframes confettiFall { 0% { transform: translateY(-30px) rotate(0deg); opacity: 1; } 100% { transform: translateY(60px) rotate(360deg); opacity: 0; } }
+      .confetti-piece { position: absolute; opacity: 0; animation: confettiFall 1.5s ease-out forwards; }
+      @keyframes confettiFall { 0% { transform: translateY(-20px) rotate(0deg) scale(1); opacity: 1; } 80% { opacity: .8; } 100% { transform: translateY(90px) rotate(540deg) scale(.5); opacity: 0; } }
       .badge-bounce { display: inline-block; animation: badgeBounce .6s ease .4s both; }
       @keyframes badgeBounce { 0% { transform: scale(0); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }
       .share-btn { margin-top: 8px; background: none; border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 8px 16px; cursor: pointer; font-size: .9rem; color: inherit; }
@@ -1105,13 +1105,15 @@ function showSuccess(result) {
     </div>
   `;
 
-  // Confetti particles
+  // Confetti particles — enhanced
   const confettiWrap = successView.querySelector('#confetti-wrap');
-  const colors = ['#f39c12', '#e74c3c', '#3498db', '#2ecc71', '#9b59b6', '#e67e22'];
-  for (let i = 0; i < 12; i++) {
+  const colors = ['#f39c12', '#e74c3c', '#3498db', '#2ecc71', '#9b59b6', '#e67e22', '#1abc9c', '#e91e63'];
+  for (let i = 0; i < 28; i++) {
     const piece = document.createElement('div');
     piece.className = 'confetti-piece';
-    piece.style.cssText = `left:${Math.random() * 100}%;background:${colors[i % colors.length]};animation-delay:${Math.random() * 0.4}s;`;
+    const size = 6 + Math.random() * 8;
+    const isCircle = Math.random() > 0.5;
+    piece.style.cssText = `left:${Math.random() * 110 - 5}%;width:${size}px;height:${size}px;border-radius:${isCircle ? '50%' : '2px'};background:${colors[i % colors.length]};animation-delay:${Math.random() * 0.6}s;animation-duration:${1.2 + Math.random() * 0.8}s;`;
     confettiWrap.appendChild(piece);
   }
 
@@ -2186,11 +2188,21 @@ async function renderMapData() {
 async function loadBootstrap() {
   const refreshBtn = document.querySelector('#dashboard-refresh');
   if (refreshBtn) refreshBtn.classList.add('is-spinning');
-  const response = await fetch('/api/bootstrap');
-  state.bootstrap = await response.json();
-  renderForm(state.bootstrap);
-  renderDashboard(state.bootstrap);
-  if (refreshBtn) refreshBtn.classList.remove('is-spinning');
+  try {
+    const response = await fetch('/api/bootstrap');
+    state.bootstrap = await response.json();
+    renderForm(state.bootstrap);
+    renderDashboard(state.bootstrap);
+  } finally {
+    if (refreshBtn) refreshBtn.classList.remove('is-spinning');
+    // Hide splash screen on first load
+    const splash = document.getElementById('app-splash');
+    if (splash) {
+      splash.style.opacity = '0';
+      splash.style.transition = 'opacity .35s ease';
+      setTimeout(() => splash.remove(), 380);
+    }
+  }
 }
 
 // Save step 1 field values to localStorage before navigating away
@@ -2656,7 +2668,29 @@ function initKeyboardNav() {
   });
 }
 
+// ── Splash screen ──
+function initSplashScreen() {
+  if (document.getElementById('app-splash')) return;
+  const splash = document.createElement('div');
+  splash.id = 'app-splash';
+  splash.setAttribute('role', 'status');
+  splash.setAttribute('aria-label', '앱 불러오는 중');
+  splash.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--primary,#2563eb);color:#fff;gap:16px;';
+  splash.innerHTML = '<div style="font-size:2rem;font-weight:700;letter-spacing:-.5px;">이온로드</div>'
+    + '<div style="font-size:.9rem;opacity:.8;">광동 제약 현장 조사</div>'
+    + '<div class="splash-dots" aria-hidden="true" style="display:flex;gap:8px;margin-top:8px;">'
+    + '<span style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.5);animation:splashDot .9s ease-in-out infinite;"></span>'
+    + '<span style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.5);animation:splashDot .9s ease-in-out .2s infinite;"></span>'
+    + '<span style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.5);animation:splashDot .9s ease-in-out .4s infinite;"></span>'
+    + '</div>';
+  const style = document.createElement('style');
+  style.textContent = '@keyframes splashDot{0%,80%,100%{transform:scale(.6);opacity:.5}40%{transform:scale(1);opacity:1}}';
+  splash.appendChild(style);
+  document.body.prepend(splash);
+}
+
 // ── Init ──
+initSplashScreen();
 initSkipLink();
 initGps();
 loadBootstrap();
