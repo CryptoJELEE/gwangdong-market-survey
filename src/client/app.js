@@ -197,7 +197,7 @@ function renderProgressBar() {
     bar = document.createElement('div');
     bar.id = 'form-progress-bar';
     bar.style.cssText = 'height:4px;background:var(--border,#eee);margin:4px 0 0;border-radius:2px;overflow:hidden;';
-    bar.innerHTML = '<div id="form-progress-fill" style="height:100%;background:var(--primary,#0066cc);border-radius:2px;transition:width .4s ease;width:0%;"></div>';
+    bar.innerHTML = '<div id="form-progress-fill" style="height:100%;background:var(--color-primary);border-radius:2px;transition:width .4s ease;width:0%;"></div>';
     stepIndicator.parentNode.insertBefore(bar, stepIndicator.nextSibling);
   }
   const pct = Math.round((state.currentStep / 3) * 100);
@@ -641,7 +641,7 @@ function renderStep2(config) {
     const badge = formStepContainer.querySelector('#price-input-count');
     if (badge) {
       badge.textContent = `${filled}개 입력됨`;
-      badge.style.color = filled > 0 ? 'var(--primary,#0066cc)' : 'var(--text-muted)';
+      badge.style.color = filled > 0 ? 'var(--color-primary)' : 'var(--text-muted)';
     }
   }
   formStepContainer.querySelectorAll('.price-field input').forEach((input) => {
@@ -1108,33 +1108,34 @@ function showSuccess(result) {
 
   successView.innerHTML = `
     <style>
-      .success-check { font-size: 3rem; animation: successPop .5s cubic-bezier(.17,.67,.24,1.3) both; }
+      .success-check-circle { width: 72px; height: 72px; border-radius: 50%; background: var(--color-primary, #22c55e); display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; animation: successPop .5s cubic-bezier(.17,.67,.24,1.3) both; }
+      .success-check-circle svg { width: 36px; height: 36px; }
       @keyframes successPop { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
       .confetti-wrap { position: relative; height: 0; overflow: visible; pointer-events: none; }
       .confetti-piece { position: absolute; opacity: 0; animation: confettiFall 1.5s ease-out forwards; }
       @keyframes confettiFall { 0% { transform: translateY(-20px) rotate(0deg) scale(1); opacity: 1; } 80% { opacity: .8; } 100% { transform: translateY(90px) rotate(540deg) scale(.5); opacity: 0; } }
-      .badge-bounce { display: inline-block; animation: badgeBounce .6s ease .4s both; }
-      @keyframes badgeBounce { 0% { transform: scale(0); } 60% { transform: scale(1.3); } 100% { transform: scale(1); } }
-      .share-btn { margin-top: 8px; background: none; border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 8px 16px; cursor: pointer; font-size: .9rem; color: inherit; }
+      .share-btn { margin-top: 8px; background: none; border: 1px solid var(--border, #ddd); border-radius: 12px; padding: 10px 20px; cursor: pointer; font-size: .9rem; color: inherit; }
       .share-btn:active { opacity: .7; }
     </style>
-    <div class="success-card" role="status" aria-label="기록 완료" aria-live="polite">
+    <div class="success-card" role="status" aria-label="기록 완료" aria-live="polite" style="text-align:center;padding:48px 24px;">
       <div class="confetti-wrap" id="confetti-wrap" aria-hidden="true"></div>
-      <div class="success-check" aria-hidden="true">✅</div>
-      <h3>수고했어요!</h3>
-      <div class="assigned-area">다음 추천 지역: ${escapeHtml(result.assignment.currentArea)}</div>
-      <div class="success-actions">
-        <button type="button" class="btn btn-primary" id="new-survey">한 곳 더 갈래요? 🏃</button>
-        <button type="button" class="btn btn-secondary" id="view-history">오늘 기록 보기 📋</button>
-        <button type="button" class="share-btn" id="share-success">📤 오늘 기록 공유하기</button>
+      <div class="success-check-circle" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
       </div>
-      <div style="margin-top:16px;border-top:1px solid var(--border,#eee);padding-top:12px;">
-        <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:8px;font-weight:600;">다음에 할 일</div>
-        <div style="display:flex;flex-direction:column;gap:6px;">
-          <button type="button" class="btn btn-secondary next-action-btn" id="action-same-area" style="font-size:.85rem;text-align:left;padding:8px 12px;">
+      <div style="font-size:26px;font-weight:700;color:var(--text);margin-bottom:8px;">기록 완료!</div>
+      <div style="font-size:16px;color:var(--text-muted);margin-bottom:32px;">수고했어요. 다음 추천 지역은 <strong>${escapeHtml(result.assignment.currentArea)}</strong>이에요</div>
+      <div class="success-actions" style="display:flex;flex-direction:column;gap:10px;">
+        <button type="button" class="btn btn-primary" id="new-survey" style="padding:14px 24px;border-radius:12px;font-size:16px;">한 곳 더 갈래요?</button>
+        <button type="button" class="btn btn-secondary" id="view-history" style="padding:14px 24px;border-radius:12px;font-size:16px;">오늘 기록 보기</button>
+        <button type="button" class="share-btn" id="share-success">오늘 기록 공유하기</button>
+      </div>
+      <div style="margin-top:32px;border-top:1px solid #f2f4f6;padding-top:24px;">
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;font-weight:600;">다음에 할 일</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button type="button" class="btn btn-secondary next-action-btn" id="action-same-area" style="font-size:15px;text-align:left;padding:12px 16px;border-radius:12px;">
             📍 <strong>${escapeHtml(result.assignment.currentArea)}</strong>에서 다른 매장 조사하기
           </button>
-          <button type="button" class="btn btn-secondary next-action-btn" id="action-revisit" style="font-size:.85rem;text-align:left;padding:8px 12px;">
+          <button type="button" class="btn btn-secondary next-action-btn" id="action-revisit" style="font-size:15px;text-align:left;padding:12px 16px;border-radius:12px;">
             🔄 <strong>${escapeHtml(storeName)}</strong> 재방문 (추가 제품 확인)
           </button>
         </div>
@@ -1363,7 +1364,7 @@ function renderMyRecords(submissions) {
   if (!container) {
     container = document.createElement('div');
     container.id = 'my-records';
-    container.style.marginTop = '12px';
+    container.style.marginTop = '40px';
     const recentActivity = document.querySelector('#recent-activity');
     recentActivity.parentNode.insertBefore(container, recentActivity.nextSibling);
   }
@@ -1380,7 +1381,7 @@ function renderMyRecords(submissions) {
   const filter = state._historyFilter || 'all';
   const filterLabels = { today: '오늘', week: '이번주', month: '이번달', all: '전체' };
   const filterChips = Object.entries(filterLabels).map(([key, label]) =>
-    `<button type="button" class="my-record-filter-chip${filter === key ? ' is-active' : ''}" data-filter="${key}" style="padding:4px 12px;border-radius:14px;border:1px solid var(--border,#ddd);background:${filter === key ? 'var(--primary,#0066cc)' : 'transparent'};color:${filter === key ? '#fff' : 'inherit'};cursor:pointer;font-size:.82rem;">${label}</button>`
+    `<button type="button" class="my-record-filter-chip${filter === key ? ' is-active' : ''}" data-filter="${key}" style="padding:4px 12px;border-radius:14px;border:1px solid var(--border,#ddd);background:${filter === key ? 'var(--color-primary)' : 'transparent'};color:${filter === key ? '#fff' : 'inherit'};cursor:pointer;font-size:.82rem;">${label}</button>`
   ).join('');
 
   const filtered = mySubs.filter((s) => {
@@ -1402,32 +1403,38 @@ function renderMyRecords(submissions) {
   });
 
   const itemsHtml = filtered.length === 0
-    ? `<div class="empty-state"><div class="empty-icon">📭</div><p>해당 기간 기록이 없어요</p></div>`
+    ? `<div style="text-align:center;padding:40px 16px;"><div style="font-size:64px;margin-bottom:12px;">🏃</div><div style="font-size:16px;font-weight:600;color:var(--text);">오늘의 첫 기록을 기다리고 있어요</div><div style="font-size:14px;color:var(--text-muted);margin-top:4px;">매장을 조사하고 기록을 남겨보세요</div></div>`
     : groups.map((g) => `
-      <div class="timeline-date-header" style="font-size:.8rem;color:var(--text-muted);font-weight:600;padding:8px 0 4px;border-bottom:1px solid var(--border,#eee);margin-bottom:4px;">${escapeHtml(g.label)}</div>
+      <div class="timeline-date-header" style="font-size:13px;color:var(--text-muted);font-weight:600;padding:12px 0 8px;">${escapeHtml(g.label)}</div>
       ${g.items.map((sub) => {
     const priceCount = sub.prices ? sub.prices.length : 0;
     const score = sub.completenessScore ?? 0;
-    const scoreBadge = score >= 90 ? '🟢' : score >= 60 ? '🟡' : '🔴';
+    const d = new Date(sub.createdAt);
+    const dayNum = d.getDate();
     const uid = 'tl-' + sub.id;
     return `
-        <div class="my-record-item timeline-item" style="border-left:3px solid var(--primary,#0066cc);padding-left:10px;margin-bottom:8px;">
-          <div class="my-record-main" style="cursor:pointer;" data-toggle="${uid}">
-            <span class="my-record-store">${escapeHtml(sub.survey.storeName)}</span>
-            <span class="my-record-date">${relativeTime(sub.createdAt)}</span>
+        <div class="my-record-item" style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid #f2f4f6;cursor:pointer;transition:background .15s;" data-toggle="${uid}" onmouseover="this.style.background='#f2f4f6'" onmouseout="this.style.background='transparent'">
+          <div style="width:44px;height:44px;border-radius:50%;background:var(--primary-light,#e8f0fe);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:var(--color-primary);flex-shrink:0;">${dayNum}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:15px;font-weight:600;color:var(--text);">${escapeHtml(sub.survey.storeName)}</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${escapeHtml(sub.survey.storeType)} · 가격 ${priceCount}건 · ${relativeTime(sub.createdAt)}</div>
           </div>
-          <div class="my-record-meta">${escapeHtml(sub.survey.storeType)} · 가격 ${priceCount}건 · ${scoreBadge} ${score}점</div>
-          <div id="${uid}" class="hidden" style="margin-top:6px;font-size:.83rem;color:var(--text-muted);">
-            ${sub.prices && sub.prices.length > 0 ? sub.prices.map((p) => `<span style="margin-right:8px;">${escapeHtml(p.productLabel)} ${escapeHtml(p.size)}: ₩${Number(p.price).toLocaleString()}</span>`).join('') : '가격 없음'}
-            ${sub.notes ? `<div style="margin-top:4px;color:var(--text);">💬 ${escapeHtml(sub.notes)}</div>` : ''}
-          </div>
+          <div style="font-size:20px;font-weight:800;color:var(--color-primary);flex-shrink:0;">${score}<span style="font-size:12px;font-weight:500;color:var(--text-muted);">점</span></div>
+        </div>
+        <div id="${uid}" class="hidden" style="margin:0 0 8px 58px;font-size:.83rem;color:var(--text-muted);">
+          ${sub.prices && sub.prices.length > 0 ? sub.prices.map((p) => `<span style="margin-right:8px;">${escapeHtml(p.productLabel)} ${escapeHtml(p.size)}: ₩${Number(p.price).toLocaleString()}</span>`).join('') : '가격 없음'}
+          ${sub.notes ? `<div style="margin-top:4px;color:var(--text);">💬 ${escapeHtml(sub.notes)}</div>` : ''}
         </div>`;
   }).join('')}`).join('');
 
   container.innerHTML = `
-    <div class="card glass stack">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
-        <h2 style="margin:0;">내 기록 📋 <span style="font-size:.8rem;font-weight:normal;color:var(--text-muted);">${filtered.length}건</span></h2>
+    <div class="card stack" style="padding:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+        <div style="margin:0;">
+          <div style="font-size:32px;margin-bottom:4px;">📋</div>
+          <div style="font-size:22px;font-weight:700;">내 기록 <span style="font-size:14px;font-weight:normal;color:var(--text-muted);">${filtered.length}건</span></div>
+          <div style="font-size:14px;color:var(--text-muted);">나의 조사 기록을 확인해요</div>
+        </div>
         <div style="display:flex;gap:4px;" role="group" aria-label="기간 필터">${filterChips}</div>
       </div>
       <div class="my-records-list" style="margin-top:8px;">${itemsHtml}</div>
@@ -1695,8 +1702,8 @@ function sparkline(values, w = 80, h = 28) {
     return `${x},${y}`;
   });
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="vertical-align:middle;" aria-hidden="true">
-    <polyline fill="none" stroke="var(--primary,#0066cc)" stroke-width="1.5" stroke-linejoin="round" points="${pts.join(' ')}" />
-    <circle cx="${pts[pts.length - 1].split(',')[0]}" cy="${pts[pts.length - 1].split(',')[1]}" r="2.5" fill="var(--primary,#0066cc)" />
+    <polyline fill="none" stroke="var(--color-primary)" stroke-width="1.5" stroke-linejoin="round" points="${pts.join(' ')}" />
+    <circle cx="${pts[pts.length - 1].split(',')[0]}" cy="${pts[pts.length - 1].split(',')[1]}" r="2.5" fill="var(--color-primary)" />
   </svg>`;
 }
 
@@ -1743,7 +1750,7 @@ function renderMyStatCard(submissions) {
       <h3 style="margin:0 0 10px;font-size:.95rem;">📊 내 성과 요약 <span style="font-size:.75rem;font-weight:normal;color:var(--text-muted);">${escapeHtml(myName)}</span></h3>
       <div style="display:flex;gap:16px;flex-wrap:wrap;">
         <div style="text-align:center;">
-          <div style="font-size:1.3rem;font-weight:700;color:var(--primary,#0066cc);">${weekSubs.length}</div>
+          <div style="font-size:1.3rem;font-weight:700;color:var(--color-primary);">${weekSubs.length}</div>
           <div style="font-size:.75rem;color:var(--text-muted);">이번주 기록</div>
         </div>
         <div style="text-align:center;">
@@ -1791,13 +1798,14 @@ function renderDashboard(config) {
     btn.classList.remove('is-spinning');
   });
 
-  // 1. Quick Stats
+  // 1. Quick Stats — Toss style
   if (total === 0) {
     document.querySelector('#quick-stats').innerHTML = `
-      <div class="card glass empty-state" style="width:100%;text-align:center;padding:24px 16px;">
-        <div class="empty-icon">🏃</div>
-        <p style="margin:8px 0 16px;">아직 기록이 없어요<br/>첫 번째 매장을 조사해 볼까요?</p>
-        <button type="button" id="empty-dashboard-cta" class="btn btn-primary" style="font-size:.9rem;padding:10px 24px;">
+      <div class="card empty-state" style="width:100%;text-align:center;padding:48px 16px;">
+        <div style="font-size:64px;margin-bottom:16px;">📊</div>
+        <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:8px;">아직 데이터가 없어요</div>
+        <div style="font-size:14px;color:var(--text-muted);margin-bottom:24px;">첫 기록을 남겨볼까요?</div>
+        <button type="button" id="empty-dashboard-cta" class="btn btn-primary" style="font-size:.9rem;padding:12px 28px;border-radius:12px;">
           지금 조사 시작하기 →
         </button>
       </div>
@@ -1812,11 +1820,24 @@ function renderDashboard(config) {
   } else {
     const avgCompleteness = total > 0 ? Math.round(submissions.reduce((sum, s) => sum + (s.completenessScore ?? 0), 0) / total) : 0;
     document.querySelector('#quick-stats').innerHTML = `
-      <div class="quick-stat"><span class="qs-icon">🏃</span><span class="qs-value" data-count="${total}">0</span><span class="qs-label">총 기록</span></div>
-      <div class="quick-stat"><span class="qs-icon">📅</span><span class="qs-value" data-count="${todayCount}">0</span><span class="qs-label">오늘</span></div>
-      <div class="quick-stat"><span class="qs-icon">👤</span><span class="qs-value" data-count="${uniqueResearchers}">0</span><span class="qs-label">조사자</span></div>
-      <div class="quick-stat"><span class="qs-icon">📍</span><span class="qs-value">${coveredAreas}/${areas.length}</span><span class="qs-label">지역</span></div>
-      <div class="quick-stat"><span class="qs-icon">✅</span><span class="qs-value" data-count="${avgCompleteness}" data-suffix="점">0점</span><span class="qs-label">평균 완료도</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;width:100%;">
+        <div class="card" style="text-align:center;padding:20px 12px;background:#f9fafb;border-radius:16px;">
+          <div class="qs-value" style="font-size:28px;font-weight:800;color:var(--text);letter-spacing:-0.03em;" data-count="${total}">0</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">총 기록</div>
+        </div>
+        <div class="card" style="text-align:center;padding:20px 12px;background:#f9fafb;border-radius:16px;">
+          <div class="qs-value" style="font-size:28px;font-weight:800;color:var(--text);letter-spacing:-0.03em;" data-count="${todayCount}">0</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">오늘</div>
+        </div>
+        <div class="card" style="text-align:center;padding:20px 12px;background:#f9fafb;border-radius:16px;">
+          <div class="qs-value" style="font-size:28px;font-weight:800;color:var(--text);letter-spacing:-0.03em;" data-count="${uniqueResearchers}">0</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">조사자</div>
+        </div>
+        <div class="card" style="text-align:center;padding:20px 12px;background:#f9fafb;border-radius:16px;">
+          <div class="qs-value" style="font-size:28px;font-weight:800;color:var(--text);letter-spacing:-0.03em;">${coveredAreas}/${areas.length}</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">지역 커버리지</div>
+        </div>
+      </div>
     `;
     // Animate countable stats
     document.querySelectorAll('#quick-stats .qs-value[data-count]').forEach((el) => {
@@ -1855,18 +1876,21 @@ function renderDashboard(config) {
   });
 
   leaderboard.innerHTML = `
-    <h2>제품 현황판 🏆</h2>
+    <div style="margin-bottom:16px;">
+        <div style="font-size:32px;margin-bottom:4px;">🏆</div>
+        <div style="font-size:22px;font-weight:700;color:var(--text);">제품 현황판</div>
+        <div style="font-size:14px;color:var(--text-muted);">제품별 발견률과 가격을 비교해요</div>
+      </div>
     <div class="product-filter-chips">
       <button type="button" class="filter-chip ${activeFilter === 'all' ? 'is-active' : ''}" data-filter="all">전체</button>
       <button type="button" class="filter-chip ${activeFilter === 'ours' ? 'is-active' : ''}" data-filter="ours">자사</button>
       <button type="button" class="filter-chip ${activeFilter === 'competitor' ? 'is-active' : ''}" data-filter="competitor">경쟁사</button>
     </div>
-    ${filteredStats.length === 0 ? '<div class="empty-state"><div class="empty-icon">🏆</div><p>데이터가 쌓이면 제품 순위가 표시돼요!</p></div>' : filteredStats.map((ps, i) => {
+    ${filteredStats.length === 0 ? '<div style="text-align:center;padding:40px 16px;"><div style="font-size:64px;margin-bottom:12px;">🏆</div><div style="font-size:16px;font-weight:600;">데이터가 쌓이면 제품 순위가 표시돼요!</div></div>' : filteredStats.map((ps, i) => {
       const pct = Math.round(ps.discoveryRate * 100);
       const medal = i < 3 ? medals[i] : '';
       const isIonKick = ps.id === 'ion-kick';
       const barColor = isIonKick ? 'var(--gold)' : 'var(--primary)';
-      const cardClass = isIonKick ? 'product-stat-card is-highlight' : 'product-stat-card';
 
       // Price comparison badges for ion-kick
       let priceCompareHtml = '';
@@ -1878,31 +1902,31 @@ function renderDashboard(config) {
           const compAvg = Math.round(comp.total / comp.count);
           const diff = stats.avg - compAvg;
           if (diff < 0) {
-            badges.push(`<span class="price-compare-badge price-compare-cheaper" style="display:inline-block;padding:4px 10px;border-radius:12px;font-size:.8rem;font-weight:600;background:#d4edda;color:#155724;margin:2px 0;">💪 ${size} 이온킥이 평균 ₩${Math.abs(diff).toLocaleString()} 저렴해요!</span>`);
+            badges.push(`<span style="display:inline-block;padding:6px 12px;border-radius:12px;font-size:13px;font-weight:600;background:#d4edda;color:#155724;margin:2px 0;">💪 ${size} 이온킥이 평균 ₩${Math.abs(diff).toLocaleString()} 저렴해요!</span>`);
           } else if (diff > 0) {
-            badges.push(`<span class="price-compare-badge price-compare-pricier" style="display:inline-block;padding:4px 10px;border-radius:12px;font-size:.8rem;font-weight:600;background:#fff3cd;color:#856404;margin:2px 0;">📊 ${size} 경쟁사 대비 ₩${diff.toLocaleString()} 비싸요</span>`);
+            badges.push(`<span style="display:inline-block;padding:6px 12px;border-radius:12px;font-size:13px;font-weight:600;background:#fff3cd;color:#856404;margin:2px 0;">📊 ${size} 경쟁사 대비 ₩${diff.toLocaleString()} 비싸요</span>`);
           }
         });
         if (badges.length > 0) {
-          priceCompareHtml = `<div class="price-compare-badges" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">${badges.join('')}</div>`;
+          priceCompareHtml = `<div style="display:flex;flex-direction:column;gap:4px;margin-top:8px;">${badges.join('')}</div>`;
         }
       }
 
       const sizesHtml = Object.entries(ps.sizeStats).map(([size, stats]) =>
         `<div class="ps-size"><span class="ps-size-label">${size}</span> 평균 ₩${stats.avg.toLocaleString()} <span class="ps-range">(₩${stats.min.toLocaleString()}~₩${stats.max.toLocaleString()})</span></div>`
       ).join('');
+
+      const emojiIcon = isIonKick ? '⚡' : (medal || '🧃');
       return `
-        <div class="${cardClass}">
-          <div class="ps-header">
-            <span class="ps-name">${medal} ${ps.label}</span>
-            <span class="ps-rate">발견률 ${pct}%</span>
+        <div style="display:flex;align-items:center;gap:14px;padding:16px 0;border-bottom:1px solid #f2f4f6;transition:background .15s;" onmouseover="this.style.background='#f2f4f6'" onmouseout="this.style.background='transparent'">
+          <div style="width:40px;height:40px;border-radius:50%;background:${isIonKick ? 'var(--gold-light,#fef3cd)' : 'var(--primary-light,#e8f0fe)'};display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">${emojiIcon}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:15px;font-weight:600;">${ps.label}</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${ps.storeCount}/${ps.totalStores}개 매장 · ${ps.brand || ''}</div>
+            ${sizesHtml ? `<div class="ps-sizes" style="margin-top:4px;">${sizesHtml}</div>` : ''}
+            ${priceCompareHtml}
           </div>
-          <div class="ps-bar-track">
-            <div class="ps-bar-fill" style="width:${pct}%;background:${barColor}"></div>
-          </div>
-          <div class="ps-detail">${ps.storeCount}/${ps.totalStores}개 매장</div>
-          ${sizesHtml ? `<div class="ps-sizes">${sizesHtml}</div>` : ''}
-          ${priceCompareHtml}
+          <div style="font-size:22px;font-weight:800;color:var(--color-primary);flex-shrink:0;">${pct}<span style="font-size:12px;font-weight:500;color:var(--text-muted);">%</span></div>
         </div>
       `;
     }).join('')}
@@ -1921,8 +1945,12 @@ function renderDashboard(config) {
   const areaGrid = document.querySelector('#area-stats-grid');
   if (areaStats.some((a) => a.count > 0)) {
     areaGrid.innerHTML = `
-      <div class="card glass stack">
-        <h2>지역별 현황 📍</h2>
+      <div class="card stack" style="padding:24px;">
+        <div style="margin-bottom:16px;">
+          <div style="font-size:32px;margin-bottom:4px;">📍</div>
+          <div style="font-size:22px;font-weight:700;">지역별 현황</div>
+          <div style="font-size:14px;color:var(--text-muted);">각 지역의 조사 진행 상황이에요</div>
+        </div>
         <div class="area-cards">
           ${areaStats.map((a) => `
             <div class="area-card">
@@ -1943,7 +1971,11 @@ function renderDashboard(config) {
   const activityEl = document.querySelector('#recent-activity');
   if (recent.length > 0) {
     activityEl.innerHTML = `
-      <h2>최근 활동 🕐</h2>
+      <div style="margin-bottom:16px;">
+        <div style="font-size:32px;margin-bottom:4px;">🕐</div>
+        <div style="font-size:22px;font-weight:700;">최근 활동</div>
+        <div style="font-size:14px;color:var(--text-muted);">팀원들의 실시간 조사 기록이에요</div>
+      </div>
       <div class="activity-feed">
         ${recent.map((r) => `
           <div class="activity-item">
@@ -1957,7 +1989,7 @@ function renderDashboard(config) {
       </div>
     `;
   } else {
-    activityEl.innerHTML = '<h2>최근 활동 🕐</h2><p class="small">아직 활동이 없어요.</p>';
+    activityEl.innerHTML = '<div style="margin-bottom:16px;"><div style="font-size:32px;margin-bottom:4px;">🕐</div><div style="font-size:22px;font-weight:700;">최근 활동</div><div style="font-size:14px;color:var(--text-muted);">팀원들의 실시간 조사 기록이에요</div></div><p class="small">아직 활동이 없어요.</p>';
   }
 
   // 6. My Achievement Card
@@ -2750,7 +2782,7 @@ function initPwaInstall() {
     const banner = document.createElement('div');
     banner.id = 'pwa-install-banner';
     banner.setAttribute('role', 'complementary');
-    banner.style.cssText = 'position:fixed;bottom:64px;left:50%;transform:translateX(-50%);background:var(--primary,#0066cc);color:#fff;padding:10px 16px;border-radius:10px;z-index:8000;display:flex;align-items:center;gap:10px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:340px;width:calc(100% - 32px);animation:slideUp .3s ease;';
+    banner.style.cssText = 'position:fixed;bottom:64px;left:50%;transform:translateX(-50%);background:var(--color-primary);color:#fff;padding:10px 16px;border-radius:10px;z-index:8000;display:flex;align-items:center;gap:10px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:340px;width:calc(100% - 32px);animation:slideUp .3s ease;';
     banner.innerHTML = `
       <span style="flex:1;font-size:.88rem;line-height:1.4;">📲 홈 화면에 추가하면 더 편리해요!</span>
       <button type="button" id="pwa-install-ok" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;flex-shrink:0;">설치</button>
@@ -2804,7 +2836,7 @@ function initSkipLink() {
   const link = document.createElement('a');
   link.href = '#app';
   link.textContent = '본문으로 바로 가기';
-  link.style.cssText = 'position:absolute;top:-40px;left:8px;z-index:100000;background:var(--primary,#0066cc);color:#fff;padding:8px 12px;border-radius:0 0 4px 4px;font-size:.9rem;transition:top .15s;';
+  link.style.cssText = 'position:absolute;top:-40px;left:8px;z-index:100000;background:var(--color-primary);color:#fff;padding:8px 12px;border-radius:0 0 4px 4px;font-size:.9rem;transition:top .15s;';
   link.addEventListener('focus', () => { link.style.top = '0'; });
   link.addEventListener('blur', () => { link.style.top = '-40px'; });
   document.body.insertBefore(link, document.body.firstChild);
@@ -2991,7 +3023,7 @@ function initPullToRefresh() {
 
   const spinner = document.createElement('div');
   spinner.className = 'ptr-spinner';
-  spinner.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--primary,#0066cc)" stroke-width="2.5" stroke-linecap="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
+  spinner.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" stroke-width="2.5" stroke-linecap="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
   document.body.appendChild(spinner);
 
   let startY = 0;
