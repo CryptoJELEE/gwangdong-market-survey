@@ -161,11 +161,10 @@ function safeCompare(a, b) {
 }
 
 function filterSubmissionsByDate(submissions, targetDate) {
-  return submissions.filter((s) => {
-    const d = new Date(s.createdAt);
-    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    return ymd === targetDate;
-  });
+  // Use UTC date (first 10 chars of ISO string) to match how callers compute
+  // the target date via new Date().toISOString().slice(0, 10).
+  // Using local-time getDate() caused divergence around midnight in non-UTC zones.
+  return submissions.filter((s) => s.createdAt?.slice(0, 10) === targetDate);
 }
 
 function buildAveragePrices(submissions) {
@@ -297,6 +296,7 @@ function createRateLimiter() {
     }
   }, CLEANUP_INTERVAL).unref();
 
+  // Returns 0 when allowed; returns seconds-until-reset (≥1) when rate-limited.
   return function checkRate(key, maxRequests, windowMs = 60_000) {
     const now = Date.now();
     let bucket = buckets.get(key);
@@ -305,7 +305,7 @@ function createRateLimiter() {
       buckets.set(key, bucket);
     }
     bucket.count++;
-    return bucket.count > maxRequests;
+    return bucket.count > maxRequests ? Math.max(1, Math.ceil((bucket.resetTime - now) / 1000)) : 0;
   };
 }
 
@@ -557,23 +557,28 @@ export function createApp(config = loadConfig(), options = {}) {
   const checkRate = createRateLimiter();
 
   // ── Rate limit rules (endpoint-specific) ──
-  // Returns true if the request should be blocked
+  // Returns 0 when allowed; returns Retry-After seconds (≥1) when blocked.
   function applyRateLimits(request, url, clientIp) {
     const method = request.method;
     const path = url.pathname;
+    let retryAfter = 0;
 
     if (method === 'POST' && path === '/api/admin/login') {
       // Strict: 5 attempts per 15-minute window (brute-force protection)
-      if (checkRate(`login:${clientIp}`, 5, 15 * 60_000)) return true;
+      retryAfter = checkRate(`login:${clientIp}`, 5, 15 * 60_000);
+      if (retryAfter) return retryAfter;
     } else if (method === 'POST' && path === '/api/submissions') {
       // 30 submissions per minute per IP
-      if (checkRate(`submit:${clientIp}`, 30)) return true;
+      retryAfter = checkRate(`submit:${clientIp}`, 30);
+      if (retryAfter) return retryAfter;
     } else if (method === 'GET' && (path === '/api/geocode' || path === '/api/reverse-geocode')) {
       // 30 geocode requests per minute (external API cost)
-      if (checkRate(`geocode:${clientIp}`, 30)) return true;
+      retryAfter = checkRate(`geocode:${clientIp}`, 30);
+      if (retryAfter) return retryAfter;
     } else if (path.startsWith('/api/admin/')) {
       // 60 admin API calls per minute
-      if (checkRate(`admin:${clientIp}`, 60)) return true;
+      retryAfter = checkRate(`admin:${clientIp}`, 60);
+      if (retryAfter) return retryAfter;
     }
 
     // Global fallback: 120 requests per minute across all endpoints
@@ -633,10 +638,12 @@ export function createApp(config = loadConfig(), options = {}) {
       return;
     }
 
-    // Rate limiting
-    if (applyRateLimits(request, url, clientIp)) {
-      log.warn(`[RATE] rate limited (${clientIp}) ${request.method} ${url.pathname}`);
-      await sendJson(request, response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+    // Rate limiting — adds Retry-After header so clients can back off correctly
+    const retryAfterSecs = applyRateLimits(request, url, clientIp);
+    if (retryAfterSecs > 0) {
+      response.setHeader('Retry-After', retryAfterSecs);
+      log.warn(`[RATE] rate limited (${clientIp}) ${request.method} ${url.pathname} (retry-after: ${retryAfterSecs}s)`);
+      await sendJson(request, response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.', retryAfter: retryAfterSecs });
       return;
     }
 
@@ -796,7 +803,13 @@ export function createApp(config = loadConfig(), options = {}) {
             { method: 'POST', path: '/api/submissions/delete', auth: true, description: '제출 삭제',
               requestExample: { submissionId: 'uuid' } },
             { method: 'POST', path: '/api/assignments/override', auth: true, description: '배정 지역 수동 변경',
-              requestExample: { submissionId: 'uuid', assignedArea: '서울 동부', reason: '요청에 의한 변경' } }
+              requestExample: { submissionId: 'uuid', assignedArea: '서울 동부', reason: '요청에 의한 변경' } },
+            { method: 'GET',  path: '/api/admin/researchers', auth: true, description: '조사자 목록 + 최근 활동 + 기여도',
+              responseExample: { success: true, total: 5, researchers: [{ name: '홍길동', totalSubmissions: 12, lastActiveAt: '2026-03-15T10:00:00.000Z', uniqueAreas: 3, uniqueStores: 8, avgCompleteness: 85 }] } },
+            { method: 'GET',  path: '/api/admin/areas', auth: true, description: '지역별 통계 (커버리지, 평균 완료도)',
+              responseExample: { success: true, totalAreas: 10, areas: [{ area: '서울 중부', submissionCount: 20, uniqueResearchers: 4, coverageRate: 0.8, avgCompleteness: 90 }] } },
+            { method: 'GET',  path: '/api/export', auth: true, description: '다양한 형식으로 데이터 내보내기',
+              queryParams: { format: 'csv | json | xlsx-ready (기본: json)', from: 'YYYY-MM-DD', to: 'YYYY-MM-DD', researcher: '조사자명', area: '지역명' } }
           ]
         });
         return;
@@ -911,6 +924,148 @@ export function createApp(config = loadConfig(), options = {}) {
         }
         outliers.sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
         await sendJson(request, response, 200, { sigma, total: outliers.length, outliers });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/admin/researchers') {
+        if (!checkAuth(request)) {
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
+          return;
+        }
+        const allSubs = await store.listSubmissions();
+        const researcherMap = {};
+        for (const s of allSubs) {
+          const name = s.researcher?.name || '미상';
+          if (!researcherMap[name]) {
+            researcherMap[name] = {
+              name,
+              totalSubmissions: 0,
+              lastActiveAt: null,
+              uniqueAreas: new Set(),
+              uniqueStores: new Set(),
+              completenessScores: []
+            };
+          }
+          const r = researcherMap[name];
+          r.totalSubmissions++;
+          if (s.createdAt && (!r.lastActiveAt || s.createdAt > r.lastActiveAt)) {
+            r.lastActiveAt = s.createdAt;
+          }
+          if (s.assignment?.currentArea) r.uniqueAreas.add(s.assignment.currentArea);
+          if (s.survey?.storeName) r.uniqueStores.add(s.survey.storeName);
+          if (typeof s.completenessScore === 'number') r.completenessScores.push(s.completenessScore);
+        }
+        const researchers = Object.values(researcherMap).map((r) => ({
+          name: r.name,
+          totalSubmissions: r.totalSubmissions,
+          lastActiveAt: r.lastActiveAt,
+          uniqueAreas: r.uniqueAreas.size,
+          uniqueStores: r.uniqueStores.size,
+          avgCompleteness: r.completenessScores.length > 0
+            ? Math.round(r.completenessScores.reduce((a, b) => a + b, 0) / r.completenessScores.length)
+            : null
+        })).sort((a, b) => b.totalSubmissions - a.totalSubmissions);
+        await sendJson(request, response, 200, { total: researchers.length, researchers });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/admin/areas') {
+        if (!checkAuth(request)) {
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
+          return;
+        }
+        const allSubs = await store.listSubmissions();
+        const customAreas = await store.getSetting('customAreas');
+        const activeAreas = customAreas || config.areas;
+        const areaMap = {};
+        for (const area of activeAreas) {
+          areaMap[area] = { area, submissionCount: 0, uniqueResearchers: new Set(), completenessScores: [] };
+        }
+        for (const s of allSubs) {
+          const area = s.assignment?.currentArea;
+          if (area && areaMap[area]) {
+            areaMap[area].submissionCount++;
+            if (s.researcher?.name) areaMap[area].uniqueResearchers.add(s.researcher.name);
+            if (typeof s.completenessScore === 'number') areaMap[area].completenessScores.push(s.completenessScore);
+          }
+        }
+        const totalResearchers = new Set(allSubs.map((s) => s.researcher?.name).filter(Boolean)).size;
+        const areas = Object.values(areaMap).map((a) => ({
+          area: a.area,
+          submissionCount: a.submissionCount,
+          uniqueResearchers: a.uniqueResearchers.size,
+          coverageRate: totalResearchers > 0 ? Number((a.uniqueResearchers.size / totalResearchers).toFixed(2)) : 0,
+          avgCompleteness: a.completenessScores.length > 0
+            ? Math.round(a.completenessScores.reduce((x, y) => x + y, 0) / a.completenessScores.length)
+            : null
+        })).sort((a, b) => b.submissionCount - a.submissionCount);
+        await sendJson(request, response, 200, { totalAreas: areas.length, areas });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/export') {
+        if (!checkAuth(request)) {
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
+          return;
+        }
+        const format = url.searchParams.get('format') || 'json';
+        const exportFrom = url.searchParams.get('from');
+        const exportTo = url.searchParams.get('to');
+        const exportResearcher = url.searchParams.get('researcher');
+        const exportArea = url.searchParams.get('area');
+
+        let submissions = await store.listSubmissions();
+        if (exportFrom || exportTo) {
+          submissions = submissions.filter((s) => {
+            const date = s.createdAt?.slice(0, 10) || '';
+            if (exportFrom && date < exportFrom) return false;
+            if (exportTo && date > exportTo) return false;
+            return true;
+          });
+        }
+        if (exportResearcher) submissions = submissions.filter((s) => s.researcher?.name === exportResearcher);
+        if (exportArea) submissions = submissions.filter((s) => s.assignment?.currentArea === exportArea);
+
+        if (format === 'csv') {
+          const CSV_HEADERS = ['id', 'createdAt', 'researcherName', 'residenceArea', 'region', 'storeType', 'storeName', 'posCount', 'assignedArea', 'completenessScore', 'notes', 'priceCount'];
+          const escCsv = (v) => {
+            const s = v == null ? '' : String(v);
+            return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
+          };
+          const rows = submissions.map((s) => [
+            s.id, s.createdAt,
+            s.researcher?.name, s.researcher?.residenceArea,
+            s.survey?.region, s.survey?.storeType, s.survey?.storeName, s.survey?.posCount ?? '',
+            s.assignment?.currentArea, s.completenessScore ?? '',
+            s.notes || '', (s.prices || []).length
+          ].map(escCsv).join(','));
+          const csv = [CSV_HEADERS.join(','), ...rows].join('\r\n');
+          response.writeHead(200, {
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': `attachment; filename="ionroad-export-${new Date().toISOString().slice(0, 10)}.csv"`,
+            'Content-Length': Buffer.byteLength(csv)
+          });
+          response.end(csv);
+          return;
+        }
+
+        if (format === 'xlsx-ready') {
+          const HEADERS = ['id', 'createdAt', 'researcherName', 'residenceArea', 'region', 'storeType', 'storeName', 'posCount', 'assignedArea', 'completenessScore', 'notes', 'priceCount'];
+          const rows = submissions.map((s) => [
+            s.id, s.createdAt,
+            s.researcher?.name || '', s.researcher?.residenceArea || '',
+            s.survey?.region || '', s.survey?.storeType || '', s.survey?.storeName || '', s.survey?.posCount ?? 0,
+            s.assignment?.currentArea || '', s.completenessScore ?? 0,
+            s.notes || '', (s.prices || []).length
+          ]);
+          await sendJson(request, response, 200, { format: 'xlsx-ready', headers: HEADERS, rows, total: rows.length });
+          return;
+        }
+
+        // Default: JSON (same as /api/backup but named /api/export)
+        const timestamp = new Date().toISOString();
+        const filters = { from: exportFrom || null, to: exportTo || null, researcher: exportResearcher || null, area: exportArea || null };
+        await sendJson(request, response, 200, { format: 'json', timestamp, filters, totalSubmissions: submissions.length, submissions });
         return;
       }
 

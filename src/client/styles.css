@@ -1,6 +1,48 @@
 /* ═══════════════════════════════════════════════
    광동 시장조사 — Modern UI System v2
    8px grid · 4.5:1 contrast · system fonts
+   Rounds 1–26 | 5,100+ lines
+   ═══════════════════════════════════════════════
+
+   TABLE OF CONTENTS
+   ──────────────────
+   §01  Design Tokens (:root)
+   §02  Reset & Base
+   §03  Status Bar
+   §04  Shell & Hero
+   §05  Bottom Navigation
+   §06  Panels
+   §07  Cards
+   §08  Step Indicator
+   §09  Form Fields & Validation
+   §10  GPS / Store Type / Stepper
+   §11  Buttons
+   §12  Success Card / Quick Stats
+   §13  Product Leaderboard
+   §14  Onboarding / Overlays
+   §15  Photo Upload / Camera
+   §16  Accordion / Summary Grid
+   §17  Admin / Area Cards
+   §18  Achievements / Progress
+   §19  FAB / Scroll Top
+   §20  Toast Notifications
+   §21  Loading Skeleton / Shimmer
+   §22  Lightbox / Image Grid
+   §23  Map Container
+   §24  Z-Index Stacking
+   §25  Responsive Breakpoints
+   §26  Print Styles
+   §27  Dark Mode (scattered blocks — consolidated in §35)
+   §28  Typography Scale (Round 17)
+   §29  Extended Components: Cards/Buttons/Badges/Tags/Modal/Table (Rounds 17-18)
+   §30  Progress/Alert/Avatar/Dropdown/Tabs/Toggle/Pagination (Round 18)
+   §31  Scroll Snap / Container Queries / Fluid Typography (Round 19)
+   §32  CSS Patterns / Glassmorphism / 3D / Stagger / Custom Inputs (Rounds 20-21)
+   §33  Sidebar / Offcanvas / Breadcrumb / Wizard / Sparkline (Round 22)
+   §34  Card Internals / Table Editing / Chart / Long Text / A11y (Round 23)
+   §35  Visual Flourishes: Mesh / Glow / Shimmer / Celebrate / Reveal (Round 24)
+   §36  Modern CSS: Tokens / color-mix / oklch / :has() / Nesting (Round 25)
+   §37  Anchor Positioning / View Transitions / Popover API (Round 26)
    ═══════════════════════════════════════════════ */
 
 /* ── Design Tokens ── */
@@ -356,7 +398,7 @@ select {
   font-size: 13px;
   color: var(--text);
 }
-.field input, .field select, .field textarea {
+.field :is(input, select, textarea) {
   width: 100%;
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
@@ -366,10 +408,8 @@ select {
   color: var(--text);
   transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
 }
-.field input:hover, .field select:hover, .field textarea:hover {
-  border-color: var(--border-hover);
-}
-.field input:focus, .field select:focus, .field textarea:focus {
+.field :is(input, select, textarea):hover { border-color: var(--border-hover); }
+.field :is(input, select, textarea):focus {
   outline: none;
   border-color: var(--color-primary);
   background: var(--surface);
@@ -379,11 +419,11 @@ select {
 .field input::placeholder, .field textarea::placeholder { color: var(--text-muted); opacity: 0.7; }
 
 /* Field validation states */
-.field.is-error input, .field.is-error select, .field.is-error textarea {
+.field.is-error :is(input, select, textarea) {
   border-color: var(--error);
-  background: #fff8f8;
+  background: var(--color-error-subtle);
 }
-.field.is-error input:focus, .field.is-error select:focus, .field.is-error textarea:focus {
+.field.is-error :is(input, select, textarea):focus {
   border-color: var(--error);
   box-shadow: 0 0 0 3px rgba(220,38,38,0.1);
 }
@@ -395,10 +435,8 @@ select {
   align-items: center;
   gap: var(--sp-1);
 }
-.field.is-success input, .field.is-success select, .field.is-success textarea {
-  border-color: var(--success);
-}
-.field.is-success input:focus, .field.is-success select:focus, .field.is-success textarea:focus {
+.field.is-success :is(input, select, textarea) { border-color: var(--success); }
+.field.is-success :is(input, select, textarea):focus {
   border-color: var(--success);
   box-shadow: 0 0 0 3px rgba(13,150,104,0.1);
 }
@@ -4522,6 +4560,7 @@ a:not([class]):hover { text-decoration-thickness: 2px; }
   --glow-angle: 0deg;
   position: relative;
   isolation: isolate;
+  overflow: visible; /* allow ::before glow ring to extend beyond border */
 }
 .card-glow::before {
   content: '';
@@ -4550,16 +4589,8 @@ a:not([class]):hover { text-decoration-thickness: 2px; }
 @keyframes glowRotate {
   to { --glow-angle: 360deg; }
 }
-/* Mask out interior so only border strip glows */
-.card-glow::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius);
-  background: var(--card);
-  z-index: -1;
-  pointer-events: none;
-}
+/* ::before sits at z-index:-1 behind card bg — card's own background covers interior.
+   No ::after mask needed (would conflict with .card::after ripple). */
 /* Fallback for browsers without conic-gradient @property support */
 @supports not (background: conic-gradient(from 1deg, red, blue)) {
   .card-glow::before {
@@ -5160,3 +5191,176 @@ textarea:disabled {
   .gps-btn { transition: none; }
   .btn:not(:disabled) { transition: background var(--duration-fast) linear, color var(--duration-fast) linear; }
 }
+
+/* ═══════════════════════════════════════════════
+   §37  Round 26 — Anchor Positioning · View Transitions · Popover API
+   ═══════════════════════════════════════════════ */
+
+/* ── CSS Anchor Positioning ── */
+/* Progressive enhancement: Chrome 125+ / Safari 18.2+ */
+@supports (anchor-name: --x) {
+
+  /* Register anchors on trigger elements */
+  [data-tooltip] { anchor-name: --tooltip-anchor; }
+  .dropdown-trigger { anchor-name: --dropdown-anchor; }
+
+  /* Tooltip positioned relative to its anchor */
+  [data-tooltip]::before {
+    position: absolute;
+    position-anchor: --tooltip-anchor;
+    bottom: anchor(top);
+    left: anchor(center);
+    translate: -50% -6px;
+    /* All other tooltip styles inherited from existing [data-tooltip]::before */
+  }
+  [data-tooltip]::after {
+    position-anchor: --tooltip-anchor;
+    bottom: anchor(top);
+    left: anchor(center);
+    translate: -50% -100%;
+  }
+
+  /* Anchor-positioned dropdown */
+  .dropdown-menu {
+    position: absolute;
+    position-anchor: --dropdown-anchor;
+    top: anchor(bottom);
+    left: anchor(left);
+    margin-top: var(--sp-1);
+    /* Fallback: if overflow, try above */
+    position-try: flip-block;
+  }
+}
+
+/* ── View Transitions API ── */
+/* Styles for ::view-transition-* pseudo-elements (Chrome 111+) */
+@supports (view-transition-name: x) {
+  /* Root transition — whole-page cross-fade base */
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: var(--duration-slow);
+    animation-timing-function: var(--ease-in-out);
+    mix-blend-mode: normal;
+  }
+
+  /* Slide panel transitions — panels tagged with view-transition-name: panel */
+  ::view-transition-old(panel) {
+    animation: vtSlideOut var(--duration-slow) var(--ease-in) forwards;
+  }
+  ::view-transition-new(panel) {
+    animation: vtSlideIn var(--duration-slow) var(--ease-out) forwards;
+  }
+  @keyframes vtSlideOut {
+    from { opacity: 1; transform: translateX(0); }
+    to   { opacity: 0; transform: translateX(-16px); }
+  }
+  @keyframes vtSlideIn {
+    from { opacity: 0; transform: translateX(16px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  /* Card-level transition for data updates */
+  ::view-transition-old(card-data),
+  ::view-transition-new(card-data) {
+    animation-duration: var(--duration);
+    animation-timing-function: var(--ease-out);
+  }
+
+  /* Respect reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-old(root),
+    ::view-transition-new(root),
+    ::view-transition-old(panel),
+    ::view-transition-new(panel) {
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ── Popover API ── */
+/* Native browser popover: [popover] attribute (Chrome 114+, Safari 17+, Firefox 125+) */
+[popover] {
+  /* Reset UA popover styles */
+  position: fixed;
+  inset: unset;
+  margin: 0;
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  font-size: 14px;
+  line-height: 1.6;
+  max-width: min(90vw, 360px);
+  z-index: var(--z-modal);
+  /* Entry animation */
+  animation: popoverShow var(--duration) var(--ease-spring) both;
+}
+
+@keyframes popoverShow {
+  from { opacity: 0; transform: scale(0.95) translateY(-6px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
+/* Exit animation via :popover-open state transition */
+[popover]:not(:popover-open) {
+  display: none; /* UA default — ensure hidden when closed */
+}
+
+/* Popover backdrop */
+::backdrop {
+  background: rgba(0,0,0,0.35);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: modalBackdropIn 0.18s ease both;
+}
+
+/* Popover variants */
+[popover].popover-tooltip {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: 12px;
+  font-weight: 500;
+  max-width: 240px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+[popover].popover-menu {
+  padding: var(--sp-2) 0;
+  min-width: 160px;
+  border-radius: var(--radius-sm);
+}
+[popover].popover-menu > * {
+  padding: var(--sp-2) var(--sp-4);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+[popover].popover-menu > *:hover { background: var(--color-primary-ghost); }
+
+/* Dark mode popover */
+@media (prefers-color-scheme: dark) {
+  [popover] { background: var(--card); border-color: var(--border); }
+  ::backdrop  { background: rgba(0,0,0,0.55); }
+}
+
+/* Reduced motion: popover */
+@media (prefers-reduced-motion: reduce) {
+  [popover]                  { animation: none; }
+  ::view-transition-old(*),
+  ::view-transition-new(*)   { animation-duration: 0.01ms !important; }
+}
+
+/* ── §37 Selector Optimisation Notes ── */
+/*
+  Simplifications applied this round (Round 26):
+  ─────────────────────────────────────────────
+  BEFORE:  .field input, .field select, .field textarea { … }
+  AFTER:   .field :is(input, select, textarea) { … }
+  Saves ~4 repetitions across validation + base + hover + focus.
+
+  BEFORE:  .card-glow::after { content:''; … background: var(--card); … }
+  AFTER:   Comment only — card's own background covers interior naturally.
+  Removed conflict with .card::after ripple pseudo-element.
+
+  FIXED:   .field.is-error input bg hardcoded #fff8f8 → var(--color-error-subtle)
+*/

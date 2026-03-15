@@ -1995,3 +1995,273 @@ describe('Round 25: error response consistency', () => {
     assert.ok(data.error, 'should include Korean error message');
   });
 });
+
+describe('Round 26: /api/admin/researchers', () => {
+  test('returns empty list when no submissions', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/researchers`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.success, true);
+    assert.equal(data.total, 0);
+    assert.deepEqual(data.researchers, []);
+  });
+
+  test('aggregates researcher stats correctly', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    // Alice submits twice, Bob submits once
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Alice', residenceArea: '서울 중부' },
+      survey: { region: '강남', storeType: 'Mart', storeName: 'Store A' },
+      prices: [{ productId: 'p1', productLabel: 'P1', size: '100ml', price: 1000 }]
+    });
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Alice', residenceArea: '서울 중부' },
+      survey: { region: '강북', storeType: 'Pharmacy', storeName: 'Store B' }
+    });
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Bob', residenceArea: '서울 중부' },
+      survey: { region: '강서', storeType: 'Mart', storeName: 'Store C' }
+    });
+
+    const res = await fetch(`${baseUrl}/api/admin/researchers`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.total, 2);
+
+    // Alice should be first (more submissions)
+    const alice = data.researchers[0];
+    assert.equal(alice.name, 'Alice');
+    assert.equal(alice.totalSubmissions, 2);
+    assert.equal(alice.uniqueStores, 2);
+    assert.ok(alice.lastActiveAt, 'should have lastActiveAt');
+
+    const bob = data.researchers[1];
+    assert.equal(bob.name, 'Bob');
+    assert.equal(bob.totalSubmissions, 1);
+  });
+
+  test('requires auth', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await fetch(`${baseUrl}/api/admin/researchers`);
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+  });
+});
+
+describe('Round 26: /api/admin/areas', () => {
+  test('returns all configured areas even with no submissions', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/areas`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.success, true);
+    assert.ok(data.totalAreas > 0, 'should have configured areas');
+    assert.ok(Array.isArray(data.areas));
+
+    for (const area of data.areas) {
+      assert.equal(area.submissionCount, 0);
+      assert.equal(area.uniqueResearchers, 0);
+      assert.equal(area.coverageRate, 0);
+    }
+  });
+
+  test('coverageRate reflects proportion of researchers covering each area', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Alice', residenceArea: '서울 중부' },
+      survey: { region: '강남', storeType: 'Mart', storeName: 'Store1' }
+    });
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Bob', residenceArea: '서울 중부' },
+      survey: { region: '강북', storeType: 'Mart', storeName: 'Store2' }
+    });
+
+    const res = await fetch(`${baseUrl}/api/admin/areas`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+
+    // coverageRate should be between 0 and 1 for all areas
+    for (const area of data.areas) {
+      assert.ok(area.coverageRate >= 0 && area.coverageRate <= 1, `coverageRate out of range for ${area.area}`);
+    }
+  });
+
+  test('requires auth', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await fetch(`${baseUrl}/api/admin/areas`);
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+  });
+});
+
+describe('Round 26: /api/export', () => {
+  test('json format returns submissions with envelope', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/export?format=json`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.success, true);
+    assert.equal(data.format, 'json');
+    assert.equal(data.totalSubmissions, 1);
+    assert.ok(Array.isArray(data.submissions));
+    assert.ok(data.timestamp);
+    assert.ok(data.filters);
+  });
+
+  test('csv format returns text/csv content-type', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Alice', residenceArea: '서울 중부' },
+      survey: { region: '강남', storeType: 'Mart', storeName: 'Store A' },
+      notes: 'Test note'
+    });
+
+    const res = await fetch(`${baseUrl}/api/export?format=csv`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    assert.ok(res.headers.get('content-type')?.includes('text/csv'), 'should be text/csv');
+    assert.ok(res.headers.get('content-disposition')?.includes('attachment'), 'should be downloadable');
+
+    const text = await res.text();
+    assert.ok(text.includes('id,createdAt,researcherName'), 'should have CSV headers');
+    assert.ok(text.includes('Alice'), 'should include researcher name');
+  });
+
+  test('csv handles special characters with quoting', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Alice', residenceArea: '서울 중부' },
+      survey: { region: '강남', storeType: 'Mart', storeName: 'Store, With Comma' }
+    });
+
+    const res = await fetch(`${baseUrl}/api/export?format=csv`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const text = await res.text();
+    assert.ok(text.includes('"Store, With Comma"'), 'commas in values should be quoted');
+  });
+
+  test('xlsx-ready format returns headers and rows arrays', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Bob', residenceArea: '서울 중부' },
+      survey: { region: '강서', storeType: 'Pharmacy', storeName: 'My Store' },
+      prices: [{ productId: 'p1', productLabel: 'P1', size: '100ml', price: 999 }]
+    });
+
+    const res = await fetch(`${baseUrl}/api/export?format=xlsx-ready`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.success, true);
+    assert.equal(data.format, 'xlsx-ready');
+    assert.ok(Array.isArray(data.headers), 'should have headers array');
+    assert.ok(Array.isArray(data.rows), 'should have rows array');
+    assert.equal(data.total, 1);
+    assert.equal(data.rows[0].length, data.headers.length, 'each row should match header count');
+  });
+
+  test('researcher filter works', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Alice', residenceArea: '서울 중부' },
+      survey: { region: 'R', storeType: 'Mart', storeName: 'S1' }
+    });
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Bob', residenceArea: '서울 중부' },
+      survey: { region: 'R', storeType: 'Mart', storeName: 'S2' }
+    });
+
+    const res = await fetch(`${baseUrl}/api/export?format=json&researcher=Alice`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    assert.equal(data.totalSubmissions, 1);
+    assert.equal(data.submissions[0].researcher.name, 'Alice');
+  });
+
+  test('default format is json when format param omitted', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/export`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.format, 'json');
+  });
+
+  test('requires auth', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await fetch(`${baseUrl}/api/export`);
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+  });
+});
+
+describe('Round 26: rate limit Retry-After header', () => {
+  test('rate-limited login returns Retry-After header', async (t) => {
+    // Use a tight rate limiter by hitting login many times
+    const { baseUrl } = await createTestServer(t);
+
+    // Exhaust login rate limit (5 attempts per 15 min window)
+    const attempts = [];
+    for (let i = 0; i < 7; i++) {
+      attempts.push(fetch(`${baseUrl}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: 'wrong' })
+      }));
+    }
+    const results = await Promise.all(attempts);
+
+    // At least one should be rate limited
+    const rateLimited = results.find((r) => r.status === 429);
+    assert.ok(rateLimited, 'should have at least one 429 rate-limited response');
+    assert.ok(rateLimited.headers.get('retry-after'), 'rate-limited response should include Retry-After header');
+
+    const retryAfter = Number(rateLimited.headers.get('retry-after'));
+    assert.ok(retryAfter >= 1, 'Retry-After should be at least 1 second');
+
+    const data = await rateLimited.json();
+    assert.strictEqual(data.success, false);
+    assert.ok(data.retryAfter >= 1, 'response body should include retryAfter');
+  });
+});
