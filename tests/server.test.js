@@ -711,3 +711,131 @@ test('admin submissions pagination respects max limit cap', async (t) => {
   const payload = await response.json();
   assert.equal(payload.limit, 200, 'limit should be capped at PAGINATION_MAX_LIMIT');
 });
+
+// ── Round 19 new tests ──
+
+test('X-Request-Id header is present on all responses', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  // Server-generated request ID
+  const r1 = await fetch(`${baseUrl}/health`);
+  assert.ok(r1.headers.get('x-request-id'), 'X-Request-Id should be set');
+  assert.match(r1.headers.get('x-request-id'), /^[0-9a-f-]{36}$/, 'should be UUID format');
+
+  // Client-supplied request ID should be echoed back
+  const clientId = 'my-trace-id-12345';
+  const r2 = await fetch(`${baseUrl}/health`, {
+    headers: { 'X-Request-Id': clientId }
+  });
+  assert.equal(r2.headers.get('x-request-id'), clientId, 'client-supplied ID should be echoed');
+});
+
+test('health endpoint includes DB status and memory info', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/health`);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.status, 'ok');
+  assert.equal(payload.db, 'ok');
+  assert.ok(typeof payload.memory === 'object', 'memory object should be present');
+  assert.ok(typeof payload.memory.rssMb === 'number', 'rssMb should be a number');
+  assert.ok(typeof payload.memory.heapUsedMb === 'number', 'heapUsedMb should be a number');
+  assert.ok(payload.memory.rssMb > 0, 'RSS should be positive');
+});
+
+test('metrics endpoint returns request statistics (admin-only)', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  // Unauthenticated — should be rejected
+  const unauth = await fetch(`${baseUrl}/api/metrics`);
+  assert.equal(unauth.status, 401);
+
+  // Get admin token
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginResponse.json();
+
+  // Make a few requests to generate metrics
+  await fetch(`${baseUrl}/health`);
+  await fetch(`${baseUrl}/api/bootstrap`);
+
+  const metricsResponse = await fetch(`${baseUrl}/api/metrics`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  assert.equal(metricsResponse.status, 200);
+  const m = await metricsResponse.json();
+  assert.ok(typeof m.requests === 'number' && m.requests > 0, 'requests count should be positive');
+  assert.ok(typeof m.errors === 'number', 'errors field should exist');
+  assert.ok(typeof m.errorRate === 'number', 'errorRate field should exist');
+  assert.ok(typeof m.avgResponseMs === 'number', 'avgResponseMs should exist');
+  assert.ok(typeof m.p99ResponseMs === 'number', 'p99ResponseMs should exist');
+});
+
+test('configurable CORS allows specific origin', async (t) => {
+  const tempDir = await (await import('node:fs/promises')).mkdtemp(
+    (await import('node:path')).join((await import('node:os')).tmpdir(), 'cors-test-')
+  );
+  const config = loadConfig({
+    PORT: '0',
+    DATA_DIR: tempDir,
+    DB_FILE: `${tempDir}/survey.db`,
+    STORE_FILE: `${tempDir}/store.json`,
+    UPLOADS_DIR: `${tempDir}/uploads`
+  });
+  const server = createApp(config, {
+    allowedOrigins: 'https://example.com',
+    geocoder: { async geocode() { return null; }, async tryGeocode() { return null; } }
+  });
+  await new Promise((resolve) => server.listen(0, resolve));
+  t.after(async () => { await closeApp(server); });
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  // Allowed origin
+  const allowed = await fetch(`${baseUrl}/health`, {
+    headers: { Origin: 'https://example.com' }
+  });
+  assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://example.com');
+
+  // Disallowed origin — falls back to the first allowed origin (not reflected)
+  const disallowed = await fetch(`${baseUrl}/health`, {
+    headers: { Origin: 'https://evil.com' }
+  });
+  assert.notEqual(disallowed.headers.get('access-control-allow-origin'), 'https://evil.com');
+});
+
+test('CSS static files include stale-while-revalidate in Cache-Control', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/styles.css`);
+  assert.equal(response.status, 200);
+  const cc = response.headers.get('cache-control');
+  assert.ok(cc, 'Cache-Control header should be present');
+  assert.ok(cc.includes('stale-while-revalidate'), 'CSS should have stale-while-revalidate');
+});
+
+test('Vary: Accept-Encoding is set on gzip-compressed responses', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  // Bootstrap with enough data to trigger compression (>1024 bytes)
+  for (let i = 0; i < 3; i++) {
+    await fetch(`${baseUrl}/api/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        researcher: { name: `Vary Test ${i}`, residenceArea: '서울 중부' },
+        survey: { region: 'Gangnam', storeType: 'Mart', storeName: `Store Vary ${i}` },
+        prices: []
+      })
+    });
+  }
+
+  const response = await fetch(`${baseUrl}/api/bootstrap`, {
+    headers: { 'Accept-Encoding': 'gzip' }
+  });
+  assert.equal(response.headers.get('content-encoding'), 'gzip');
+  assert.ok(response.headers.get('vary')?.includes('Accept-Encoding'),
+    'Vary: Accept-Encoding should be present on compressed response');
+});

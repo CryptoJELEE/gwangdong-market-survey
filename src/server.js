@@ -93,6 +93,7 @@ async function sendJson(request, response, statusCode, payload) {
         zlib.gzip(body, (err, result) => (err ? reject(err) : resolve(result)))
       );
       headers['Content-Encoding'] = 'gzip';
+      headers['Vary'] = 'Accept-Encoding';
       headers['Content-Length'] = compressed.length;
       response.writeHead(statusCode, headers);
       response.end(compressed);
@@ -102,6 +103,7 @@ async function sendJson(request, response, statusCode, payload) {
         zlib.deflate(body, (err, result) => (err ? reject(err) : resolve(result)))
       );
       headers['Content-Encoding'] = 'deflate';
+      headers['Vary'] = 'Accept-Encoding';
       headers['Content-Length'] = compressed.length;
       response.writeHead(statusCode, headers);
       response.end(compressed);
@@ -263,21 +265,26 @@ async function serveStatic(response, filePath, request) {
 
   if (extension === '.html') {
     cacheHeaders['Cache-Control'] = 'no-cache';
-  } else if (extension === '.css' || extension === '.js' || extension === '.json') {
-    cacheHeaders['Cache-Control'] = 'public, max-age=3600';
+  } else if (extension === '.css' || extension === '.js') {
+    cacheHeaders['Cache-Control'] = 'public, max-age=3600, stale-while-revalidate=60';
+  } else if (extension === '.json') {
+    cacheHeaders['Cache-Control'] = 'public, max-age=600, must-revalidate';
   } else {
-    cacheHeaders['Cache-Control'] = 'public, max-age=86400';
+    cacheHeaders['Cache-Control'] = 'public, max-age=86400, immutable';
   }
 
   response.writeHead(200, cacheHeaders);
   response.end(contents);
 }
 
-function setCorsHeaders(response) {
-  response.setHeader('Access-Control-Allow-Origin', '*');
+function setCorsHeaders(response, allowedOrigin = '*') {
+  response.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id');
   response.setHeader('Access-Control-Max-Age', '86400');
+  if (allowedOrigin !== '*') {
+    response.setHeader('Vary', 'Origin');
+  }
 }
 
 export async function closeApp(server, { drainMs = 5000 } = {}) {
@@ -308,6 +315,26 @@ export function createApp(config = loadConfig(), options = {}) {
   });
   let initialized = false;
   let initPromise = null;
+
+  // ── Configurable CORS origins ──
+  // options.allowedOrigins: string ('*'), single origin string, or array of origin strings
+  const allowedOrigins = options.allowedOrigins ?? '*';
+
+  function resolveOrigin(requestOrigin) {
+    if (allowedOrigins === '*') return '*';
+    const list = Array.isArray(allowedOrigins) ? allowedOrigins : [allowedOrigins];
+    return (requestOrigin && list.includes(requestOrigin)) ? requestOrigin : list[0];
+  }
+
+  // ── Server metrics (in-memory, rolling window of last 1000 response times) ──
+  const metrics = { requests: 0, errors: 0, responseTimes: [] };
+
+  function recordMetric(statusCode, ms) {
+    metrics.requests++;
+    if (statusCode >= 500) metrics.errors++;
+    metrics.responseTimes.push(ms);
+    if (metrics.responseTimes.length > 1000) metrics.responseTimes.shift();
+  }
 
   // ── Admin auth ──
   const adminTokens = new Map();
@@ -373,20 +400,25 @@ export function createApp(config = loadConfig(), options = {}) {
     const clientIp = getClientIp(request);
     const url = new URL(request.url, `http://${request.headers.host}`);
     const startMs = Date.now();
+    const requestId = request.headers['x-request-id'] || crypto.randomUUID();
 
-    // Log response time and status when response ends
+    // Propagate request ID to response for correlation
+    response.setHeader('X-Request-Id', requestId);
+
+    // Log response time, status, and record metrics when response ends
     const originalEnd = response.end.bind(response);
     let logged = false;
     response.end = function(...args) {
       if (!logged) {
         logged = true;
         const ms = Date.now() - startMs;
-        console.log(`[${request.method}] ${url.pathname} ${response.statusCode} (${ms}ms, ${clientIp})`);
+        recordMetric(response.statusCode, ms);
+        console.log(`[${request.method}] ${url.pathname} ${response.statusCode} (${ms}ms, ${clientIp}, ${requestId})`);
       }
       return originalEnd(...args);
     };
 
-    setCorsHeaders(response);
+    setCorsHeaders(response, resolveOrigin(request.headers['origin']));
     setSecurityHeaders(response);
 
     if (request.method === 'OPTIONS') {
@@ -415,11 +447,46 @@ export function createApp(config = loadConfig(), options = {}) {
       }
 
       if (request.method === 'GET' && url.pathname === '/health') {
-        await sendJson(request, response, 200, {
-          status: 'ok',
+        let dbStatus = 'ok';
+        try {
+          await store.getSubmissionCounts();
+        } catch {
+          dbStatus = 'error';
+        }
+        const mem = process.memoryUsage();
+        await sendJson(request, response, dbStatus === 'ok' ? 200 : 503, {
+          status: dbStatus === 'ok' ? 'ok' : 'degraded',
+          db: dbStatus,
           uptime: Math.floor(process.uptime()),
           startedAt: SERVER_STARTED_AT,
-          version: PKG_VERSION
+          version: PKG_VERSION,
+          memory: {
+            rssMb: Math.round(mem.rss / 1024 / 1024),
+            heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024)
+          }
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/metrics') {
+        if (!checkAuth(request)) {
+          await sendJson(request, response, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const times = metrics.responseTimes;
+        const avgResponseMs = times.length > 0
+          ? Math.round(times.reduce((a, b) => a + b, 0) / times.length)
+          : 0;
+        const p99ResponseMs = times.length > 0
+          ? [...times].sort((a, b) => a - b)[Math.floor(times.length * 0.99)]
+          : 0;
+        await sendJson(request, response, 200, {
+          requests: metrics.requests,
+          errors: metrics.errors,
+          errorRate: metrics.requests > 0 ? Number((metrics.errors / metrics.requests).toFixed(4)) : 0,
+          avgResponseMs,
+          p99ResponseMs,
+          sampleSize: times.length
         });
         return;
       }
