@@ -631,6 +631,7 @@ export function createApp(config = loadConfig(), options = {}) {
 
     setCorsHeaders(response, resolveOrigin(request.headers['origin']));
     setSecurityHeaders(response);
+    response.setHeader('X-API-Version', PKG_VERSION);
 
     if (request.method === 'OPTIONS') {
       response.writeHead(204);
@@ -669,22 +670,39 @@ export function createApp(config = loadConfig(), options = {}) {
       }
 
       if (request.method === 'GET' && url.pathname === '/health') {
+        // DB health — try a cheap read to verify the connection is live
         let dbStatus = 'ok';
+        let submissionCount = 0;
         try {
-          await store.getSubmissionCounts();
+          const counts = await store.getSubmissionCounts();
+          submissionCount = Object.values(counts).reduce((a, b) => a + b, 0);
         } catch {
           dbStatus = 'error';
         }
+
+        // Storage health — verify the data directory is accessible
+        let storageStatus = 'ok';
+        try {
+          await stat(config.dataDir);
+        } catch {
+          storageStatus = 'error';
+        }
+
+        // Memory health — warn if heap usage is high (>512 MB)
         const mem = process.memoryUsage();
-        await sendJson(request, response, dbStatus === 'ok' ? 200 : 503, {
-          status: dbStatus === 'ok' ? 'ok' : 'degraded',
-          db: dbStatus,
+        const heapUsedMb = Math.round(mem.heapUsed / 1024 / 1024);
+        const memStatus = heapUsedMb > 512 ? 'warning' : 'ok';
+
+        const overallOk = dbStatus === 'ok' && storageStatus === 'ok';
+        await sendJson(request, response, overallOk ? 200 : 503, {
+          status: overallOk ? 'ok' : 'degraded',
           uptime: Math.floor(process.uptime()),
           startedAt: SERVER_STARTED_AT,
           version: PKG_VERSION,
-          memory: {
-            rssMb: Math.round(mem.rss / 1024 / 1024),
-            heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024)
+          services: {
+            db: { status: dbStatus, submissionCount },
+            storage: { status: storageStatus },
+            memory: { status: memStatus, heapUsedMb, rssMb: Math.round(mem.rss / 1024 / 1024) }
           }
         });
         return;
@@ -753,8 +771,8 @@ export function createApp(config = loadConfig(), options = {}) {
           envelope: 'Object responses include { success: boolean, ...data }. Arrays are returned as-is.',
           errorFormat: '{ success: false, error: "Korean error message" }',
           endpoints: [
-            { method: 'GET',  path: '/health',      auth: false, description: '서버 상태 및 DB 연결 확인',
-              responseExample: { success: true, status: 'ok', db: 'ok', uptime: 120 } },
+            { method: 'GET',  path: '/health',      auth: false, description: '서버 상태 및 서비스별 세부 헬스 체크',
+              responseExample: { success: true, status: 'ok', uptime: 120, services: { db: { status: 'ok', submissionCount: 42 }, storage: { status: 'ok' }, memory: { status: 'ok', heapUsedMb: 48 } } } },
             { method: 'GET',  path: '/api/docs',    auth: false, description: 'API 문서 (이 페이지)' },
             { method: 'GET',  path: '/api/status',  auth: true,  description: '상세 서버 모니터링',
               responseExample: { success: true, status: 'ok', uptime: 120, db: { sizeBytes: 49152, sizeMb: 0 }, activeConnections: 2 } },

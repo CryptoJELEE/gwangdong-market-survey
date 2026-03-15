@@ -1963,8 +1963,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 ::-webkit-scrollbar-corner { background: transparent; }
 * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 @media (prefers-color-scheme: dark) {
-  ::-webkit-scrollbar-thumb { background: var(--border-hover); }
-  ::-webkit-scrollbar-thumb:hover { background: #4e5568; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; } /* slightly slimmer on dark */
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-hover);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
   * { scrollbar-color: var(--border-hover) transparent; }
 }
 
@@ -5364,3 +5368,254 @@ textarea:disabled {
 
   FIXED:   .field.is-error input bg hardcoded #fff8f8 → var(--color-error-subtle)
 */
+
+/* ═══════════════════════════════════════════════
+   §38  Round 27 — Animation & Interaction Master
+   Card Flip · Number Roll · Soft Shadow · Theming
+   ═══════════════════════════════════════════════ */
+
+/* ── Card Flip Animation ── */
+/* Usage:
+   <div class="card-flip">
+     <div class="card-flip-front"> … </div>
+     <div class="card-flip-back">  … </div>
+   </div>
+   JS: toggle .is-flipped on .card-flip
+*/
+.card-flip {
+  perspective: 900px;
+  perspective-origin: center center;
+}
+.card-flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.55s var(--ease-in-out);
+  will-change: transform;
+}
+.card-flip.is-flipped .card-flip-inner {
+  transform: rotateY(180deg);
+}
+.card-flip-front,
+.card-flip-back {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  padding: var(--sp-5) var(--sp-4);
+  overflow: hidden;
+}
+.card-flip-back {
+  transform: rotateY(180deg);
+  background: var(--color-primary);
+  color: white;
+}
+/* Flip trigger button */
+.card-flip-trigger {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-primary-ghost);
+  color: var(--color-primary);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--transition), transform var(--transition);
+  z-index: 2;
+}
+.card-flip-trigger:hover { background: var(--color-primary-subtle); transform: rotate(180deg); }
+/* Dark mode flip card */
+@media (prefers-color-scheme: dark) {
+  .card-flip-back {
+    background: var(--color-primary-dark);
+  }
+}
+/* Reduced motion: instant flip */
+@media (prefers-reduced-motion: reduce) {
+  .card-flip-inner { transition: none; }
+}
+
+/* ── Digit Roll Counter ── */
+/* CSS-only rolling number slot.
+   Usage: <span class="digit-roll" data-val="7"><span>0</span>…<span>7</span></span>
+   JS sets transform: translateY(calc(-N * 1em)) on the inner list.
+*/
+.digit-roll {
+  display: inline-block;
+  height: 1.2em;
+  line-height: 1.2em;
+  overflow: hidden;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+.digit-roll-list {
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.45s var(--ease-out);
+  will-change: transform;
+}
+.digit-roll-list span {
+  display: block;
+  height: 1.2em;
+  line-height: 1.2em;
+  text-align: center;
+}
+/* Stagger multiple digits */
+.digit-roll:nth-child(2) .digit-roll-list { transition-delay: 0.04s; }
+.digit-roll:nth-child(3) .digit-roll-list { transition-delay: 0.08s; }
+.digit-roll:nth-child(4) .digit-roll-list { transition-delay: 0.12s; }
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .digit-roll-list { transition: none; }
+}
+
+/* ── Layered Soft Shadows ── */
+/* Multi-layer shadows for depth perception — drop-in utilities */
+.shadow-soft-xs {
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.04),
+    0 2px 4px rgba(0,0,0,0.03);
+}
+.shadow-soft-sm {
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.04),
+    0 3px 8px rgba(0,0,0,0.05),
+    0 6px 16px rgba(0,0,0,0.03);
+}
+.shadow-soft {
+  box-shadow:
+    0 1px 3px rgba(0,0,0,0.05),
+    0 4px 12px rgba(0,0,0,0.06),
+    0 12px 32px rgba(0,0,0,0.05),
+    0 24px 48px rgba(0,0,0,0.03);
+}
+.shadow-soft-lg {
+  box-shadow:
+    0 2px 4px rgba(0,0,0,0.04),
+    0 8px 20px rgba(0,0,0,0.07),
+    0 20px 48px rgba(0,0,0,0.06),
+    0 40px 80px rgba(0,0,0,0.04);
+}
+/* Coloured soft glow variants */
+.shadow-glow-primary {
+  box-shadow:
+    0 2px 8px rgba(22,120,90,0.15),
+    0 8px 24px rgba(22,120,90,0.10),
+    0 20px 40px rgba(22,120,90,0.06);
+}
+.shadow-glow-info {
+  box-shadow:
+    0 2px 8px rgba(2,132,199,0.14),
+    0 8px 24px rgba(2,132,199,0.09);
+}
+/* Dark mode: softer shadows (less contrast needed) */
+@media (prefers-color-scheme: dark) {
+  .shadow-soft-xs  { box-shadow: 0 1px 3px rgba(0,0,0,0.2), 0 2px 6px rgba(0,0,0,0.15); }
+  .shadow-soft-sm  { box-shadow: 0 1px 3px rgba(0,0,0,0.25), 0 4px 12px rgba(0,0,0,0.2); }
+  .shadow-soft     { box-shadow: 0 2px 6px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.25), 0 16px 40px rgba(0,0,0,0.2); }
+  .shadow-soft-lg  { box-shadow: 0 4px 12px rgba(0,0,0,0.35), 0 16px 40px rgba(0,0,0,0.3), 0 32px 64px rgba(0,0,0,0.25); }
+  .shadow-glow-primary { box-shadow: 0 2px 12px rgba(30,153,112,0.3), 0 8px 32px rgba(30,153,112,0.2); }
+}
+
+/* ── Color Scheme Theming ── */
+/* Swap entire palette by applying a theme class to <body> or a container.
+   Only CSS variables need changing — all components adapt automatically.
+*/
+
+/* Ocean theme */
+.theme-ocean {
+  --color-primary:        #0369a1;
+  --color-primary-light:  #0284c7;
+  --color-primary-dark:   #075985;
+  --color-primary-subtle: #e0f2fe;
+  --color-primary-ghost:  rgba(3,105,161,0.08);
+  --primary: var(--color-primary);
+  --primary-light: var(--color-primary-light);
+  --primary-dark: var(--color-primary-dark);
+}
+
+/* Violet theme */
+.theme-violet {
+  --color-primary:        #7c3aed;
+  --color-primary-light:  #8b5cf6;
+  --color-primary-dark:   #6d28d9;
+  --color-primary-subtle: #f5f3ff;
+  --color-primary-ghost:  rgba(124,58,237,0.08);
+  --primary: var(--color-primary);
+  --primary-light: var(--color-primary-light);
+  --primary-dark: var(--color-primary-dark);
+}
+
+/* Rose theme */
+.theme-rose {
+  --color-primary:        #e11d48;
+  --color-primary-light:  #f43f5e;
+  --color-primary-dark:   #be123c;
+  --color-primary-subtle: #fff1f2;
+  --color-primary-ghost:  rgba(225,29,72,0.08);
+  --primary: var(--color-primary);
+  --primary-light: var(--color-primary-light);
+  --primary-dark: var(--color-primary-dark);
+}
+
+/* Amber theme */
+.theme-amber {
+  --color-primary:        #d97706;
+  --color-primary-light:  #f59e0b;
+  --color-primary-dark:   #b45309;
+  --color-primary-subtle: #fffbeb;
+  --color-primary-ghost:  rgba(217,119,6,0.08);
+  --primary: var(--color-primary);
+  --primary-light: var(--color-primary-light);
+  --primary-dark: var(--color-primary-dark);
+}
+
+/* High-contrast theme (accessibility) */
+.theme-high-contrast {
+  --color-primary:        #005c39;
+  --color-primary-light:  #007a4d;
+  --color-primary-dark:   #003d27;
+  --color-primary-subtle: #d4edda;
+  --color-primary-ghost:  rgba(0,92,57,0.1);
+  --text:         #000000;
+  --text-muted:   #333333;
+  --border:       #666666;
+  --border-hover: #333333;
+  --bg:           #f8f8f8;
+  --shadow:       0 1px 0 rgba(0,0,0,0.3);
+  --shadow-md:    0 2px 0 rgba(0,0,0,0.3);
+}
+
+/* ── Final: CSS Animation Keyframe Consolidation ── */
+/* Entry/exit aliases for shared timing (avoids duplicate keyframe logic) */
+@keyframes fadeUp   { from { opacity: 0; transform: translateY(8px);  } to { opacity: 1; transform: none; } }
+@keyframes fadeDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes zoomIn   { from { opacity: 0; transform: scale(0.94);      } to { opacity: 1; transform: none; } }
+@keyframes zoomOut  { from { opacity: 1; transform: scale(1);         } to { opacity: 0; transform: scale(0.94); } }
+
+/* Utility animation classes (apply via JS for one-shot effects) */
+.anim-fade-up   { animation: fadeUp   var(--duration-slow) var(--ease-out) both; }
+.anim-fade-down { animation: fadeDown var(--duration-slow) var(--ease-out) both; }
+.anim-zoom-in   { animation: zoomIn   var(--duration-slow) var(--ease-spring) both; }
+.anim-zoom-out  { animation: zoomOut  var(--duration)      var(--ease-in)   both; }
+
+/* Stagger delay helpers */
+.anim-delay-1 { animation-delay: 0.05s; }
+.anim-delay-2 { animation-delay: 0.10s; }
+.anim-delay-3 { animation-delay: 0.15s; }
+.anim-delay-4 { animation-delay: 0.20s; }
+.anim-delay-5 { animation-delay: 0.25s; }
+
+/* Reduced motion: all utility anims instant */
+@media (prefers-reduced-motion: reduce) {
+  .anim-fade-up, .anim-fade-down,
+  .anim-zoom-in, .anim-zoom-out { animation: none; opacity: 1; transform: none; }
+}

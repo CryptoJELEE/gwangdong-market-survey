@@ -759,17 +759,23 @@ test('X-Request-Id header is present on all responses', async (t) => {
   assert.equal(r2.headers.get('x-request-id'), clientId, 'client-supplied ID should be echoed');
 });
 
-test('health endpoint includes DB status and memory info', async (t) => {
+test('health endpoint includes detailed service status', async (t) => {
   const { baseUrl } = await createTestServer(t);
   const response = await fetch(`${baseUrl}/health`);
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.status, 'ok');
-  assert.equal(payload.db, 'ok');
-  assert.ok(typeof payload.memory === 'object', 'memory object should be present');
-  assert.ok(typeof payload.memory.rssMb === 'number', 'rssMb should be a number');
-  assert.ok(typeof payload.memory.heapUsedMb === 'number', 'heapUsedMb should be a number');
-  assert.ok(payload.memory.rssMb > 0, 'RSS should be positive');
+  assert.ok(typeof payload.services === 'object', 'services object should be present');
+  // DB service
+  assert.equal(payload.services.db.status, 'ok');
+  assert.ok(typeof payload.services.db.submissionCount === 'number', 'submissionCount should be a number');
+  // Storage service
+  assert.equal(payload.services.storage.status, 'ok');
+  // Memory service
+  assert.ok(['ok', 'warning'].includes(payload.services.memory.status));
+  assert.ok(typeof payload.services.memory.heapUsedMb === 'number');
+  assert.ok(typeof payload.services.memory.rssMb === 'number');
+  assert.ok(payload.services.memory.rssMb > 0, 'RSS should be positive');
 });
 
 test('metrics endpoint returns request statistics (admin-only)', async (t) => {
@@ -2263,5 +2269,137 @@ describe('Round 26: rate limit Retry-After header', () => {
     const data = await rateLimited.json();
     assert.strictEqual(data.success, false);
     assert.ok(data.retryAfter >= 1, 'response body should include retryAfter');
+  });
+});
+
+describe('Round 27: X-API-Version header', () => {
+  test('X-API-Version header is present on all JSON responses', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/health`);
+    assert.ok(res.headers.get('x-api-version'), 'X-API-Version should be set');
+    assert.match(res.headers.get('x-api-version'), /^\d+\.\d+\.\d+$/, 'should be semver format');
+  });
+
+  test('X-API-Version is present on 4xx error responses', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/api/nonexistent`);
+    assert.equal(res.status, 404);
+    assert.ok(res.headers.get('x-api-version'), '404 should also carry X-API-Version');
+  });
+
+  test('X-API-Version matches package.json version', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/health`);
+    const apiVersion = res.headers.get('x-api-version');
+    const docsRes = await fetch(`${baseUrl}/api/docs`);
+    const docs = await docsRes.json();
+    assert.equal(apiVersion, docs.version, 'X-API-Version header should match /api/docs version field');
+  });
+});
+
+describe('Round 27: /health detailed service status', () => {
+  test('health returns services.db with submissionCount', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    await postSubmission(baseUrl);
+    await postSubmission(baseUrl, {
+      researcher: { name: 'B', residenceArea: '서울 중부' },
+      survey: { region: 'R', storeType: 'Mart', storeName: 'S2' }
+    });
+
+    const res = await fetch(`${baseUrl}/health`);
+    const data = await res.json();
+    assert.equal(data.services.db.submissionCount, 2, 'submissionCount should reflect actual submissions');
+  });
+
+  test('health returns services.storage.status ok', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/health`);
+    const data = await res.json();
+    assert.equal(data.services.storage.status, 'ok');
+  });
+
+  test('health returns services.memory with numeric fields', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/health`);
+    const data = await res.json();
+    assert.ok(typeof data.services.memory.heapUsedMb === 'number');
+    assert.ok(typeof data.services.memory.rssMb === 'number');
+    assert.ok(data.services.memory.rssMb > 0);
+  });
+
+  test('health response does not expose deprecated top-level db/memory fields', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/health`);
+    const data = await res.json();
+    // Old shape (pre-Round27) had db: 'ok' and memory: {...} at top level
+    assert.ok(!('db' in data), 'top-level db field should be removed');
+    assert.ok(!('memory' in data), 'top-level memory field should be removed (now under services)');
+  });
+});
+
+describe('Round 27: /api/survey-stats coverage', () => {
+  test('/api/survey-stats returns areas with submissionCount', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/api/survey-stats`);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.success, true);
+    assert.ok(Array.isArray(data.areas), 'areas should be an array');
+    assert.ok(data.areas.length > 0, 'should return configured areas');
+
+    for (const area of data.areas) {
+      assert.ok('area' in area, 'each entry should have area field');
+      assert.ok('submissionCount' in area, 'each entry should have submissionCount');
+    }
+  });
+
+  test('/api/survey-stats submissionCount increases after submission', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const before = await (await fetch(`${baseUrl}/api/survey-stats`)).json();
+    const totalBefore = before.areas.reduce((sum, a) => sum + a.submissionCount, 0);
+
+    await postSubmission(baseUrl);
+
+    const after = await (await fetch(`${baseUrl}/api/survey-stats`)).json();
+    const totalAfter = after.areas.reduce((sum, a) => sum + a.submissionCount, 0);
+    assert.equal(totalAfter, totalBefore + 1, 'total count should increase by 1');
+  });
+});
+
+describe('Round 27: /api/daily-report HTML output', () => {
+  test('/api/daily-report returns HTML content', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const res = await fetch(`${baseUrl}/api/daily-report?date=${today}`);
+    assert.equal(res.status, 200);
+    assert.ok(res.headers.get('content-type')?.includes('text/html'), 'should be text/html');
+    const html = await res.text();
+    assert.ok(html.includes('<!DOCTYPE html>'), 'should be valid HTML');
+    assert.ok(html.includes(today), 'should include the date');
+  });
+
+  test('/api/daily-report includes submission data when available', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    await postSubmission(baseUrl, {
+      researcher: { name: 'HTMLTester', residenceArea: '서울 중부' },
+      survey: { region: '강남', storeType: 'Mart', storeName: 'HTML Store' },
+      prices: [{ productId: 'p1', productLabel: 'Product One', size: '100ml', price: 1500 }]
+    });
+
+    const today = new Date().toISOString().slice(0, 10);
+    const res = await fetch(`${baseUrl}/api/daily-report?date=${today}`);
+    const html = await res.text();
+    assert.ok(html.includes('HTMLTester'), 'HTML report should include researcher name');
   });
 });
