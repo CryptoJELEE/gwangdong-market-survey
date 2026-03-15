@@ -648,7 +648,7 @@ function renderPhotoSlots() {
     if (state.photos[i]) {
       slots.push(`
         <div class="photo-slot" data-slot="${i}" style="display:inline-block;position:relative;width:calc(33% - 6px);aspect-ratio:1;border-radius:8px;overflow:hidden;vertical-align:top;">
-          <img src="${state.photos[i]}" alt="사진 ${i + 1}" style="width:100%;height:100%;object-fit:cover;" />
+          <img src="${state.photos[i]}" alt="사진 ${i + 1}" loading="lazy" style="width:100%;height:100%;object-fit:cover;" />
           <button type="button" class="photo-slot-remove" data-remove="${i}" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:12px;cursor:pointer;line-height:22px;text-align:center;">\u2715</button>
         </div>
       `);
@@ -716,8 +716,53 @@ function renderStep3(config) {
   });
 
   formStepContainer.querySelector('#submit-btn').addEventListener('click', () => {
+    const notes = formStepContainer.querySelector('[name="notes"]')?.value || '';
+    saveLocal('_step3_notes', notes);
+    showSubmitPreview(config, notes);
+  });
+}
+
+function showSubmitPreview(config, notes) {
+  const s = state.step1Data || {};
+  const storeName = s.storeName || loadLocal('_step1_storeName') || '(미입력)';
+  const region = s.region || loadLocal('_step1_region') || '';
+  const storeType = s.storeType || loadLocal('_step1_storeType') || '';
+  const posCount = s.posCount || loadLocal('_step1_posCount') || '1';
+  let savedPrices = {};
+  try { savedPrices = JSON.parse(loadLocal('_step2_prices') || '{}'); } catch { /* ignore */ }
+  const priceCount = Object.values(savedPrices).filter(v => String(v).replace(/[^0-9]/g, '') > 0).length;
+  const photoCount = state.photos.filter(Boolean).length;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'price-reminder-overlay';
+  overlay.innerHTML = `
+    <div class="price-reminder-dialog" role="dialog" aria-modal="true" aria-labelledby="preview-title" style="max-width:340px;">
+      <h3 id="preview-title" style="margin:0 0 12px;font-size:1rem;">📋 제출 내용 확인</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:.88rem;line-height:2;">
+        <tr><td style="color:var(--text-muted);width:72px;">매장</td><td><strong>${escapeHtml(storeName)}</strong></td></tr>
+        <tr><td style="color:var(--text-muted);">지역</td><td>${escapeHtml(region)}</td></tr>
+        <tr><td style="color:var(--text-muted);">유형</td><td>${escapeHtml(storeType)}</td></tr>
+        <tr><td style="color:var(--text-muted);">POS</td><td>${escapeHtml(String(posCount))}대</td></tr>
+        <tr><td style="color:var(--text-muted);">가격</td><td>${priceCount}개 입력</td></tr>
+        <tr><td style="color:var(--text-muted);">사진</td><td>${photoCount}장</td></tr>
+        ${notes ? `<tr><td style="color:var(--text-muted);vertical-align:top;">메모</td><td style="word-break:break-all;">${escapeHtml(notes.slice(0, 80))}${notes.length > 80 ? '…' : ''}</td></tr>` : ''}
+      </table>
+      <div class="price-reminder-actions" style="margin-top:16px;">
+        <button type="button" class="btn btn-secondary" id="preview-back-btn">← 수정</button>
+        <button type="button" class="btn btn-primary" id="preview-submit-btn">✅ 제출하기</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const releaseTrap = trapFocus(overlay.querySelector('.price-reminder-dialog'));
+  const closePreview = () => { releaseTrap(); overlay.remove(); };
+
+  overlay.querySelector('#preview-back-btn').addEventListener('click', closePreview);
+  overlay.querySelector('#preview-submit-btn').addEventListener('click', () => {
+    closePreview();
     startSubmitCountdown(config);
   });
+  overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closePreview(); } });
 }
 
 function startSubmitCountdown(config) {
@@ -1283,7 +1328,7 @@ function renderPhotoGallery(submissions) {
     <div class="card stack">
       <h2>\u{1F4F8} 최근 사진</h2>
       <div class="photo-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
-        ${photosData.map((p, i) => `<div class="photo-thumb" data-photo-idx="${i}" style="width:100%;aspect-ratio:1;overflow:hidden;border-radius:8px;cursor:pointer;"><img src="${p.url}" alt="${escapeHtml(p.storeName)}" style="width:100%;height:100%;object-fit:cover;" /></div>`).join('')}
+        ${photosData.map((p, i) => `<div class="photo-thumb" data-photo-idx="${i}" style="width:100%;aspect-ratio:1;overflow:hidden;border-radius:8px;cursor:pointer;"><img src="${p.url}" alt="${escapeHtml(p.storeName)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;" /></div>`).join('')}
       </div>
     </div>
   `;
@@ -2155,6 +2200,31 @@ function initDarkMode() {
   });
 }
 
+// ── PWA install prompt ──
+function initPwaInstall() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    const banner = document.createElement('div');
+    banner.id = 'pwa-install-banner';
+    banner.setAttribute('role', 'complementary');
+    banner.style.cssText = 'position:fixed;bottom:64px;left:50%;transform:translateX(-50%);background:var(--primary,#0066cc);color:#fff;padding:10px 16px;border-radius:10px;z-index:8000;display:flex;align-items:center;gap:10px;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:340px;width:calc(100% - 32px);animation:slideUp .3s ease;';
+    banner.innerHTML = `
+      <span style="flex:1;font-size:.88rem;line-height:1.4;">📲 홈 화면에 추가하면 더 편리해요!</span>
+      <button type="button" id="pwa-install-ok" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:.85rem;white-space:nowrap;flex-shrink:0;">설치</button>
+      <button type="button" id="pwa-install-x" aria-label="닫기" style="background:none;border:none;color:rgba(255,255,255,.7);font-size:1.2rem;cursor:pointer;line-height:1;padding:0;flex-shrink:0;">×</button>
+    `;
+    document.body.appendChild(banner);
+    banner.querySelector('#pwa-install-ok').addEventListener('click', async () => {
+      banner.remove();
+      e.prompt();
+      const { outcome } = await e.userChoice;
+      if (outcome === 'accepted') showToast('이온로드가 홈 화면에 추가되었어요! 🎉', 'success');
+    });
+    banner.querySelector('#pwa-install-x').addEventListener('click', () => banner.remove());
+    setTimeout(() => { if (banner.isConnected) banner.remove(); }, 30000);
+  });
+}
+
 // ── Skip-to-content ──
 function initSkipLink() {
   const link = document.createElement('a');
@@ -2261,3 +2331,4 @@ initScrollToTop();
 initKeyboardNav();
 initNetworkMonitor();
 initDarkMode();
+initPwaInstall();

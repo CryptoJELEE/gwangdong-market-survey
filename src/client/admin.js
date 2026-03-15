@@ -873,6 +873,23 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
   if (page > totalPages) { submissionPage = totalPages; page = totalPages; }
   const paginated = filtered.slice((page - 1) * SUBMISSION_PAGE_SIZE, page * SUBMISSION_PAGE_SIZE);
 
+  // Quick stats row
+  const todayStr = new Date().toDateString();
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const todayFiltered = filtered.filter((s) => new Date(s.createdAt).toDateString() === todayStr).length;
+  const weekFiltered = filtered.filter((s) => new Date(s.createdAt).getTime() >= weekAgo).length;
+  const avgScore = filtered.length > 0
+    ? Math.round(filtered.reduce((sum, s) => sum + (s.completenessScore ?? 0), 0) / filtered.length)
+    : 0;
+  const quickStatsRow = `
+    <div style="display:flex;gap:12px;padding:8px 0;font-size:.82rem;color:var(--text-muted);flex-wrap:wrap;border-bottom:1px solid var(--border,#eee);margin-bottom:8px;" role="status" aria-label="필터 결과 통계">
+      <span>전체 <strong>${totalCount}</strong>건</span>
+      <span>오늘 <strong>${todayFiltered}</strong>건</span>
+      <span>7일 <strong>${weekFiltered}</strong>건</span>
+      <span>평균완료도 <strong>${avgScore}점</strong></span>
+    </div>
+  `;
+
   // Bulk action toolbar
   const bulkSelected = selectedSubmissionIds.size;
   const bulkBar = bulkSelectMode ? `
@@ -925,7 +942,7 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
             </tr></thead>
             <tbody>${priceRows}</tbody>
           </table>` : '<div class="sub-meta" style="margin-top:8px;">가격 데이터 없음</div>'}
-          ${sub.photo ? `<img class="sub-photo" src="${sub.photo.url}" alt="${escapeHtml(sub.survey.storeName)}" />` : ''}
+          ${sub.photo ? `<img class="sub-photo" src="${sub.photo.url}" alt="${escapeHtml(sub.survey.storeName)}" loading="lazy" />` : ''}
           ${sub.notes ? `<div class="sub-meta" style="margin-top:6px;">메모: ${escapeHtml(sub.notes)}</div>` : ''}
           <div class="sub-meta" style="margin-top:6px;">GPS: ${gpsText}</div>
           <div class="sub-actions">
@@ -952,7 +969,7 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
     </div>
   ` : '';
 
-  submissionList.innerHTML = bulkBar + cardsHtml + paginationHtml;
+  submissionList.innerHTML = quickStatsRow + bulkBar + cardsHtml + paginationHtml;
 
   // Toggle detail
   submissionList.querySelectorAll('[data-toggle]').forEach((header) => {
@@ -1218,6 +1235,43 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
   URL.revokeObjectURL(url);
   showToast('CSV 파일이 다운로드되었어요.');
 });
+
+// ── JSON Export ──
+(function addJsonExportBtn() {
+  const csvBtn = document.querySelector('#csv-btn');
+  if (!csvBtn) return;
+  const jsonBtn = document.createElement('button');
+  jsonBtn.type = 'button';
+  jsonBtn.id = 'json-btn';
+  jsonBtn.textContent = '📥 JSON';
+  jsonBtn.className = csvBtn.className;
+  jsonBtn.style.cssText = 'margin-left:8px;';
+  jsonBtn.setAttribute('aria-label', 'JSON 내보내기');
+  csvBtn.parentNode.insertBefore(jsonBtn, csvBtn.nextSibling);
+  jsonBtn.addEventListener('click', () => {
+    if (!adminData) return;
+    const { submissions } = adminData;
+    const exportData = submissions.map((sub) => ({
+      id: sub.id,
+      createdAt: sub.createdAt,
+      researcher: sub.researcher,
+      assignment: sub.assignment,
+      survey: sub.survey,
+      prices: sub.prices || [],
+      notes: sub.notes || '',
+      completenessScore: sub.completenessScore,
+      gps: sub.gps || sub.location || null
+    }));
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ionroad-export-${submissions.length}건-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('JSON 파일이 다운로드되었어요.');
+  });
+})();
 
 // ── Backup ──
 document.querySelector('#backup-btn').addEventListener('click', async () => {
