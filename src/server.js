@@ -160,13 +160,26 @@ function safeCompare(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
+/**
+ * Filter submissions to those created on `targetDate` (UTC).
+ * Compares the first 10 chars of the ISO createdAt string to avoid
+ * local-timezone divergence around midnight.
+ *
+ * @param {object[]} submissions  Full submission list from the store
+ * @param {string}   targetDate   UTC date string in YYYY-MM-DD format
+ * @returns {object[]}
+ */
 function filterSubmissionsByDate(submissions, targetDate) {
-  // Use UTC date (first 10 chars of ISO string) to match how callers compute
-  // the target date via new Date().toISOString().slice(0, 10).
-  // Using local-time getDate() caused divergence around midnight in non-UTC zones.
   return submissions.filter((s) => s.createdAt?.slice(0, 10) === targetDate);
 }
 
+/**
+ * Aggregate price data across submissions and return per-product averages.
+ * Ignores zero/non-numeric prices. Products are keyed by `label|size`.
+ *
+ * @param {object[]} submissions
+ * @returns {{ label: string, size: string, avg: number, count: number }[]}
+ */
 function buildAveragePrices(submissions) {
   const priceMap = {};
   for (const s of submissions) {
@@ -827,7 +840,9 @@ export function createApp(config = loadConfig(), options = {}) {
             { method: 'GET',  path: '/api/admin/areas', auth: true, description: '지역별 통계 (커버리지, 평균 완료도)',
               responseExample: { success: true, totalAreas: 10, areas: [{ area: '서울 중부', submissionCount: 20, uniqueResearchers: 4, coverageRate: 0.8, avgCompleteness: 90 }] } },
             { method: 'GET',  path: '/api/export', auth: true, description: '다양한 형식으로 데이터 내보내기',
-              queryParams: { format: 'csv | json | xlsx-ready (기본: json)', from: 'YYYY-MM-DD', to: 'YYYY-MM-DD', researcher: '조사자명', area: '지역명' } }
+              queryParams: { format: 'csv | json | xlsx-ready (기본: json)', from: 'YYYY-MM-DD', to: 'YYYY-MM-DD', researcher: '조사자명', area: '지역명' } },
+            { method: 'GET',  path: '/api/admin/dashboard', auth: true, description: '통합 대시보드 — 한 번의 요청으로 주요 통계 전부',
+              responseExample: { success: true, submissions: { total: 100, today: 5, uniqueResearchers: 12, avgCompleteness: 82 }, topResearchers: [{ name: '홍길동', count: 20 }], areaCoverage: [], recentSubmissions: [] } }
           ]
         });
         return;
@@ -1557,7 +1572,7 @@ ${researcherRows}
           return;
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
-        if (!body.submissionId) throw new ValidationError('submissionId is required.');
+        if (!body.submissionId) throw new ValidationError('submissionId는 필수입니다.');
         await store.deleteSubmission(body.submissionId);
         await sendJson(request, response, 200, { ok: true });
         return;
@@ -1621,6 +1636,74 @@ ${researcherRows}
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/api/admin/dashboard') {
+        if (!checkAuth(request)) {
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
+          return;
+        }
+        const [allSubs, submissionCounts, customAreas] = await Promise.all([
+          store.listSubmissions(),
+          store.getSubmissionCounts(),
+          store.getSetting('customAreas')
+        ]);
+        const activeAreas = customAreas || config.areas;
+        const today = new Date().toISOString().slice(0, 10);
+        const todaySubs = allSubs.filter((s) => s.createdAt?.slice(0, 10) === today);
+
+        // Researcher aggregation
+        const researcherMap = {};
+        for (const s of allSubs) {
+          const name = s.researcher?.name || '미상';
+          researcherMap[name] = (researcherMap[name] || 0) + 1;
+        }
+        const topResearchers = Object.entries(researcherMap)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([name, count]) => ({ name, count }));
+
+        // Area coverage
+        const areaCoverage = activeAreas.map((area) => ({
+          area,
+          submissionCount: submissionCounts[area] || 0
+        })).sort((a, b) => b.submissionCount - a.submissionCount);
+
+        // Average completeness
+        const scores = allSubs.map((s) => s.completenessScore).filter((n) => typeof n === 'number');
+        const avgCompleteness = scores.length > 0
+          ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+          : null;
+
+        // Recent submissions (last 5, lightweight)
+        const recentSubmissions = allSubs.slice(-5).reverse().map((s) => ({
+          id: s.id,
+          createdAt: s.createdAt,
+          researcher: s.researcher?.name,
+          storeName: s.survey?.storeName,
+          area: s.assignment?.currentArea,
+          completenessScore: s.completenessScore
+        }));
+
+        const mem = process.memoryUsage();
+        await sendJson(request, response, 200, {
+          generatedAt: new Date().toISOString(),
+          version: PKG_VERSION,
+          uptime: Math.floor(process.uptime()),
+          submissions: {
+            total: allSubs.length,
+            today: todaySubs.length,
+            uniqueResearchers: Object.keys(researcherMap).length,
+            avgCompleteness
+          },
+          topResearchers,
+          areaCoverage,
+          recentSubmissions,
+          system: {
+            memory: { heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024), rssMb: Math.round(mem.rss / 1024 / 1024) }
+          }
+        });
+        return;
+      }
+
       await sendJson(request, response, 404, { error: '요청하신 경로를 찾을 수 없습니다.' });
     } catch (error) {
       const isClientError = error.isValidationError ||
@@ -1671,7 +1754,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT',  () => shutdown('SIGINT'));
 
-  // Sequential startup: validate env → DB init → integrity check → WAL checkpoint → backup → bind port → print banner
+  // Startup: validate env → DB init → integrity check → WAL checkpoint → bind port → banner
+  // Backup is launched after the port is bound so it never delays accepting connections.
   (async () => {
     try {
       // Environment validation — warn early about misconfigurations
@@ -1685,10 +1769,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       walCheckpoint(server._store);
       setInterval(() => walCheckpoint(server._store), 6 * 60 * 60_000).unref(); // every 6h
 
-      await backupDatabase(config.dbFile);
-      setInterval(() => backupDatabase(config.dbFile), BACKUP_INTERVAL_MS).unref();
-
       await new Promise((resolve) => server.listen(config.port, host, resolve));
+
+      // Backup runs after bind so startup latency is not affected by DB size
+      backupDatabase(config.dbFile).catch(() => { /* already logged inside */ });
+      setInterval(() => backupDatabase(config.dbFile), BACKUP_INTERVAL_MS).unref();
 
       const sheetsStatus = config.googleSheets?.enabled ? '✓ 활성' : '✗ 비활성';
       const tokenStatus  = config.adminToken ? '✓ 설정됨' : '✗ 미설정 (비밀번호 로그인만 가능)';

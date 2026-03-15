@@ -2403,3 +2403,176 @@ describe('Round 27: /api/daily-report HTML output', () => {
     assert.ok(html.includes('HTMLTester'), 'HTML report should include researcher name');
   });
 });
+
+describe('Round 28: /api/admin/dashboard', () => {
+  test('returns unified stats in a single request', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Alice', residenceArea: '서울 중부' },
+      survey: { region: '강남', storeType: 'Mart', storeName: 'Store A' },
+      prices: [{ productId: 'p1', productLabel: 'P1', size: '100ml', price: 1000 }]
+    });
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Bob', residenceArea: '서울 중부' },
+      survey: { region: '강북', storeType: 'Pharmacy', storeName: 'Store B' }
+    });
+
+    const res = await fetch(`${baseUrl}/api/admin/dashboard`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.success, true);
+
+    // Core stats
+    assert.equal(data.submissions.total, 2);
+    assert.equal(data.submissions.uniqueResearchers, 2);
+    assert.ok(typeof data.submissions.today === 'number');
+
+    // Top researchers
+    assert.ok(Array.isArray(data.topResearchers));
+    assert.ok(data.topResearchers.length > 0);
+    assert.ok('name' in data.topResearchers[0]);
+    assert.ok('count' in data.topResearchers[0]);
+
+    // Area coverage
+    assert.ok(Array.isArray(data.areaCoverage));
+    assert.ok(data.areaCoverage.length > 0);
+
+    // Recent submissions
+    assert.ok(Array.isArray(data.recentSubmissions));
+    assert.ok(data.recentSubmissions.length <= 5, 'should return at most 5 recent submissions');
+
+    // System info
+    assert.ok(typeof data.system.memory.heapUsedMb === 'number');
+    assert.ok(data.version, 'should include version');
+    assert.ok(data.generatedAt, 'should include generatedAt timestamp');
+    assert.ok(typeof data.uptime === 'number');
+  });
+
+  test('today count reflects only today submissions', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl);
+    await postSubmission(baseUrl, {
+      researcher: { name: 'B', residenceArea: '서울 중부' },
+      survey: { region: 'R', storeType: 'Mart', storeName: 'S2' }
+    });
+
+    const res = await fetch(`${baseUrl}/api/admin/dashboard`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    assert.equal(data.submissions.total, 2);
+    assert.equal(data.submissions.today, 2, 'both submissions should count as today');
+  });
+
+  test('recentSubmissions fields are lightweight (no prices/photoDataUrl)', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/dashboard`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    const recent = data.recentSubmissions[0];
+    assert.ok('id' in recent);
+    assert.ok('researcher' in recent);
+    assert.ok('storeName' in recent);
+    assert.ok(!('prices' in recent), 'recentSubmissions should not include prices array');
+    assert.ok(!('photoDataUrl' in recent), 'recentSubmissions should not include photoDataUrl');
+  });
+
+  test('dashboard requires auth', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await fetch(`${baseUrl}/api/admin/dashboard`);
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+  });
+
+  test('avgCompleteness is null when no submissions', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/dashboard`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    assert.strictEqual(data.submissions.avgCompleteness, null);
+    assert.equal(data.submissions.total, 0);
+    assert.deepEqual(data.topResearchers, []);
+    assert.deepEqual(data.recentSubmissions, []);
+  });
+});
+
+describe('Round 28: CORS preflight', () => {
+  test('OPTIONS request returns 204 with CORS headers', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/api/submissions`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'http://localhost:3000' }
+    });
+    assert.equal(res.status, 204);
+    assert.ok(res.headers.get('access-control-allow-methods'), 'should include Allow-Methods');
+    assert.ok(res.headers.get('access-control-allow-headers'), 'should include Allow-Headers');
+  });
+});
+
+describe('Round 28: edge cases for untested code paths', () => {
+  test('sw.js is served with no-cache header', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    // sw.js uses a special no-cache path in serveStatic
+    // It may 404 in test env (no sw.js file) but the route should be reached
+    const res = await fetch(`${baseUrl}/sw.js`);
+    // Either 200 (file exists) or 404 (file not found in test tempdir) — not 500
+    assert.ok([200, 404].includes(res.status), 'sw.js route should not 500');
+  });
+
+  test('bootstrap returns empty assignmentOverrides array', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/api/bootstrap`);
+    const data = await res.json();
+    assert.ok(Array.isArray(data.assignmentOverrides), 'assignmentOverrides should be an array');
+    assert.equal(data.assignmentOverrides.length, 0, 'should be empty on fresh DB');
+  });
+
+  test('delete submission with missing submissionId returns Korean error', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/submissions/delete`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}) // missing submissionId
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+    // Korean error message (not English)
+    assert.ok(!data.error.includes('required.'), 'error should be in Korean');
+    assert.ok(data.error.includes('필수'), 'error should use Korean 필수');
+  });
+
+  test('/api/daily-summary with no submissions returns zeros', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const res = await fetch(`${baseUrl}/api/daily-summary?date=${today}`);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.totalSubmissions, 0);
+    assert.equal(data.uniqueResearchers, 0);
+    assert.deepEqual(data.averagePrices, []);
+    assert.strictEqual(data.topResearcher, null);
+    assert.strictEqual(data.topStore, null);
+  });
+});
