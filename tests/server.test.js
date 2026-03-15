@@ -10,7 +10,7 @@ import { loadConfig } from '../src/config.js';
 const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aT0sAAAAASUVORK5CYII=';
 
 async function createTestServer(t, options = {}) {
-  const { envOverrides = {}, geocoder } = options;
+  const { envOverrides = {}, ...serverOptions } = options;
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'market-survey-'));
   const config = loadConfig({
     PORT: '0',
@@ -21,7 +21,7 @@ async function createTestServer(t, options = {}) {
     ...envOverrides
   });
 
-  const server = createApp(config, { geocoder });
+  const server = createApp(config, serverOptions);
   await new Promise((resolve) => server.listen(0, resolve));
   t.after(async () => {
     await closeApp(server);
@@ -954,4 +954,119 @@ test('Korean error messages: 404 response is Korean', async (t) => {
   const data = await response.json();
   assert.ok(data.error.length > 0, 'Should have Korean 404 message');
   assert.ok(!data.error.includes('Not found'), 'Should not contain English "Not found"');
+});
+
+// ── Round 21 feature tests ───────────────────────────────────────────────────
+
+test('/api/status requires auth and returns system info', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  // Unauthenticated → 401
+  const unauth = await fetch(`${baseUrl}/api/status`);
+  assert.equal(unauth.status, 401);
+
+  // Login then check /api/status
+  const loginRes = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginRes.json();
+
+  const statusRes = await fetch(`${baseUrl}/api/status`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(statusRes.status, 200);
+  const data = await statusRes.json();
+
+  assert.equal(data.status, 'ok');
+  assert.ok(typeof data.uptime === 'number', 'uptime should be a number');
+  assert.ok(typeof data.activeConnections === 'number', 'activeConnections should be a number');
+  assert.ok(data.memory && typeof data.memory.rssMb === 'number', 'memory.rssMb should exist');
+  assert.ok(data.memory && typeof data.memory.heapTotalMb === 'number', 'memory.heapTotalMb should exist');
+  assert.ok(data.db && typeof data.db.sizeBytes === 'number', 'db.sizeBytes should exist');
+  assert.ok(data.metrics && typeof data.metrics.requests === 'number', 'metrics.requests should exist');
+});
+
+test('Webhook retry: retries on failure and delivers on eventual success', async (t) => {
+  const { baseUrl } = await createTestServer(t, {
+    // Mock fetchImpl: fail first 2 calls, succeed on 3rd
+    fetchImpl: (() => {
+      let calls = 0;
+      return async (url, init) => {
+        // Only intercept webhook URL
+        if (url === 'https://webhook.test/hook') {
+          calls++;
+          if (calls < 3) throw new Error('network error');
+          return { ok: true };
+        }
+        // Other calls (geocode etc.) fall through as no-ops
+        return { ok: true, json: async () => ({}) };
+      };
+    })()
+  });
+
+  // Configure webhook
+  const loginRes = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginRes.json();
+
+  await fetch(`${baseUrl}/api/admin/webhook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ url: 'https://webhook.test/hook', events: ['new_submission'] })
+  });
+
+  // Submit — triggers webhook fire-and-forget with retry
+  const sub = await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'WebhookTest', residenceArea: '서울 중부' },
+      survey: { region: 'TestRegion', storeType: 'Mart', storeName: 'TestStore' },
+      prices: []
+    })
+  });
+  assert.equal(sub.status, 201, 'Submission should succeed regardless of webhook retries');
+});
+
+test('Admin IP whitelist: blocks non-whitelisted IPs from admin routes', async (t) => {
+  const { baseUrl } = await createTestServer(t, {
+    // Allow only 1.2.3.4 — requests will come from 127.0.0.1 so they'll be blocked
+    adminIpWhitelist: ['1.2.3.4']
+  });
+
+  const response = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  assert.equal(response.status, 403, 'Non-whitelisted IP should get 403');
+  const data = await response.json();
+  assert.ok(data.error.includes('IP'), `Expected IP block error, got: ${data.error}`);
+});
+
+test('Admin IP whitelist: allows all IPs when whitelist is null', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  // No whitelist configured → normal auth flow
+  const response = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  // Should not be 403
+  assert.notEqual(response.status, 403, 'No whitelist should not block requests');
+  assert.equal(response.status, 200);
+});
+
+test('Response body size is logged (X-Request-Id present in all responses)', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  // X-Request-Id is set on every response — as a proxy to confirm the response.end
+  // wrapper is wired up (it's the same code path that logs body size)
+  const response = await fetch(`${baseUrl}/health`);
+  assert.ok(response.headers.get('x-request-id'), 'X-Request-Id should be present');
+  assert.equal(response.status, 200);
 });

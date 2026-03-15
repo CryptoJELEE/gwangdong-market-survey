@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFile } from 'node:fs/promises';
+import { readFile, copyFile, stat } from 'node:fs/promises';
 import { loadConfig } from './config.js';
 import { assignArea, assignAreaByDistance } from './assignment.js';
 import { createGeocoder } from './geocoding.js';
@@ -16,6 +16,10 @@ const MAX_SETTINGS_BODY_BYTES = 256 * 1024; // 256 KB — for settings updates
 const MAX_PHOTO_BYTES = 500 * 1024; // 500 KB
 const COMPRESSION_THRESHOLD = 1024; // bytes — compress responses larger than this
 const PAGINATION_MAX_LIMIT = 200;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;  // 30s — normal requests
+const UPLOAD_REQUEST_TIMEOUT_MS = 120_000;  // 2min — submission POST (includes photo upload)
+const SLOW_REQUEST_THRESHOLD_MS = 2_000;    // warn on requests slower than 2s
+const BACKUP_INTERVAL_MS = 24 * 60 * 60_000; // 24h periodic backup
 const SERVER_STARTED_AT = new Date().toISOString();
 const PKG_VERSION = JSON.parse(await readFile(path.resolve('package.json'), 'utf8')).version;
 
@@ -25,6 +29,61 @@ const log = {
   warn:  (...args) => console.warn('[WARN] ', ...args),
   error: (...args) => console.error('[ERROR]', ...args)
 };
+
+/**
+ * Copy the SQLite DB file to a dated backup file.
+ * Best-effort — never throws. Safe with WAL mode (default in better-sqlite3)
+ * because the main db file is always page-consistent.
+ *
+ * @param {string} dbFile  Absolute path to the .db file
+ */
+async function backupDatabase(dbFile) {
+  if (!dbFile) return;
+  try {
+    const date = new Date().toISOString().slice(0, 10);
+    const backupPath = `${dbFile}.${date}.bak`;
+    await copyFile(dbFile, backupPath);
+    // Copy WAL file too if it exists (needed for a truly consistent snapshot)
+    try { await copyFile(`${dbFile}-wal`, `${backupPath}-wal`); } catch { /* no WAL */ }
+    log.info(`[BACKUP] DB backup created: ${path.basename(backupPath)}`);
+  } catch (err) {
+    log.warn(`[BACKUP] DB backup failed: ${err.message}`);
+  }
+}
+
+/**
+ * POST a JSON webhook payload with up to `maxRetries` attempts.
+ * Uses exponential backoff: 1s, 2s, 4s between retries.
+ *
+ * @param {string}   webhookUrl
+ * @param {object}   payload
+ * @param {Function} fetchFn      fetch-compatible function
+ * @param {number}   [maxRetries=3]
+ */
+async function sendWebhookWithRetry(webhookUrl, payload, fetchFn, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetchFn(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) {
+        if (attempt > 1) log.info(`[WEBHOOK] delivered after ${attempt} attempts`);
+        return;
+      }
+      throw new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      if (attempt === maxRetries) {
+        log.warn(`[WEBHOOK] failed after ${maxRetries} attempts: ${err.message}`);
+        return;
+      }
+      const backoffMs = Math.pow(2, attempt - 1) * 1000; // 1s → 2s → 4s
+      log.warn(`[WEBHOOK] attempt ${attempt} failed (${err.message}), retrying in ${backoffMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+  }
+}
 
 class ValidationError extends Error {
   constructor(message) {
@@ -358,6 +417,20 @@ export function createApp(config = loadConfig(), options = {}) {
   let initialized = false;
   let initPromise = null;
 
+  // ── Admin IP whitelist (optional) ──
+  // options.adminIpWhitelist: string[] | null — if set, admin endpoints reject non-listed IPs
+  const adminIpWhitelist = options.adminIpWhitelist ?? null;
+
+  function isAdminIpAllowed(ip) {
+    if (!adminIpWhitelist || adminIpWhitelist.length === 0) return true;
+    // Strip IPv4-mapped IPv6 prefix (::ffff:1.2.3.4 → 1.2.3.4)
+    const normalised = ip.replace(/^::ffff:/, '');
+    return adminIpWhitelist.includes(normalised) || adminIpWhitelist.includes(ip);
+  }
+
+  // ── Active connection counter (for /api/status) ──
+  let activeConnections = 0;
+
   // ── Configurable CORS origins ──
   // options.allowedOrigins: string ('*'), single origin string, or array of origin strings
   const allowedOrigins = options.allowedOrigins ?? '*';
@@ -447,7 +520,21 @@ export function createApp(config = loadConfig(), options = {}) {
     // Propagate request ID to response for correlation
     response.setHeader('X-Request-Id', requestId);
 
-    // Log response time, status, and record metrics when response ends
+    // Per-request timeout — uploads get extra time for photo data
+    const timeoutMs = (request.method === 'POST' && url.pathname === '/api/submissions')
+      ? UPLOAD_REQUEST_TIMEOUT_MS
+      : DEFAULT_REQUEST_TIMEOUT_MS;
+    request.setTimeout(timeoutMs, () => {
+      log.warn(`[TIMEOUT] ${request.method} ${url.pathname} (${clientIp}) exceeded ${timeoutMs}ms`);
+      if (!response.headersSent) {
+        response.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: '요청 처리 시간이 초과되었습니다.' }));
+      } else {
+        request.socket?.destroy();
+      }
+    });
+
+    // Log response time, status, body size, and record metrics when response ends
     const originalEnd = response.end.bind(response);
     let logged = false;
     response.end = function(...args) {
@@ -455,7 +542,15 @@ export function createApp(config = loadConfig(), options = {}) {
         logged = true;
         const ms = Date.now() - startMs;
         recordMetric(response.statusCode, ms);
-        log.info(`[${request.method}] ${url.pathname} ${response.statusCode} (${ms}ms, ${clientIp}, ${requestId})`);
+        const bodyArg = args[0];
+        const sizeBytes = bodyArg instanceof Buffer ? bodyArg.length
+          : (typeof bodyArg === 'string' ? Buffer.byteLength(bodyArg) : 0);
+        const logLine = `[${request.method}] ${url.pathname} ${response.statusCode} (${ms}ms, ${sizeBytes}B, ${clientIp}, ${requestId})`;
+        if (ms > SLOW_REQUEST_THRESHOLD_MS) {
+          log.warn(`[SLOW] ${logLine}`);
+        } else {
+          log.info(logLine);
+        }
       }
       return originalEnd(...args);
     };
@@ -474,6 +569,15 @@ export function createApp(config = loadConfig(), options = {}) {
       log.warn(`[RATE] rate limited (${clientIp}) ${request.method} ${url.pathname}`);
       await sendJson(request, response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
       return;
+    }
+
+    // Admin IP whitelist — block non-whitelisted IPs from admin routes
+    if (adminIpWhitelist && url.pathname.startsWith('/api/admin/')) {
+      if (!isAdminIpAllowed(clientIp)) {
+        log.warn(`[IP-BLOCK] admin access denied: ${clientIp} → ${url.pathname}`);
+        await sendJson(request, response, 403, { error: '접근이 허용되지 않은 IP입니다.' });
+        return;
+      }
     }
 
     try {
@@ -529,6 +633,40 @@ export function createApp(config = loadConfig(), options = {}) {
           avgResponseMs,
           p99ResponseMs,
           sampleSize: times.length
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/status') {
+        if (!checkAuth(request)) {
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
+          return;
+        }
+        const mem = process.memoryUsage();
+        let dbSizeBytes = 0;
+        try {
+          const dbStat = await stat(config.dbFile);
+          dbSizeBytes = dbStat.size;
+        } catch { /* DB file may not exist in fresh envs */ }
+        await sendJson(request, response, 200, {
+          status: 'ok',
+          uptime: Math.floor(process.uptime()),
+          startedAt: SERVER_STARTED_AT,
+          version: PKG_VERSION,
+          db: {
+            sizeBytes: dbSizeBytes,
+            sizeMb: Math.round(dbSizeBytes / 1024 / 1024 * 10) / 10
+          },
+          activeConnections,
+          memory: {
+            rssMb: Math.round(mem.rss / 1024 / 1024),
+            heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+            heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024)
+          },
+          metrics: {
+            requests: metrics.requests,
+            errors: metrics.errors
+          }
         });
         return;
       }
@@ -894,7 +1032,7 @@ ${researcherRows}
           }
         });
 
-        // Fire-and-forget webhook notification
+        // Fire-and-forget webhook notification (with retry)
         (async () => {
           try {
             const [webhookUrl, webhookEvents] = await Promise.all([
@@ -905,21 +1043,17 @@ ${researcherRows}
             const events = webhookEvents || ['new_submission', 'daily_summary'];
             if (!events.includes('new_submission')) return;
             const fetchFn = options.fetchImpl || fetch;
-            await fetchFn(webhookUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                event: 'new_submission',
-                data: {
-                  researcher: payload.researcher.name,
-                  store: payload.survey.storeName,
-                  region: payload.survey.region,
-                  priceCount: payload.prices.length,
-                  timestamp: new Date().toISOString()
-                }
-              })
-            });
-          } catch { /* fire-and-forget */ }
+            await sendWebhookWithRetry(webhookUrl, {
+              event: 'new_submission',
+              data: {
+                researcher: payload.researcher.name,
+                store: payload.survey.storeName,
+                region: payload.survey.region,
+                priceCount: payload.prices.length,
+                timestamp: new Date().toISOString()
+              }
+            }, fetchFn);
+          } catch { /* ignored */ }
         })();
 
         await sendJson(request, response, 201, submission);
@@ -1045,6 +1179,12 @@ ${researcherRows}
     }
   });
 
+  // Track open connections for /api/status
+  server.on('connection', (socket) => {
+    activeConnections++;
+    socket.once('close', () => { activeConnections--; });
+  });
+
   server._store = store;
   return server;
 }
@@ -1058,10 +1198,15 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   server._store.init().then(async () => {
     await server._store.getSubmissionCounts();
     log.info('[DB] integrity check passed');
+    // Initial backup after DB is confirmed healthy
+    await backupDatabase(config.dbFile);
   }).catch((err) => {
     log.error('[DB] integrity check failed:', err.message);
     process.exit(1);
   });
+
+  // Periodic DB backup every 24h
+  setInterval(() => backupDatabase(config.dbFile), BACKUP_INTERVAL_MS).unref();
 
   server.listen(config.port, host, () => {
     const sheetsStatus = config.googleSheets?.enabled ? '✓ 활성' : '✗ 비활성';
