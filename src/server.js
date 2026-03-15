@@ -1426,10 +1426,11 @@ ${researcherRows}
         const dynamicConfig = { ...config, areas: activeAreas };
         const payload = validateSubmission(body, dynamicConfig);
 
-        // Duplicate detection: same researcher + store + today
+        // Fetch existing submissions once — reuse for both duplicate detection and
+        // area submission counts to avoid a second DB round-trip.
         const today = new Date().toISOString().slice(0, 10);
-        const existingForDuplicate = await store.listSubmissions();
-        const duplicateEntry = existingForDuplicate.find((s) =>
+        const existingSubmissions = await store.listSubmissions();
+        const duplicateEntry = existingSubmissions.find((s) =>
           s.researcher?.name === payload.researcher.name &&
           s.survey?.storeName === payload.survey.storeName &&
           s.createdAt?.slice(0, 10) === today
@@ -1438,7 +1439,12 @@ ${researcherRows}
           log.warn(`[DUPLICATE] ${payload.researcher.name} @ ${payload.survey.storeName} already submitted today (${duplicateEntry.id})`);
         }
 
-        const submissionCounts = await store.getSubmissionCounts();
+        // Derive submission counts from the already-fetched list (saves a DB round-trip)
+        const submissionCounts = existingSubmissions.reduce((acc, s) => {
+          const area = s.assignment?.currentArea;
+          if (area) acc[area] = (acc[area] || 0) + 1;
+          return acc;
+        }, {});
         const [residenceCoord, surveyCoord, areaCoords] = await Promise.all([
           geocoder.tryGeocode(payload.researcher.residenceArea),
           geocoder.tryGeocode(payload.survey.region),

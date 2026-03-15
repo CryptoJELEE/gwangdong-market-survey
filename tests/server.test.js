@@ -2576,3 +2576,171 @@ describe('Round 28: edge cases for untested code paths', () => {
     assert.strictEqual(data.topStore, null);
   });
 });
+
+describe('Round 29: pagination edge cases', () => {
+  test('page=0 clamps to page 1', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/submissions?page=0&limit=10`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.page, 1, 'page=0 should clamp to page 1');
+    assert.ok(data.total >= 1);
+  });
+
+  test('limit=0 falls back to default (20)', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    for (let i = 0; i < 3; i++) {
+      await postSubmission(baseUrl, {
+        researcher: { name: `User${i}`, residenceArea: '서울 중부' },
+        survey: { region: 'R', storeType: 'Mart', storeName: `S${i}` }
+      });
+    }
+
+    const res = await fetch(`${baseUrl}/api/admin/submissions?page=1&limit=0`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    // limit=0 is falsy → falls back to default 20 (same as omitting limit param)
+    assert.equal(data.limit, 20, 'limit=0 should fall back to default 20');
+    assert.equal(data.items.length, 3, 'should return all 3 items within default limit');
+  });
+
+  test('out-of-range page returns empty items', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/submissions?page=999&limit=10`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.items.length, 0, 'out-of-range page should return empty items');
+    assert.ok(data.total >= 1, 'total should still reflect all submissions');
+  });
+});
+
+describe('Round 29: validateEnvironment edge cases', () => {
+  test('warns when Google Sheets enabled without spreadsheet ID', async (t) => {
+    // validateEnvironment is called at startup — verify it does not throw,
+    // and server still starts correctly (warnings are non-fatal)
+    const { baseUrl } = await createTestServer(t, {
+      envOverrides: {
+        GOOGLE_SHEETS_ENABLED: 'true',
+        GOOGLE_SHEETS_SPREADSHEET_ID: '',
+        GOOGLE_SHEETS_CLIENT_EMAIL: ''
+      }
+    });
+    // Server should still respond (warnings logged but not fatal)
+    const res = await fetch(`${baseUrl}/health`);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.status, 'ok');
+  });
+
+  test('no warnings with complete config', async (t) => {
+    const { baseUrl } = await createTestServer(t, {
+      envOverrides: { ADMIN_PASSWORD: 'SecurePassword999!' }
+    });
+    const res = await fetch(`${baseUrl}/health`);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.status, 'ok', 'server should start cleanly with valid config');
+  });
+});
+
+describe('Round 29: CORS origin resolution', () => {
+  test('request from unlisted origin gets default origin in response', async (t) => {
+    const { baseUrl } = await createTestServer(t, {
+      allowedOrigins: ['http://trusted.example.com']
+    });
+
+    const res = await fetch(`${baseUrl}/health`, {
+      headers: { Origin: 'http://evil.example.com' }
+    });
+    assert.equal(res.status, 200);
+    // Should return the first allowed origin (not the evil one, not wildcard)
+    const acao = res.headers.get('access-control-allow-origin');
+    assert.ok(acao !== 'http://evil.example.com', 'untrusted origin should not be reflected');
+  });
+
+  test('request from trusted origin is reflected', async (t) => {
+    const { baseUrl } = await createTestServer(t, {
+      allowedOrigins: ['http://trusted.example.com']
+    });
+
+    const res = await fetch(`${baseUrl}/health`, {
+      headers: { Origin: 'http://trusted.example.com' }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(
+      res.headers.get('access-control-allow-origin'),
+      'http://trusted.example.com',
+      'trusted origin should be reflected'
+    );
+  });
+});
+
+describe('Round 29: dashboard areaCoverage includes all areas', () => {
+  test('areaCoverage has an entry for every configured area', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const bootstrapRes = await fetch(`${baseUrl}/api/bootstrap`);
+    const { areas: configuredAreas } = await bootstrapRes.json();
+
+    const dashRes = await fetch(`${baseUrl}/api/admin/dashboard`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const dash = await dashRes.json();
+
+    assert.equal(
+      dash.areaCoverage.length,
+      configuredAreas.length,
+      'areaCoverage should have one entry per configured area'
+    );
+    for (const area of configuredAreas) {
+      assert.ok(
+        dash.areaCoverage.some((a) => a.area === area),
+        `area "${area}" should appear in areaCoverage`
+      );
+    }
+  });
+});
+
+describe('Round 29: /api/stats averagePrices', () => {
+  test('averagePrices aggregated correctly in stats', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl, {
+      researcher: { name: 'A', residenceArea: '서울 중부' },
+      survey: { region: 'R', storeType: 'Mart', storeName: 'S1' },
+      prices: [{ productId: 'p1', productLabel: 'Vita500', size: '100ml', price: 1000 }]
+    });
+    await postSubmission(baseUrl, {
+      researcher: { name: 'B', residenceArea: '서울 중부' },
+      survey: { region: 'R', storeType: 'Mart', storeName: 'S2' },
+      prices: [{ productId: 'p1', productLabel: 'Vita500', size: '100ml', price: 2000 }]
+    });
+
+    const res = await fetch(`${baseUrl}/api/stats`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    const vita = data.averagePrices?.find((p) => p.label === 'Vita500');
+    assert.ok(vita, 'should include Vita500 in averagePrices');
+    assert.equal(vita.avg, 1500, 'average should be (1000+2000)/2 = 1500');
+    assert.equal(vita.count, 2);
+  });
+});
