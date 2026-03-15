@@ -151,7 +151,23 @@ let lastFilteredCount = 0;
 let bulkSelectMode = false;
 const selectedSubmissionIds = new Set();
 
+function debounce(fn, delay) {
+  let timer;
+  return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
+}
+
 async function loadAdminData() {
+  let loadingBanner = document.querySelector('#admin-loading-banner');
+  if (!loadingBanner) {
+    loadingBanner = document.createElement('div');
+    loadingBanner.id = 'admin-loading-banner';
+    loadingBanner.setAttribute('role', 'status');
+    loadingBanner.setAttribute('aria-live', 'polite');
+    loadingBanner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9990;background:var(--primary,#0066cc);color:#fff;text-align:center;padding:6px;font-size:.85rem;transition:opacity .3s;';
+    loadingBanner.textContent = '⏳ 데이터 불러오는 중...';
+    document.body.prepend(loadingBanner);
+  }
+  loadingBanner.style.opacity = '1';
   try {
     const [bootstrapRes, submissionsRes] = await Promise.all([
       fetch('/api/bootstrap'),
@@ -161,6 +177,7 @@ async function loadAdminData() {
     if (!submissionsRes.ok) {
       clearToken();
       showLogin();
+      loadingBanner.remove();
       return;
     }
     const submissions = await submissionsRes.json();
@@ -170,6 +187,9 @@ async function loadAdminData() {
     startPolling();
   } catch {
     showToast('데이터를 불러올 수 없어요.', 'error');
+  } finally {
+    loadingBanner.style.opacity = '0';
+    setTimeout(() => loadingBanner.remove(), 300);
   }
 }
 
@@ -410,12 +430,13 @@ function renderAdmin() {
     selectedSubmissionIds.clear();
     renderSubmissionList(currentFilters.date, currentFilters.researcher, currentFilters.area, currentFilters.store, 1);
   };
+  const doFilterDebounced = debounce(doFilter, 250);
   filterDate.addEventListener('change', doFilter);
   filterResearcher.addEventListener('change', doFilter);
   filterArea.addEventListener('change', doFilter);
   filterStore.addEventListener('input', () => {
     filterStoreClear.style.display = filterStore.value ? 'block' : 'none';
-    doFilter();
+    doFilterDebounced();
   });
   filterStoreClear.addEventListener('click', () => {
     filterStore.value = '';
@@ -1579,5 +1600,35 @@ document.querySelector('#change-password-btn').addEventListener('click', async (
   }
 });
 
+// ── Dark mode (admin) ──
+function initAdminDarkMode() {
+  const saved = localStorage.getItem('kwangdong_theme');
+  if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+
+  const btn = document.createElement('button');
+  btn.id = 'admin-dark-mode-toggle';
+  btn.setAttribute('aria-label', '다크 모드 전환');
+  btn.setAttribute('aria-pressed', saved === 'dark' ? 'true' : 'false');
+  btn.style.cssText = 'position:fixed;bottom:24px;right:16px;z-index:900;width:40px;height:40px;border-radius:50%;border:1px solid var(--border,#ddd);background:var(--bg-card,#fff);color:var(--text,#222);font-size:1.1rem;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center;';
+  btn.textContent = saved === 'dark' ? '☀️' : '🌙';
+  document.body.appendChild(btn);
+
+  btn.addEventListener('click', () => {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    if (isDark) {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('kwangdong_theme', 'light');
+      btn.textContent = '🌙';
+      btn.setAttribute('aria-pressed', 'false');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      localStorage.setItem('kwangdong_theme', 'dark');
+      btn.textContent = '☀️';
+      btn.setAttribute('aria-pressed', 'true');
+    }
+  });
+}
+
 // ── Init ──
+initAdminDarkMode();
 init();

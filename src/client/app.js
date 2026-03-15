@@ -155,6 +155,28 @@ function renderCurrentStep(config) {
   else if (state.currentStep === 2) renderStep2(config);
   else if (state.currentStep === 3) renderStep3(config);
   renderStepIndicator();
+  renderProgressBar();
+}
+
+// ── Form progress bar ──
+function renderProgressBar() {
+  if (surveyForm.classList.contains('hidden')) return;
+  let bar = document.querySelector('#form-progress-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'form-progress-bar';
+    bar.style.cssText = 'height:4px;background:var(--border,#eee);margin:4px 0 0;border-radius:2px;overflow:hidden;';
+    bar.innerHTML = '<div id="form-progress-fill" style="height:100%;background:var(--primary,#0066cc);border-radius:2px;transition:width .4s ease;width:0%;"></div>';
+    stepIndicator.parentNode.insertBefore(bar, stepIndicator.nextSibling);
+  }
+  const pct = Math.round((state.currentStep / 3) * 100);
+  const fill = bar.querySelector('#form-progress-fill');
+  if (fill) fill.style.width = pct + '%';
+  bar.setAttribute('role', 'progressbar');
+  bar.setAttribute('aria-valuenow', pct);
+  bar.setAttribute('aria-valuemin', '0');
+  bar.setAttribute('aria-valuemax', '100');
+  bar.setAttribute('aria-label', `폼 진행률 ${pct}%`);
 }
 
 function renderStep1(config) {
@@ -589,8 +611,8 @@ function showPriceReminder(config) {
   const overlay = document.createElement('div');
   overlay.className = 'price-reminder-overlay';
   overlay.innerHTML = `
-    <div class="price-reminder-dialog">
-      <p>가격을 입력하지 않았어요. 괜찮으시면 다음으로 넘어갈게요 👌</p>
+    <div class="price-reminder-dialog" role="dialog" aria-modal="true" aria-labelledby="reminder-title">
+      <p id="reminder-title">가격을 입력하지 않았어요. 괜찮으시면 다음으로 넘어갈게요 👌</p>
       <div class="price-reminder-actions">
         <button type="button" class="btn btn-secondary" id="reminder-skip">네, 넘어갈게요</button>
         <button type="button" class="btn btn-primary" id="reminder-input">가격 입력할게요</button>
@@ -598,14 +620,17 @@ function showPriceReminder(config) {
     </div>
   `;
   document.body.appendChild(overlay);
+  const releaseTrap = trapFocus(overlay.querySelector('.price-reminder-dialog'));
 
   overlay.querySelector('#reminder-skip').addEventListener('click', () => {
+    releaseTrap();
     overlay.remove();
     state.currentStep = 3;
     renderCurrentStep(config);
   });
 
   overlay.querySelector('#reminder-input').addEventListener('click', () => {
+    releaseTrap();
     overlay.remove();
     const firstAccordion = formStepContainer.querySelector('.product-accordion');
     if (firstAccordion) {
@@ -1634,6 +1659,25 @@ function escapeHtml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function trapFocus(container) {
+  const selectors = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+  const focusable = [...container.querySelectorAll(selectors)].filter(el => !el.disabled);
+  if (!focusable.length) return () => {};
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  first.focus();
+  function handler(e) {
+    if (e.key !== 'Tab') return;
+    if (e.shiftKey) {
+      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+    } else {
+      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  }
+  container.addEventListener('keydown', handler);
+  return () => container.removeEventListener('keydown', handler);
+}
+
 function animateCount(el, target, suffix = '', duration = 600) {
   if (!el || isNaN(target) || target === 0) { el.textContent = target + suffix; return; }
   const startTime = performance.now();
@@ -1668,8 +1712,14 @@ function showShortcutsPanel() {
     </div>
   `;
   document.body.appendChild(overlay);
-  overlay.querySelector('#shortcuts-close').addEventListener('click', () => overlay.remove());
-  overlay.querySelector('#shortcuts-close').focus();
+  const dialog = overlay.querySelector('.price-reminder-dialog');
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('aria-modal', 'true');
+  dialog.setAttribute('aria-label', '키보드 단축키');
+  const releaseTrap = trapFocus(dialog);
+  const closePanel = () => { releaseTrap(); overlay.remove(); };
+  overlay.querySelector('#shortcuts-close').addEventListener('click', closePanel);
+  overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closePanel(); } });
 }
 
 async function fileToDataUrl(file) {
@@ -2022,13 +2072,99 @@ async function flushPendingSubmissions() {
   }
 }
 
-window.addEventListener('online', () => {
-  const pending = getPendingSubmissions();
-  if (pending.length > 0) {
-    showToast(`📶 온라인 복구! 오프라인 기록 ${pending.length}건 전송 중...`, 'info');
+// ── Error boundary ──
+function showErrorBanner(msg) {
+  let banner = document.querySelector('#global-error-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'global-error-banner';
+    banner.setAttribute('role', 'alert');
+    banner.setAttribute('aria-live', 'assertive');
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#c0392b;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;font-size:.9rem;gap:12px;';
+    document.body.prepend(banner);
   }
-  flushPendingSubmissions();
+  banner.innerHTML = `
+    <span>⚠️ 오류 발생: ${escapeHtml(msg)}</span>
+    <span style="display:flex;gap:8px;">
+      <button type="button" onclick="location.reload()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.85rem;">새로고침</button>
+      <button type="button" id="error-banner-close" aria-label="오류 닫기" style="background:none;border:none;color:#fff;font-size:1.1rem;cursor:pointer;line-height:1;">×</button>
+    </span>`;
+  banner.querySelector('#error-banner-close').addEventListener('click', () => banner.remove());
+}
+
+window.onerror = (msg, src, line, col, err) => {
+  showErrorBanner((err && err.message) || String(msg));
+  return false;
+};
+window.addEventListener('unhandledrejection', (e) => {
+  showErrorBanner((e.reason && e.reason.message) || String(e.reason));
 });
+
+// ── Network monitor ──
+function initNetworkMonitor() {
+  let banner = null;
+  function showOfflineBanner() {
+    if (banner) return;
+    banner = document.createElement('div');
+    banner.id = 'network-status-banner';
+    banner.setAttribute('role', 'status');
+    banner.setAttribute('aria-live', 'polite');
+    banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9998;background:#e67e22;color:#fff;text-align:center;padding:8px 16px;font-size:.88rem;';
+    banner.textContent = '📵 오프라인 상태입니다. 입력 내용은 자동 저장됩니다.';
+    document.body.appendChild(banner);
+  }
+  function hideOfflineBanner() {
+    if (banner) { banner.remove(); banner = null; }
+    const pending = getPendingSubmissions();
+    if (pending.length > 0) {
+      showToast(`📶 온라인 복구! 오프라인 기록 ${pending.length}건 전송 중...`, 'info');
+    }
+    flushPendingSubmissions();
+  }
+  if (!navigator.onLine) showOfflineBanner();
+  window.addEventListener('online', hideOfflineBanner);
+  window.addEventListener('offline', showOfflineBanner);
+}
+
+// ── Dark mode ──
+function initDarkMode() {
+  const saved = localStorage.getItem('kwangdong_theme');
+  if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+
+  const btn = document.createElement('button');
+  btn.id = 'dark-mode-toggle';
+  btn.setAttribute('aria-label', '다크 모드 전환');
+  btn.setAttribute('aria-pressed', saved === 'dark' ? 'true' : 'false');
+  btn.style.cssText = 'position:fixed;bottom:72px;right:16px;z-index:900;width:40px;height:40px;border-radius:50%;border:1px solid var(--border,#ddd);background:var(--bg-card,#fff);color:var(--text,#222);font-size:1.1rem;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center;';
+  btn.textContent = saved === 'dark' ? '☀️' : '🌙';
+  document.body.appendChild(btn);
+
+  btn.addEventListener('click', () => {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    if (isDark) {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('kwangdong_theme', 'light');
+      btn.textContent = '🌙';
+      btn.setAttribute('aria-pressed', 'false');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      localStorage.setItem('kwangdong_theme', 'dark');
+      btn.textContent = '☀️';
+      btn.setAttribute('aria-pressed', 'true');
+    }
+  });
+}
+
+// ── Skip-to-content ──
+function initSkipLink() {
+  const link = document.createElement('a');
+  link.href = '#app';
+  link.textContent = '본문으로 바로 가기';
+  link.style.cssText = 'position:absolute;top:-40px;left:8px;z-index:100000;background:var(--primary,#0066cc);color:#fff;padding:8px 12px;border-radius:0 0 4px 4px;font-size:.9rem;transition:top .15s;';
+  link.addEventListener('focus', () => { link.style.top = '0'; });
+  link.addEventListener('blur', () => { link.style.top = '-40px'; });
+  document.body.insertBefore(link, document.body.firstChild);
+}
 
 // ── Page unload warning ──
 window.addEventListener('beforeunload', (e) => {
@@ -2115,6 +2251,7 @@ function initKeyboardNav() {
 }
 
 // ── Init ──
+initSkipLink();
 initGps();
 loadBootstrap();
 initOnboarding();
@@ -2122,3 +2259,5 @@ initHelpSheet();
 startDashboardPolling();
 initScrollToTop();
 initKeyboardNav();
+initNetworkMonitor();
+initDarkMode();
