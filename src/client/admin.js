@@ -455,7 +455,13 @@ function renderAdmin() {
       <option value="today">오늘</option>
       <option value="7days">최근 7일</option>
       <option value="30days">최근 30일</option>
+      <option value="custom">날짜 직접 선택</option>
     </select>
+    <span id="filter-date-range" style="display:none;align-items:center;gap:4px;">
+      <input type="date" id="filter-from" aria-label="시작일" style="font-size:.85rem;padding:4px 6px;" />
+      <span>~</span>
+      <input type="date" id="filter-to" aria-label="종료일" style="font-size:.85rem;padding:4px 6px;" />
+    </span>
     <select id="filter-researcher">
       <option value="">전체 조사자</option>
       ${researcherNames.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}
@@ -470,18 +476,28 @@ function renderAdmin() {
     </div>
   `;
   const filterDate = adminFilter.querySelector('#filter-date');
+  const filterDateRange = adminFilter.querySelector('#filter-date-range');
+  const filterFrom = adminFilter.querySelector('#filter-from');
+  const filterTo = adminFilter.querySelector('#filter-to');
   const filterResearcher = adminFilter.querySelector('#filter-researcher');
   const filterArea = adminFilter.querySelector('#filter-area');
   const filterStore = adminFilter.querySelector('#filter-store');
   const filterStoreClear = adminFilter.querySelector('#filter-store-clear');
   const doFilter = () => {
-    currentFilters = { date: filterDate.value, researcher: filterResearcher.value, area: filterArea.value, store: filterStore.value };
+    const dateVal = filterDate.value === 'custom'
+      ? { custom: true, from: filterFrom.value, to: filterTo.value }
+      : filterDate.value;
+    currentFilters = { date: dateVal, researcher: filterResearcher.value, area: filterArea.value, store: filterStore.value };
     submissionPage = 1;
     selectedSubmissionIds.clear();
     renderSubmissionList(currentFilters.date, currentFilters.researcher, currentFilters.area, currentFilters.store, 1);
   };
+  filterDate.addEventListener('change', () => {
+    filterDateRange.style.display = filterDate.value === 'custom' ? 'inline-flex' : 'none';
+  });
   const doFilterDebounced = debounce(doFilter, 250);
-  filterDate.addEventListener('change', doFilter);
+  filterFrom.addEventListener('change', doFilter);
+  filterTo.addEventListener('change', doFilter);
   filterResearcher.addEventListener('change', doFilter);
   filterArea.addEventListener('change', doFilter);
   filterStore.addEventListener('input', () => {
@@ -502,6 +518,75 @@ function renderAdmin() {
   renderWeekCompare();
   bindResearcherDetails();
   renderPriceTrendDropdowns();
+  renderProgressDashboard(submissions, areas);
+}
+
+// ── Survey progress dashboard ──
+function renderProgressDashboard(submissions, areas) {
+  let container = document.querySelector('#progress-dashboard');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'progress-dashboard';
+    container.style.cssText = 'margin-top:16px;';
+    const researcherStats = document.querySelector('#researcher-stats');
+    if (researcherStats) researcherStats.insertAdjacentElement('beforebegin', container);
+  }
+
+  const todayStr = new Date().toDateString();
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+  // Per-area: count this week
+  const areaCounts = {};
+  submissions.forEach((s) => {
+    const area = s.assignment?.currentArea;
+    if (!area) return;
+    if (!areaCounts[area]) areaCounts[area] = { total: 0, week: 0, today: 0 };
+    areaCounts[area].total++;
+    if (new Date(s.createdAt).getTime() >= weekAgo) areaCounts[area].week++;
+    if (new Date(s.createdAt).toDateString() === todayStr) areaCounts[area].today++;
+  });
+
+  // Target: 5 submissions per area per week (configurable default)
+  const TARGET_PER_AREA = 5;
+  const sortedAreas = [...areas].sort((a, b) => (areaCounts[b]?.week || 0) - (areaCounts[a]?.week || 0));
+  const totalWeek = submissions.filter((s) => new Date(s.createdAt).getTime() >= weekAgo).length;
+  const totalTarget = areas.length * TARGET_PER_AREA;
+  const overallPct = Math.min(100, Math.round((totalWeek / totalTarget) * 100));
+
+  container.innerHTML = `
+    <div class="card stack" style="padding:14px;">
+      <h3 style="margin:0 0 10px;font-size:.95rem;">📈 조사 진행 현황 <span style="font-size:.75rem;font-weight:normal;color:var(--text-muted);">이번주 목표 ${totalTarget}건</span></h3>
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:.82rem;margin-bottom:4px;">
+          <span>전체 진행률</span>
+          <span><strong>${totalWeek}</strong>/${totalTarget}건 (${overallPct}%)</span>
+        </div>
+        <div style="height:8px;background:var(--border,#eee);border-radius:4px;overflow:hidden;">
+          <div style="height:100%;width:${overallPct}%;background:${overallPct >= 80 ? 'var(--success,#27ae60)' : overallPct >= 50 ? '#f39c12' : 'var(--primary,#0066cc)'};border-radius:4px;transition:width .5s;"></div>
+        </div>
+      </div>
+      <details>
+        <summary style="cursor:pointer;font-size:.85rem;color:var(--text-muted);">지역별 상세 보기</summary>
+        <div style="margin-top:8px;display:grid;gap:6px;">
+          ${sortedAreas.map((area) => {
+    const c = areaCounts[area] || { week: 0, today: 0 };
+    const pct = Math.min(100, Math.round((c.week / TARGET_PER_AREA) * 100));
+    const color = pct >= 100 ? 'var(--success,#27ae60)' : pct >= 60 ? '#f39c12' : 'var(--error,#e74c3c)';
+    return `
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:.8rem;margin-bottom:2px;">
+                <span>${escapeHtml(area)} ${c.today > 0 ? `<span style="color:var(--primary)">+${c.today}오늘</span>` : ''}</span>
+                <span style="color:${color};">${c.week}/${TARGET_PER_AREA}</span>
+              </div>
+              <div style="height:5px;background:var(--border,#eee);border-radius:3px;overflow:hidden;">
+                <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;"></div>
+              </div>
+            </div>`;
+  }).join('')}
+        </div>
+      </details>
+    </div>
+  `;
 }
 
 // ── Researcher detail profile ──
@@ -965,6 +1050,20 @@ function applyDateFilter(submissions, dateFilter) {
   if (!dateFilter) return submissions;
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // Custom date range object
+  if (typeof dateFilter === 'object' && dateFilter.custom) {
+    const { from, to } = dateFilter;
+    return submissions.filter((s) => {
+      const d = new Date(s.createdAt);
+      if (from && d < new Date(from)) return false;
+      if (to) {
+        const toEnd = new Date(to);
+        toEnd.setHours(23, 59, 59, 999);
+        if (d > toEnd) return false;
+      }
+      return true;
+    });
+  }
   if (dateFilter === 'today') {
     return submissions.filter((s) => new Date(s.createdAt) >= startOfToday);
   }

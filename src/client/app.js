@@ -341,8 +341,35 @@ function renderStep1(config) {
   storeDropdown.addEventListener('click', (e) => {
     const item = e.target.closest('.address-item');
     if (!item) return;
-    storeNameInput.value = item.dataset.storeName;
+    const selectedName = item.dataset.storeName;
+    storeNameInput.value = selectedName;
     storeDropdown.style.display = 'none';
+
+    // Auto-fill from most recent past submission of this store
+    const subs = state.bootstrap?.submissions || [];
+    const pastSub = [...subs]
+      .filter((s) => s.survey?.storeName === selectedName)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+    if (pastSub) {
+      // Fill store type
+      const storeTypeBtn = formStepContainer.querySelector(`.store-type-btn[data-label="${pastSub.survey.storeType}"]`);
+      if (storeTypeBtn) {
+        formStepContainer.querySelectorAll('.store-type-btn').forEach((b) => { b.classList.remove('is-active'); b.setAttribute('aria-pressed', 'false'); });
+        storeTypeBtn.classList.add('is-active');
+        storeTypeBtn.setAttribute('aria-pressed', 'true');
+        state.selectedStoreType = pastSub.survey.storeType;
+        formStepContainer.querySelector('[name="storeType"]').value = pastSub.survey.storeType;
+      }
+      // Fill POS count
+      if (pastSub.survey.posCount) {
+        formStepContainer.querySelector('#pos-input').value = pastSub.survey.posCount;
+        formStepContainer.querySelector('#pos-display').textContent = pastSub.survey.posCount;
+      }
+      // Fill display location
+      const dispInput = formStepContainer.querySelector('[name="displayLocation"]');
+      if (dispInput && pastSub.survey.displayLocation) dispInput.value = pastSub.survey.displayLocation;
+      showToast(`📋 ${selectedName} 이전 방문 정보를 불러왔어요!`, 'info');
+    }
   });
 
   // Favorite store chips
@@ -1610,6 +1637,87 @@ async function renderTodayHighlight() {
   }
 }
 
+// ── SVG sparkline ──
+function sparkline(values, w = 80, h = 28) {
+  if (!values || values.length < 2) return '';
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = Math.round((i / (values.length - 1)) * (w - 4)) + 2;
+    const y = Math.round(((max - v) / range) * (h - 4)) + 2;
+    return `${x},${y}`;
+  });
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="vertical-align:middle;" aria-hidden="true">
+    <polyline fill="none" stroke="var(--primary,#0066cc)" stroke-width="1.5" stroke-linejoin="round" points="${pts.join(' ')}" />
+    <circle cx="${pts[pts.length - 1].split(',')[0]}" cy="${pts[pts.length - 1].split(',')[1]}" r="2.5" fill="var(--primary,#0066cc)" />
+  </svg>`;
+}
+
+// ── My weekly stats card ──
+function renderMyStatCard(submissions) {
+  let container = document.querySelector('#my-stat-card');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'my-stat-card';
+    container.style.marginTop = '12px';
+    const quickStats = document.querySelector('#quick-stats');
+    if (quickStats) quickStats.parentNode.insertBefore(container, quickStats.nextSibling);
+  }
+
+  const myName = loadLocal('researcherName');
+  if (!myName) { container.innerHTML = ''; return; }
+
+  const mySubs = getMySubmissions(submissions);
+  const now = Date.now();
+  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const weekSubs = mySubs.filter((s) => new Date(s.createdAt).getTime() >= weekAgo);
+  const avgScore = mySubs.length > 0
+    ? Math.round(mySubs.reduce((sum, s) => sum + (s.completenessScore ?? 0), 0) / mySubs.length)
+    : 0;
+  const streakDays = getStreakData().days || 0;
+
+  // Price trend sparkline for most recent ion-kick prices
+  const ionSubs = [...mySubs]
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .filter((s) => (s.prices || []).some((p) => p.productId === 'ion-kick' || p.productLabel?.includes('이온킥')));
+  const ionPrices = ionSubs
+    .map((s) => {
+      const p = (s.prices || []).find((p) => p.productId === 'ion-kick' || p.productLabel?.includes('이온킥'));
+      return p ? Number(String(p.price).replace(/[^0-9]/g, '')) : null;
+    })
+    .filter(Boolean)
+    .slice(-10);
+  const sparkHtml = ionPrices.length >= 2
+    ? `<div style="margin-top:6px;font-size:.78rem;color:var(--text-muted);">내 이온킥 가격 추이 ${sparkline(ionPrices)}</div>`
+    : '';
+
+  container.innerHTML = `
+    <div class="card" style="padding:14px;">
+      <h3 style="margin:0 0 10px;font-size:.95rem;">📊 내 성과 요약 <span style="font-size:.75rem;font-weight:normal;color:var(--text-muted);">${escapeHtml(myName)}</span></h3>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div style="text-align:center;">
+          <div style="font-size:1.3rem;font-weight:700;color:var(--primary,#0066cc);">${weekSubs.length}</div>
+          <div style="font-size:.75rem;color:var(--text-muted);">이번주 기록</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:1.3rem;font-weight:700;color:${avgScore >= 80 ? 'var(--success,#27ae60)' : avgScore >= 50 ? '#f39c12' : 'var(--error,#e74c3c)'};">${avgScore}점</div>
+          <div style="font-size:.75rem;color:var(--text-muted);">평균 완료도</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:1.3rem;font-weight:700;color:var(--gold,#f39c12);">${streakDays > 0 ? '🔥' : ''}${streakDays}일</div>
+          <div style="font-size:.75rem;color:var(--text-muted);">연속 기록</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:1.3rem;font-weight:700;">${mySubs.length}</div>
+          <div style="font-size:.75rem;color:var(--text-muted);">총 기록</div>
+        </div>
+      </div>
+      ${sparkHtml}
+    </div>
+  `;
+}
+
 // ── Dashboard rendering ──
 function renderDashboard(config) {
   const submissions = config.submissions || [];
@@ -1659,6 +1767,9 @@ function renderDashboard(config) {
       animateCount(el, Number(el.dataset.count), el.dataset.suffix || '');
     });
   }
+
+  // 2. My stat card
+  renderMyStatCard(submissions);
 
   // 2.5 Today's Highlight Card + Streak
   renderTodayHighlight();
