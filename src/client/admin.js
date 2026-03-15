@@ -153,6 +153,20 @@ async function init() {
       const activePanel = document.querySelector(`#tab-${tab.dataset.tab}`);
       if (activePanel) activePanel.style.display = 'block';
     });
+    tab.addEventListener('keydown', (e) => {
+      const idx = tabs.indexOf(tab);
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const next = tabs[(idx + 1) % tabs.length];
+        next.focus();
+        next.click();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
+        prev.focus();
+        prev.click();
+      }
+    });
   });
 })();
 

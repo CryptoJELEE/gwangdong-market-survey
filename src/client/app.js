@@ -192,17 +192,17 @@ function renderStep1(config) {
   formStepContainer.innerHTML = `
     <div class="card stack">
       <div class="field">
-        <label>이름 (누구세요? 😊)</label>
-        <input name="researcherName" required aria-required="true" value="${escapeHtml(savedName)}" placeholder="이름을 입력하세요" autocomplete="name" />
+        <label for="researcher-name-input">이름 (누구세요? 😊)</label>
+        <input id="researcher-name-input" name="researcherName" required aria-required="true" value="${escapeHtml(savedName)}" placeholder="이름을 입력하세요" autocomplete="name" />
       </div>
       <div class="field">
-        <label>거주 지역</label>
-        <select name="residenceArea">
+        <label for="residence-area-select">거주 지역</label>
+        <select id="residence-area-select" name="residenceArea">
           ${config.areas.map((area) => `<option value="${area}" ${area === savedResidence ? 'selected' : ''}>${area}</option>`).join('')}
         </select>
       </div>
       <div class="field">
-        <label>오늘 어디 다녀오셨어요?</label>
+        <label for="region-input">오늘 어디 다녀오셨어요?</label>
         <button type="button" class="gps-btn" id="gps-fill-btn">
           \u{1F4CD} 현재 위치 사용
         </button>
@@ -226,24 +226,24 @@ function renderStep1(config) {
         </div>
       </div>` : ''}
       <div class="field">
-        <label>매장 이름</label>
+        <label for="store-name-input">매장 이름</label>
         <div class="address-search-wrap">
           <input name="storeName" required aria-required="true" placeholder="예: GS25 역삼점, 이마트 강남점" value="${escapeHtml(savedStoreName)}" id="store-name-input" autocomplete="off" />
           <ul class="address-dropdown" id="store-name-dropdown"></ul>
         </div>
       </div>
       <div class="field">
-        <label>POS 대수</label>
+        <label for="pos-display">POS 대수</label>
         <div class="stepper">
-          <button type="button" id="pos-dec">&minus;</button>
-          <span class="stepper-value" id="pos-display">${escapeHtml(savedPosCount)}</span>
-          <button type="button" id="pos-inc">+</button>
+          <button type="button" id="pos-dec" aria-label="POS 감소">&minus;</button>
+          <span class="stepper-value" id="pos-display" aria-live="polite">${escapeHtml(savedPosCount)}</span>
+          <button type="button" id="pos-inc" aria-label="POS 증가">+</button>
         </div>
         <input type="hidden" name="posCount" value="${escapeHtml(savedPosCount)}" id="pos-input" />
       </div>
       <div class="field">
-        <label>어디에 진열돼 있었어요?</label>
-        <input name="displayLocation" placeholder="예: 계산대 앞 / 냉장고 / 매대" value="${escapeHtml(savedDisplayLocation)}" />
+        <label for="display-location-input">어디에 진열돼 있었어요?</label>
+        <input id="display-location-input" name="displayLocation" placeholder="예: 계산대 앞 / 냉장고 / 매대" value="${escapeHtml(savedDisplayLocation)}" />
       </div>
       <div class="form-nav">
         <button type="button" class="btn btn-primary" id="next-step1">다음 \u2192</button>
@@ -414,25 +414,7 @@ function renderStep1(config) {
       favs.splice(idx, 1);
       saveFavoriteStores(favs);
       showToast(`${fav.storeName} 즐겨찾기에서 삭제했어요`, 'info');
-      // Re-render the favorites section
-      const section = formStepContainer.querySelector('#favorite-stores-section');
-      const chipsWrap = section?.querySelector('.favorite-chips');
-      if (chipsWrap) {
-        const remaining = getFavoriteStores();
-        if (remaining.length === 0) {
-          section.remove();
-        } else {
-          chipsWrap.innerHTML = remaining.map((f, i) => `<span style="display:inline-flex;align-items:center;gap:2px;border:1px solid var(--border,#ddd);border-radius:16px;overflow:hidden;"><button type="button" class="btn btn-secondary favorite-chip" data-fav-idx="${i}" style="font-size:.85rem;padding:4px 10px;border:none;border-radius:0;background:transparent;">${escapeHtml(f.storeName)}</button><button type="button" class="fav-delete-btn" data-fav-idx="${i}" style="background:none;border:none;padding:0 8px 0 2px;cursor:pointer;color:var(--text-muted);font-size:.9rem;line-height:1;" aria-label="${escapeHtml(f.storeName)} 삭제">×</button></span>`).join('');
-          // Re-bind events for updated chips
-          chipsWrap.querySelectorAll('.fav-delete-btn').forEach((b) => b.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            const i2 = Number(b.dataset.favIdx);
-            const fs = getFavoriteStores();
-            const f2 = fs[i2];
-            if (f2) { fs.splice(i2, 1); saveFavoriteStores(fs); showToast(`${f2.storeName} 삭제`, 'info'); renderStep1(config); }
-          }));
-        }
-      }
+      renderStep1(config);
     });
   });
 
@@ -869,7 +851,7 @@ function startSubmitCountdown(config) {
     submitBtn.classList.remove('btn-submit-countdown');
     submitBtn.textContent = originalText;
     submitBtn.removeEventListener('click', cancelCountdown);
-    showToast('제출을 취소했어요', 'error');
+    showToast('제출을 취소했어요', 'info');
   }
   // Replace the click handler temporarily
   submitBtn.addEventListener('click', cancelCountdown, { once: true });
