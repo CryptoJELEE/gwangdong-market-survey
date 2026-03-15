@@ -1070,3 +1070,243 @@ test('Response body size is logged (X-Request-Id present in all responses)', asy
   assert.ok(response.headers.get('x-request-id'), 'X-Request-Id should be present');
   assert.equal(response.status, 200);
 });
+
+// ── Round 22 feature tests ───────────────────────────────────────────────────
+
+test('/api/docs returns endpoint list without auth', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/docs`);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.ok(Array.isArray(data.endpoints), 'should have endpoints array');
+  assert.ok(data.endpoints.length > 10, 'should document at least 10 endpoints');
+  assert.ok(typeof data.version === 'string', 'should include version');
+  // Every entry must have method, path, auth, description
+  for (const ep of data.endpoints) {
+    assert.ok(ep.method, `endpoint missing method: ${JSON.stringify(ep)}`);
+    assert.ok(ep.path, `endpoint missing path: ${JSON.stringify(ep)}`);
+    assert.ok(typeof ep.auth === 'boolean', `endpoint auth should be boolean: ${JSON.stringify(ep)}`);
+    assert.ok(ep.description, `endpoint missing description: ${JSON.stringify(ep)}`);
+  }
+});
+
+test('/api/stats returns aggregated data (auth required)', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  // Unauthenticated → 401
+  const unauth = await fetch(`${baseUrl}/api/stats`);
+  assert.equal(unauth.status, 401);
+
+  const loginRes = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginRes.json();
+
+  // Insert 3 submissions from 2 different researchers
+  for (const name of ['Alice', 'Alice', 'Bob']) {
+    await fetch(`${baseUrl}/api/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        researcher: { name, residenceArea: '서울 중부' },
+        survey: { region: 'TestRegion', storeType: 'Mart', storeName: `Store-${name}` },
+        prices: [{ productId: 'p1', productLabel: 'Product 1', size: '100ml', price: 1000 }]
+      })
+    });
+  }
+
+  const statsRes = await fetch(`${baseUrl}/api/stats`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(statsRes.status, 200);
+  const data = await statsRes.json();
+
+  assert.equal(data.total, 3);
+  assert.ok(Array.isArray(data.byResearcher), 'byResearcher should be array');
+  assert.ok(Array.isArray(data.byArea), 'byArea should be array');
+  assert.ok(Array.isArray(data.byDay), 'byDay should be array');
+  assert.ok(Array.isArray(data.averagePrices), 'averagePrices should be array');
+  assert.equal(data.byResearcher.length, 2, 'should have 2 researchers');
+  // Alice should be first (higher count)
+  assert.equal(data.byResearcher[0].name, 'Alice');
+  assert.equal(data.byResearcher[0].count, 2);
+});
+
+test('/api/stats filters by date range', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  const loginRes = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginRes.json();
+
+  // Insert a submission
+  await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'DateTest', residenceArea: '서울 중부' },
+      survey: { region: 'R', storeType: 'Mart', storeName: 'S' },
+      prices: []
+    })
+  });
+
+  // from=future → 0 results
+  const futureRes = await fetch(`${baseUrl}/api/stats?from=2099-01-01`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const futureData = await futureRes.json();
+  assert.equal(futureData.total, 0, 'future date filter should return 0');
+
+  // from=past → 1 result
+  const pastRes = await fetch(`${baseUrl}/api/stats?from=2020-01-01`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const pastData = await pastRes.json();
+  assert.equal(pastData.total, 1);
+});
+
+test('/api/price-outliers detects statistical outliers', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  const loginRes = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginRes.json();
+
+  // Insert 8 submissions with consistent price ~1000, then 1 clear outlier at 8000.
+  // With 8 tight samples, stdDev is small, so 8000 comfortably exceeds mean+2σ.
+  for (let i = 0; i < 8; i++) {
+    await fetch(`${baseUrl}/api/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        researcher: { name: `R${i}`, residenceArea: '서울 중부' },
+        survey: { region: 'R', storeType: 'Mart', storeName: `S${i}` },
+        prices: [{ productId: 'p1', productLabel: 'Product1', size: '100ml', price: 1000 + i }]
+      })
+    });
+  }
+  // The outlier — clearly outside mean±2σ when the normal group is tight around 1000
+  await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'Outlier', residenceArea: '서울 중부' },
+      survey: { region: 'R', storeType: 'Mart', storeName: 'OutlierStore' },
+      prices: [{ productId: 'p1', productLabel: 'Product1', size: '100ml', price: 8000 }]
+    })
+  });
+
+  const outRes = await fetch(`${baseUrl}/api/price-outliers?sigma=2`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(outRes.status, 200);
+  const data = await outRes.json();
+  assert.equal(data.sigma, 2);
+  assert.ok(data.total >= 1, 'should detect at least 1 outlier');
+  assert.ok(data.outliers[0].price === 8000, 'outlier price should be 8000');
+  assert.ok(data.outliers[0].deviation > 0, 'deviation should be positive for high outlier');
+});
+
+test('/api/admin/refresh issues a new token', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  const loginRes = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token: originalToken } = await loginRes.json();
+
+  // Refresh with original token
+  const refreshRes = await fetch(`${baseUrl}/api/admin/refresh`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${originalToken}` }
+  });
+  assert.equal(refreshRes.status, 200);
+  const { token: newToken } = await refreshRes.json();
+  assert.ok(newToken, 'should return a new token');
+  assert.notEqual(newToken, originalToken, 'new token should differ from original');
+
+  // New token should work for protected endpoint
+  const verifyRes = await fetch(`${baseUrl}/api/admin/verify`, {
+    headers: { Authorization: `Bearer ${newToken}` }
+  });
+  assert.equal(verifyRes.status, 200);
+
+  // Refresh without auth → 401
+  const unauthRes = await fetch(`${baseUrl}/api/admin/refresh`, { method: 'POST' });
+  assert.equal(unauthRes.status, 401);
+});
+
+test('Duplicate submission detection: same researcher+store+day gets duplicate flag', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  const sub1 = await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'DupResearcher', residenceArea: '서울 중부' },
+      survey: { region: 'SameRegion', storeType: 'Mart', storeName: 'SameStore' },
+      prices: []
+    })
+  });
+  assert.equal(sub1.status, 201);
+  const d1 = await sub1.json();
+  assert.ok(!d1.duplicate, 'first submission should not be marked duplicate');
+
+  // Same researcher + store → should detect duplicate
+  const sub2 = await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'DupResearcher', residenceArea: '서울 중부' },
+      survey: { region: 'SameRegion', storeType: 'Mart', storeName: 'SameStore' },
+      prices: []
+    })
+  });
+  assert.equal(sub2.status, 201, 'duplicate should still succeed (warning only)');
+  const d2 = await sub2.json();
+  assert.equal(d2.duplicate, true, 'second submission should be flagged as duplicate');
+  assert.ok(d2.duplicateId, 'duplicateId should reference the first submission');
+  assert.equal(d2.duplicateId, d1.id, 'duplicateId should match first submission id');
+});
+
+test('/api/backup supports filter by researcher', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  for (const name of ['Alice', 'Bob', 'Alice']) {
+    await fetch(`${baseUrl}/api/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        researcher: { name, residenceArea: '서울 중부' },
+        survey: { region: 'R', storeType: 'Mart', storeName: `Store-${name}` },
+        prices: []
+      })
+    });
+  }
+
+  const loginRes = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginRes.json();
+
+  const backupRes = await fetch(`${baseUrl}/api/backup?researcher=Alice`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  assert.equal(backupRes.status, 200);
+  const data = await backupRes.json();
+  assert.equal(data.totalSubmissions, 2, 'should return only Alice submissions');
+  assert.equal(data.filters.researcher, 'Alice');
+  assert.ok(data.submissions.every((s) => s.researcher.name === 'Alice'));
+});

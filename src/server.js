@@ -470,6 +470,8 @@ export function createApp(config = loadConfig(), options = {}) {
       adminTokens.delete(token);
       return false;
     }
+    // Sliding window: each successful use resets the TTL
+    adminTokens.set(token, Date.now());
     return true;
   }
 
@@ -671,6 +673,152 @@ export function createApp(config = loadConfig(), options = {}) {
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/api/docs') {
+        await sendJson(request, response, 200, {
+          version: PKG_VERSION,
+          endpoints: [
+            { method: 'GET',  path: '/health',                   auth: false, description: '서버 상태 및 DB 연결 확인' },
+            { method: 'GET',  path: '/api/docs',                 auth: false, description: 'API 문서 (이 페이지)' },
+            { method: 'GET',  path: '/api/status',               auth: true,  description: '상세 서버 모니터링 (DB 크기, 연결 수, 메모리)' },
+            { method: 'GET',  path: '/api/metrics',              auth: true,  description: '요청 통계 (p99 응답시간, 에러율)' },
+            { method: 'GET',  path: '/api/bootstrap',            auth: false, description: '앱 초기화 데이터 (지역, 제품, 제출 목록)' },
+            { method: 'GET',  path: '/api/survey-stats',         auth: false, description: '지역별 제출 현황 및 좌표' },
+            { method: 'GET',  path: '/api/daily-summary',        auth: false, description: '일별 집계 요약 (?date=YYYY-MM-DD)' },
+            { method: 'GET',  path: '/api/daily-report',         auth: false, description: '일별 HTML 리포트 (?date=YYYY-MM-DD)' },
+            { method: 'GET',  path: '/api/geocode',              auth: false, description: '주소 → 좌표 변환 (?query=주소)' },
+            { method: 'GET',  path: '/api/reverse-geocode',      auth: false, description: '좌표 → 주소 변환 (?lat=&lng=)' },
+            { method: 'GET',  path: '/api/stats',                auth: true,  description: '기간별/조사자별 집계 통계 (?from=YYYY-MM-DD&to=YYYY-MM-DD)' },
+            { method: 'GET',  path: '/api/price-outliers',       auth: true,  description: '가격 이상치 감지 (?sigma=2, 기본 ±2σ)' },
+            { method: 'POST', path: '/api/submissions',          auth: false, description: '새 시장조사 제출 (중복 감지 포함)' },
+            { method: 'POST', path: '/api/admin/login',          auth: false, description: '관리자 로그인 → Bearer 토큰 발급' },
+            { method: 'GET',  path: '/api/admin/verify',         auth: true,  description: '토큰 유효성 확인' },
+            { method: 'POST', path: '/api/admin/refresh',        auth: true,  description: '토큰 갱신 (새 토큰 발급)' },
+            { method: 'GET',  path: '/api/admin/submissions',    auth: true,  description: '전체 제출 목록 (?page=&limit=)' },
+            { method: 'GET',  path: '/api/admin/settings',       auth: true,  description: '커스텀 설정 조회' },
+            { method: 'POST', path: '/api/admin/settings',       auth: true,  description: '커스텀 설정 저장' },
+            { method: 'POST', path: '/api/admin/change-password',auth: true,  description: '관리자 비밀번호 변경' },
+            { method: 'POST', path: '/api/admin/webhook',        auth: true,  description: '웹훅 URL 및 이벤트 설정' },
+            { method: 'POST', path: '/api/admin/import',         auth: true,  description: '데이터 일괄 가져오기' },
+            { method: 'GET',  path: '/api/backup',               auth: true,  description: '필터된 데이터 내보내기 (?from=&to=&researcher=&area=)' },
+            { method: 'POST', path: '/api/submissions/delete',   auth: true,  description: '제출 삭제' },
+            { method: 'POST', path: '/api/assignments/override', auth: true,  description: '배정 지역 수동 변경' }
+          ]
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/stats') {
+        if (!checkAuth(request)) {
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
+          return;
+        }
+        const statsFrom = url.searchParams.get('from');
+        const statsTo = url.searchParams.get('to');
+        const allSubmissions = await store.listSubmissions();
+        const filtered = allSubmissions.filter((s) => {
+          const date = s.createdAt?.slice(0, 10) || '';
+          if (statsFrom && date < statsFrom) return false;
+          if (statsTo && date > statsTo) return false;
+          return true;
+        });
+
+        // Per-researcher stats
+        const researcherMap = {};
+        for (const s of filtered) {
+          const name = s.researcher?.name || '미상';
+          if (!researcherMap[name]) researcherMap[name] = { name, count: 0, areas: new Set(), stores: new Set() };
+          researcherMap[name].count++;
+          if (s.assignment?.currentArea) researcherMap[name].areas.add(s.assignment.currentArea);
+          if (s.survey?.storeName) researcherMap[name].stores.add(s.survey.storeName);
+        }
+        const byResearcher = Object.values(researcherMap).map((r) => ({
+          name: r.name, count: r.count, uniqueAreas: r.areas.size, uniqueStores: r.stores.size
+        })).sort((a, b) => b.count - a.count);
+
+        // Per-area stats
+        const areaMap = {};
+        for (const s of filtered) {
+          const area = s.assignment?.currentArea || '미배정';
+          areaMap[area] = (areaMap[area] || 0) + 1;
+        }
+        const byArea = Object.entries(areaMap)
+          .map(([area, count]) => ({ area, count }))
+          .sort((a, b) => b.count - a.count);
+
+        // Per-day stats
+        const dayMap = {};
+        for (const s of filtered) {
+          const day = s.createdAt?.slice(0, 10) || '미상';
+          dayMap[day] = (dayMap[day] || 0) + 1;
+        }
+        const byDay = Object.entries(dayMap)
+          .map(([date, count]) => ({ date, count }))
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+        await sendJson(request, response, 200, {
+          from: statsFrom || null,
+          to: statsTo || null,
+          total: filtered.length,
+          byResearcher,
+          byArea,
+          byDay,
+          averagePrices: buildAveragePrices(filtered)
+        });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/price-outliers') {
+        if (!checkAuth(request)) {
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
+          return;
+        }
+        const sigma = Math.max(1, Math.min(5, Number(url.searchParams.get('sigma') || 2)));
+        const allSubs = await store.listSubmissions();
+
+        // Build price distributions per product+size key
+        const priceMap = {};
+        for (const s of allSubs) {
+          for (const p of (s.prices || [])) {
+            const key = `${p.productLabel || p.productId}|${p.size}`;
+            if (!priceMap[key]) priceMap[key] = { label: p.productLabel || p.productId, size: p.size, entries: [] };
+            const num = Number(String(p.price).replace(/[^0-9]/g, ''));
+            if (num > 0) {
+              priceMap[key].entries.push({
+                submissionId: s.id, price: num,
+                researcher: s.researcher?.name, storeName: s.survey?.storeName, createdAt: s.createdAt
+              });
+            }
+          }
+        }
+
+        const outliers = [];
+        for (const group of Object.values(priceMap)) {
+          if (group.entries.length < 3) continue; // too few samples for meaningful stats
+          const prices = group.entries.map((e) => e.price);
+          const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
+          const variance = prices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / prices.length;
+          const stdDev = Math.sqrt(variance);
+          if (stdDev === 0) continue; // all prices identical
+          const lower = mean - sigma * stdDev;
+          const upper = mean + sigma * stdDev;
+          for (const entry of group.entries) {
+            if (entry.price < lower || entry.price > upper) {
+              outliers.push({
+                product: group.label, size: group.size,
+                price: entry.price,
+                mean: Math.round(mean), stdDev: Math.round(stdDev), sigma,
+                deviation: Number(((entry.price - mean) / stdDev).toFixed(2)),
+                submissionId: entry.submissionId, researcher: entry.researcher,
+                storeName: entry.storeName, createdAt: entry.createdAt
+              });
+            }
+          }
+        }
+        outliers.sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
+        await sendJson(request, response, 200, { sigma, total: outliers.length, outliers });
+        return;
+      }
+
       if (request.method === 'GET' && url.pathname === '/') {
         await serveStatic(response, path.resolve('src/client/index.html'), request);
         return;
@@ -739,6 +887,16 @@ export function createApp(config = loadConfig(), options = {}) {
         } else {
           await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
         }
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/admin/refresh') {
+        if (!checkAuth(request)) {
+          await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
+          return;
+        }
+        // Issue a fresh token (old token remains valid until TTL thanks to sliding window)
+        await sendJson(request, response, 200, { token: createAdminToken() });
         return;
       }
 
@@ -984,6 +1142,19 @@ ${researcherRows}
         const activeAreas = customAreas || config.areas;
         const dynamicConfig = { ...config, areas: activeAreas };
         const payload = validateSubmission(body, dynamicConfig);
+
+        // Duplicate detection: same researcher + store + today
+        const today = new Date().toISOString().slice(0, 10);
+        const existingForDuplicate = await store.listSubmissions();
+        const duplicateEntry = existingForDuplicate.find((s) =>
+          s.researcher?.name === payload.researcher.name &&
+          s.survey?.storeName === payload.survey.storeName &&
+          s.createdAt?.slice(0, 10) === today
+        );
+        if (duplicateEntry) {
+          log.warn(`[DUPLICATE] ${payload.researcher.name} @ ${payload.survey.storeName} already submitted today (${duplicateEntry.id})`);
+        }
+
         const submissionCounts = await store.getSubmissionCounts();
         const [residenceCoord, surveyCoord, areaCoords] = await Promise.all([
           geocoder.tryGeocode(payload.researcher.residenceArea),
@@ -1056,7 +1227,10 @@ ${researcherRows}
           } catch { /* ignored */ }
         })();
 
-        await sendJson(request, response, 201, submission);
+        const responsePayload = duplicateEntry
+          ? { ...submission, duplicate: true, duplicateId: duplicateEntry.id }
+          : submission;
+        await sendJson(request, response, 201, responsePayload);
         return;
       }
 
@@ -1084,10 +1258,29 @@ ${researcherRows}
           await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
-        const submissions = await store.listSubmissions();
+        let submissions = await store.listSubmissions();
+        const exportFrom = url.searchParams.get('from');
+        const exportTo = url.searchParams.get('to');
+        const exportResearcher = url.searchParams.get('researcher');
+        const exportArea = url.searchParams.get('area');
+        if (exportFrom || exportTo) {
+          submissions = submissions.filter((s) => {
+            const date = s.createdAt?.slice(0, 10) || '';
+            if (exportFrom && date < exportFrom) return false;
+            if (exportTo && date > exportTo) return false;
+            return true;
+          });
+        }
+        if (exportResearcher) {
+          submissions = submissions.filter((s) => s.researcher?.name === exportResearcher);
+        }
+        if (exportArea) {
+          submissions = submissions.filter((s) => s.assignment?.currentArea === exportArea);
+        }
         const cfg = store.getConfig ? store.getConfig() : {};
         const timestamp = new Date().toISOString();
-        await sendJson(request, response, 200, { timestamp, totalSubmissions: submissions.length, submissions, config: cfg });
+        const filters = { from: exportFrom || null, to: exportTo || null, researcher: exportResearcher || null, area: exportArea || null };
+        await sendJson(request, response, 200, { timestamp, filters, totalSubmissions: submissions.length, submissions, config: cfg });
         return;
       }
 
