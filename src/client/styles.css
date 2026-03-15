@@ -43,6 +43,7 @@
    §35  Visual Flourishes: Mesh / Glow / Shimmer / Celebrate / Reveal (Round 24)
    §36  Modern CSS: Tokens / color-mix / oklch / :has() / Nesting (Round 25)
    §37  Anchor Positioning / View Transitions / Popover API (Round 26)
+   §38  Premium Visual Upgrade: Glass / Hero / Micro-interactions / Dark (Round 31)
    ═══════════════════════════════════════════════ */
 
 /* ── Design Tokens ── */
@@ -5949,6 +5950,385 @@ textarea:disabled {
   ✓ Keyframes: 45 defined, 0 unused
   ✓ Comments: round-tracking labels replaced with semantic descriptions
 */
+
+/* ═══════════════════════════════════════════════
+   §38  Premium Visual Upgrade — Round 31
+   Glass · Hero Redesign · Micro-interactions · Dark Mode Premium
+   ═══════════════════════════════════════════════ */
+
+/* ── 38.1 Glassy Card Variant ── */
+/* Usage: add .glass to any .card */
+.card.glass {
+  background: rgba(255,255,255,0.72);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.3);
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.04),
+    0 4px 16px rgba(22,120,90,0.06),
+    inset 0 1px 0 rgba(255,255,255,0.6);
+}
+@media (hover: hover) {
+  .card.glass:hover {
+    background: rgba(255,255,255,0.82);
+    box-shadow:
+      0 2px 8px rgba(0,0,0,0.06),
+      0 8px 32px rgba(22,120,90,0.1),
+      inset 0 1px 0 rgba(255,255,255,0.7);
+  }
+}
+
+/* ── 38.2 Hero Redesign ── */
+/* Usage: add .hero-premium to .hero (can combine with .has-mesh) */
+.hero.hero-premium {
+  background: linear-gradient(135deg, #eef8f3 0%, #d4ede3 50%, #c2e5d5 100%);
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.hero.hero-premium::before {
+  content: '';
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(22,120,90,0.15), transparent 70%);
+  top: -100px;
+  right: -80px;
+  border-radius: 50%;
+  animation: heroFloat 6s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+.hero.hero-premium::after {
+  content: '';
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  background: radial-gradient(circle, rgba(2,132,199,0.1), transparent 70%);
+  bottom: -60px;
+  left: -40px;
+  border-radius: 50%;
+  animation: heroFloat 8s ease-in-out infinite reverse;
+  pointer-events: none;
+  z-index: -1;
+}
+@keyframes heroFloat {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-12px) scale(1.05); }
+}
+
+/* ── 38.3 Button Micro-interactions ── */
+/* Enhanced hover/active for .btn */
+.btn {
+  overflow: hidden; /* contain ripple ::after */
+}
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--ripple-x, 50%) var(--ripple-y, 50%),
+    rgba(255,255,255,0.35) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.btn:active::after {
+  opacity: 1;
+  transition: opacity 0.08s ease;
+}
+@media (hover: hover) {
+  .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(22,120,90,0.3);
+  }
+}
+.btn:active {
+  transform: translateY(1px) scale(0.98) !important;
+  box-shadow: var(--shadow-xs) !important;
+}
+.btn:disabled, .btn[disabled] {
+  filter: grayscale(1);
+  opacity: 0.5;
+  pointer-events: none;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* ── 38.4 Premium Input Fields ── */
+/* Focus glow */
+.field :is(input, select, textarea):focus {
+  box-shadow: 0 0 0 3px var(--color-primary-ghost), 0 0 12px rgba(22,120,90,0.08);
+}
+/* Success state — green checkmark via ::after on .field wrapper */
+.field.is-success {
+  position: relative;
+}
+.field.is-success::after {
+  content: '✓';
+  position: absolute;
+  right: 14px;
+  top: 38px; /* below label */
+  color: var(--success);
+  font-weight: 800;
+  font-size: 14px;
+  pointer-events: none;
+  animation: fieldCheckPop 0.3s var(--ease-spring);
+}
+@keyframes fieldCheckPop {
+  0%   { transform: scale(0); opacity: 0; }
+  60%  { transform: scale(1.3); }
+  100% { transform: scale(1); opacity: 1; }
+}
+/* Error shake */
+.field.is-error.shake :is(input, select, textarea) {
+  animation: fieldShake 0.4s ease;
+}
+@keyframes fieldShake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-4px); }
+  40%      { transform: translateX(4px); }
+  60%      { transform: translateX(-3px); }
+  80%      { transform: translateX(2px); }
+}
+/* Floating label prep (CSS-only) */
+.field-float {
+  position: relative;
+}
+.field-float label {
+  position: absolute;
+  left: var(--sp-3);
+  top: 14px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-muted);
+  pointer-events: none;
+  transition: all 0.2s var(--ease-out);
+  background: transparent;
+  padding: 0 4px;
+  z-index: 1;
+}
+.field-float :is(input, textarea):focus ~ label,
+.field-float :is(input, textarea):not(:placeholder-shown) ~ label {
+  top: -8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: var(--surface);
+}
+
+/* ── 38.5 Bottom Navigation Premium ── */
+/* Active tab: pill background */
+.bottom-nav .nav-tab.is-active {
+  background: var(--color-primary-ghost);
+  border-radius: var(--radius-sm);
+  margin: 4px 2px;
+  padding: 6px 0 4px;
+}
+/* Dot indicator above active icon */
+.bottom-nav .nav-tab.is-active .nav-icon::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: navDotIn 0.3s var(--ease-spring);
+}
+.bottom-nav .nav-tab .nav-icon {
+  position: relative; /* for dot positioning */
+}
+@keyframes navDotIn {
+  0%   { transform: translateX(-50%) scale(0); }
+  100% { transform: translateX(-50%) scale(1); }
+}
+/* Icon bounce on activation */
+.bottom-nav .nav-tab.is-active .nav-icon {
+  animation: navIconBounce 0.4s var(--ease-spring);
+}
+@keyframes navIconBounce {
+  0%   { transform: translateY(0) scale(1); }
+  40%  { transform: translateY(-3px) scale(1.18); }
+  70%  { transform: translateY(1px) scale(1.08); }
+  100% { transform: translateY(-1px) scale(1.12); }
+}
+
+/* ── 38.6 Scroll-based Header (CSS-only hints) ── */
+/* Status bar: glass transition on scroll (JS toggles .is-scrolled) */
+.status-bar {
+  transition: background 0.3s var(--ease-out), backdrop-filter 0.3s var(--ease-out);
+}
+.status-bar.is-scrolled {
+  background: rgba(22,120,90,0.92);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 1px 8px rgba(0,0,0,0.1);
+}
+/* Hero compact mode on scroll (JS toggles .is-compact on .hero) */
+.hero {
+  transition: padding var(--transition-slow);
+}
+.hero.is-compact {
+  padding: var(--sp-3) 0 var(--sp-2);
+}
+.hero.is-compact h1 {
+  font-size: clamp(16px, 4vw, 20px);
+  transition: font-size var(--transition-slow);
+}
+.hero.is-compact .subhead {
+  font-size: 12px;
+  opacity: 0.8;
+  transition: font-size var(--transition-slow), opacity var(--transition-slow);
+}
+
+/* ── 38.7 Skeleton Upgrade ── */
+/* Premium gradient shimmer */
+.skeleton-line,
+.skeleton-avatar,
+.skeleton-btn,
+.skeleton-image,
+.skeleton-circle {
+  background: linear-gradient(
+    105deg,
+    var(--border) 0%,
+    var(--border) 35%,
+    var(--border-hover) 50%,
+    var(--border) 65%,
+    var(--border) 100%
+  );
+  background-size: 300% 100%;
+  animation: skeletonSweep 1.8s ease-in-out infinite;
+}
+@keyframes skeletonSweep {
+  0%   { background-position: 300% center; }
+  100% { background-position: -100% center; }
+}
+/* Skeleton → content transition */
+.skeleton-fade-out {
+  animation: skeletonFadeOut 0.35s var(--ease-out) forwards;
+}
+@keyframes skeletonFadeOut {
+  0%   { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.98); }
+}
+.content-fade-in {
+  animation: contentFadeIn 0.4s var(--ease-out);
+}
+@keyframes contentFadeIn {
+  0%   { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ── 38.8 Dark Mode Premium ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115; /* deep navy instead of pure black */
+  }
+
+  /* Premium card surface */
+  .card {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.08);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2);
+  }
+
+  /* Glassy card in dark */
+  .card.glass {
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow:
+      0 1px 2px rgba(0,0,0,0.3),
+      0 4px 16px rgba(0,0,0,0.25),
+      inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+
+  /* Subtle glow on primary elements */
+  .btn-primary {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 0 16px rgba(34,160,107,0.15);
+  }
+  .btn-primary:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.3), 0 0 24px rgba(34,160,107,0.2);
+  }
+
+  /* Dark hero */
+  .hero.hero-premium {
+    background: linear-gradient(135deg, #0f1115 0%, #141822 50%, #111620 100%);
+  }
+  .hero.hero-premium::before {
+    background: radial-gradient(circle, rgba(34,160,107,0.12), transparent 70%);
+  }
+  .hero.hero-premium::after {
+    background: radial-gradient(circle, rgba(56,189,248,0.08), transparent 70%);
+  }
+
+  /* Dark mesh hero */
+  .hero.has-mesh {
+    background: linear-gradient(135deg, #0f1115 0%, #141822 100%);
+  }
+
+  /* Input glow enhanced in dark */
+  .field :is(input, select, textarea):focus {
+    box-shadow: 0 0 0 3px rgba(34,160,107,0.15), 0 0 16px rgba(34,160,107,0.08);
+  }
+
+  /* Skeleton in dark */
+  .skeleton-line,
+  .skeleton-avatar,
+  .skeleton-btn,
+  .skeleton-image,
+  .skeleton-circle {
+    background: linear-gradient(
+      105deg,
+      var(--border) 0%,
+      var(--border) 35%,
+      rgba(255,255,255,0.08) 50%,
+      var(--border) 65%,
+      var(--border) 100%
+    );
+    background-size: 300% 100%;
+  }
+
+  /* Status bar glass in dark */
+  .status-bar.is-scrolled {
+    background: rgba(15,17,21,0.85);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    box-shadow: 0 1px 8px rgba(0,0,0,0.3);
+  }
+
+  /* Bottom nav glow */
+  .bottom-nav {
+    box-shadow: 0 -1px 12px rgba(0,0,0,0.3);
+  }
+  .bottom-nav .nav-tab.is-active {
+    background: rgba(34,160,107,0.1);
+  }
+
+  /* Success check in dark */
+  .field.is-success::after {
+    color: #34d399;
+  }
+}
+
+/* ── 38.9 Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .hero.hero-premium::before,
+  .hero.hero-premium::after { animation: none; }
+  .bottom-nav .nav-tab.is-active .nav-icon { animation: none; }
+  .field.is-error.shake :is(input, select, textarea) { animation: none; }
+  .field.is-success::after { animation: none; }
+  .skeleton-fade-out { animation: none; opacity: 0; }
+  .content-fade-in { animation: none; }
+}
 
 /* ── §41 Round 30: Final File Summary ── */
 /*

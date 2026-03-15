@@ -22,12 +22,43 @@ const navTabs = [...document.querySelectorAll('.nav-tab')];
 const panels = [...document.querySelectorAll('.panel')];
 
 // ── Navigation ──
+const TAB_ORDER = ['survey', 'dashboard'];
 navTabs.forEach((button) => {
   button.addEventListener('click', () => {
+    const prevTab = navTabs.find((t) => t.classList.contains('is-active'));
+    const prevId = prevTab ? prevTab.dataset.tab : '';
+    const nextId = button.dataset.tab;
+    if (prevId === nextId) return;
+    const direction = TAB_ORDER.indexOf(nextId) > TAB_ORDER.indexOf(prevId) ? 1 : -1;
     navTabs.forEach((t) => t.classList.toggle('is-active', t === button));
-    panels.forEach((p) => p.classList.toggle('is-active', p.id === button.dataset.tab));
-    saveLocal('_activeTab', button.dataset.tab);
-    if (button.dataset.tab === 'dashboard') initMap();
+    const prevPanel = panels.find((p) => p.id === prevId);
+    const nextPanel = panels.find((p) => p.id === nextId);
+    if (prevPanel && nextPanel && prevPanel !== nextPanel) {
+      prevPanel.style.transition = 'transform .3s cubic-bezier(.4,0,.2,1), opacity .3s ease';
+      prevPanel.style.transform = `translateX(${-direction * 100}%)`;
+      prevPanel.style.opacity = '0';
+      nextPanel.classList.add('is-active');
+      nextPanel.style.transition = 'none';
+      nextPanel.style.transform = `translateX(${direction * 100}%)`;
+      nextPanel.style.opacity = '0';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          nextPanel.style.transition = 'transform .3s cubic-bezier(.4,0,.2,1), opacity .3s ease';
+          nextPanel.style.transform = 'translateX(0)';
+          nextPanel.style.opacity = '1';
+        });
+      });
+      setTimeout(() => {
+        prevPanel.classList.remove('is-active');
+        prevPanel.style.transition = '';
+        prevPanel.style.transform = '';
+        prevPanel.style.opacity = '';
+      }, 310);
+    } else {
+      panels.forEach((p) => p.classList.toggle('is-active', p.id === nextId));
+    }
+    saveLocal('_activeTab', nextId);
+    if (nextId === 'dashboard') initMap();
   });
 });
 
@@ -463,6 +494,13 @@ function renderStep1(config) {
         const isEmpty = !el?.value.trim();
         el?.setAttribute('aria-invalid', isEmpty ? 'true' : 'false');
         if (el) el.style.outline = isEmpty ? '2px solid var(--error, #e74c3c)' : '';
+        if (el && isEmpty) {
+          const field = el.closest('.field');
+          if (field) {
+            field.classList.add('is-error', 'shake');
+            field.addEventListener('animationend', () => field.classList.remove('shake'), {once:true});
+          }
+        }
       });
       const firstEmpty = [nameEl, regionEl, storeEl].find((el) => !el?.value.trim());
       if (firstEmpty) firstEmpty.focus();
@@ -1387,7 +1425,7 @@ function renderMyRecords(submissions) {
   }).join('')}`).join('');
 
   container.innerHTML = `
-    <div class="card stack">
+    <div class="card glass stack">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
         <h2 style="margin:0;">내 기록 📋 <span style="font-size:.8rem;font-weight:normal;color:var(--text-muted);">${filtered.length}건</span></h2>
         <div style="display:flex;gap:4px;" role="group" aria-label="기간 필터">${filterChips}</div>
@@ -1701,7 +1739,7 @@ function renderMyStatCard(submissions) {
     : '';
 
   container.innerHTML = `
-    <div class="card" style="padding:14px;">
+    <div class="card glass" style="padding:14px;">
       <h3 style="margin:0 0 10px;font-size:.95rem;">📊 내 성과 요약 <span style="font-size:.75rem;font-weight:normal;color:var(--text-muted);">${escapeHtml(myName)}</span></h3>
       <div style="display:flex;gap:16px;flex-wrap:wrap;">
         <div style="text-align:center;">
@@ -1756,7 +1794,7 @@ function renderDashboard(config) {
   // 1. Quick Stats
   if (total === 0) {
     document.querySelector('#quick-stats').innerHTML = `
-      <div class="empty-state" style="width:100%;text-align:center;padding:24px 16px;">
+      <div class="card glass empty-state" style="width:100%;text-align:center;padding:24px 16px;">
         <div class="empty-icon">🏃</div>
         <p style="margin:8px 0 16px;">아직 기록이 없어요<br/>첫 번째 매장을 조사해 볼까요?</p>
         <button type="button" id="empty-dashboard-cta" class="btn btn-primary" style="font-size:.9rem;padding:10px 24px;">
@@ -1883,7 +1921,7 @@ function renderDashboard(config) {
   const areaGrid = document.querySelector('#area-stats-grid');
   if (areaStats.some((a) => a.count > 0)) {
     areaGrid.innerHTML = `
-      <div class="card stack">
+      <div class="card glass stack">
         <h2>지역별 현황 📍</h2>
         <div class="area-cards">
           ${areaStats.map((a) => `
@@ -1974,14 +2012,29 @@ function trapFocus(container) {
 
 function animateCount(el, target, suffix = '', duration = 600) {
   if (!el || isNaN(target) || target === 0) { el.textContent = target + suffix; return; }
-  const startTime = performance.now();
-  function tick(now) {
-    const progress = Math.min((now - startTime) / duration, 1);
-    const eased = 1 - Math.pow(1 - progress, 3);
-    el.textContent = Math.round(target * eased) + suffix;
-    if (progress < 1) requestAnimationFrame(tick);
+  function runCount() {
+    const startTime = performance.now();
+    function tick(now) {
+      const progress = Math.min((now - startTime) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      el.textContent = Math.round(target * eased) + suffix;
+      if (progress < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
   }
-  requestAnimationFrame(tick);
+  if ('IntersectionObserver' in window) {
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          obs.unobserve(el);
+          runCount();
+        }
+      });
+    }, { threshold: 0.1 });
+    obs.observe(el);
+  } else {
+    runCount();
+  }
 }
 
 function showShortcutsPanel() {
@@ -2046,16 +2099,49 @@ async function fileToDataUrl(file) {
  * @param {string} message - 표시할 메시지
  * @param {'success'|'error'|'info'} [type='info'] - 토스트 유형
  */
+const _toastStack = [];
+const TOAST_MAX = 3;
+function _repositionToasts() {
+  const active = _toastStack.filter((t) => t.el.isConnected);
+  active.forEach((t, i) => {
+    t.el.style.transition = 'transform .25s ease, opacity .25s ease';
+    t.el.style.transform = `translateX(-50%) translateY(-${i * 56}px)`;
+    t.el.style.opacity = i >= TOAST_MAX ? '0' : '1';
+    t.el.style.zIndex = String(10000 - i);
+  });
+}
 function showToast(message, type) {
-  const existing = document.querySelector('.toast');
-  if (existing) existing.remove();
   const toast = document.createElement('div');
   toast.className = `toast toast-${type || 'success'}`;
   toast.setAttribute('role', 'alert');
   toast.setAttribute('aria-live', 'assertive');
   toast.textContent = message;
+  toast.style.cssText = 'position:fixed;bottom:72px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;z-index:10000;transition:transform .25s ease, opacity .25s ease;';
   document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
+  requestAnimationFrame(() => {
+    toast.style.transform = 'translateX(-50%) translateY(0)';
+    toast.style.opacity = '1';
+  });
+  const entry = { el: toast };
+  _toastStack.unshift(entry);
+  // Remove oldest if over max
+  while (_toastStack.length > TOAST_MAX) {
+    const old = _toastStack.pop();
+    if (old && old.el.isConnected) {
+      old.el.style.opacity = '0';
+      old.el.style.transform = 'translateX(-50%) translateY(20px)';
+      setTimeout(() => old.el.remove(), 250);
+    }
+  }
+  _repositionToasts();
+  setTimeout(() => {
+    const idx = _toastStack.indexOf(entry);
+    if (idx !== -1) _toastStack.splice(idx, 1);
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(-50%) translateY(20px)';
+    setTimeout(() => toast.remove(), 250);
+    _repositionToasts();
+  }, 3000);
 }
 
 async function shareIonroad(text) {
@@ -2210,6 +2296,12 @@ async function loadBootstrap() {
     showBootstrapRetryBanner(err.name === 'TypeError' ? '인터넷 연결을 확인해주세요 📶' : (err.message || '데이터를 불러오지 못했어요'));
   } finally {
     if (refreshBtn) refreshBtn.classList.remove('is-spinning');
+    // Fade out loading skeleton
+    const skeleton = document.getElementById('loading-skeleton');
+    if (skeleton) {
+      skeleton.classList.add('skeleton-fade-out');
+      skeleton.addEventListener('animationend', () => skeleton.remove(), {once:true});
+    }
     // Hide splash screen on first load
     const splash = document.getElementById('app-splash');
     if (splash) {
@@ -2288,6 +2380,11 @@ function initOnboarding() {
       nameInput.setAttribute('aria-invalid', 'true');
       nameInput.style.outline = '2px solid var(--error, #e74c3c)';
       nameInput.placeholder = '이름을 입력해야 시작할 수 있어요';
+      const field = nameInput.closest('.field');
+      if (field) {
+        field.classList.add('is-error', 'shake');
+        field.addEventListener('animationend', () => field.classList.remove('shake'), {once:true});
+      }
       nameInput.focus();
       return;
     }
@@ -2302,17 +2399,115 @@ function initOnboarding() {
   }
 }
 
-// ── Help Sheet ──
+// ── Help Sheet (with drag gestures) ──
 function initHelpSheet() {
   const fab = document.getElementById('help-fab');
   const sheet = document.getElementById('help-sheet');
   const backdrop = document.getElementById('help-backdrop');
+  const handle = sheet.querySelector('.help-sheet-handle');
 
-  function open() { sheet.classList.remove('hidden'); backdrop.classList.remove('hidden'); }
-  function close() { sheet.classList.add('hidden'); backdrop.classList.add('hidden'); }
+  // Snap points: closed, half (50vh), full (85vh)
+  const SNAP_CLOSED = 0;
+  const SNAP_HALF = window.innerHeight * 0.5;
+  const SNAP_FULL = window.innerHeight * 0.85;
+
+  let sheetHeight = SNAP_CLOSED;
+  let dragStartY = 0;
+  let dragStartHeight = 0;
+  let isDragging = false;
+
+  function setSheetHeight(h) {
+    sheetHeight = Math.max(0, Math.min(h, SNAP_FULL));
+    sheet.style.transition = isDragging ? 'none' : 'height .3s cubic-bezier(.4,0,.2,1)';
+    sheet.style.height = sheetHeight + 'px';
+    sheet.style.overflow = sheetHeight >= SNAP_HALF ? 'auto' : 'hidden';
+    backdrop.style.opacity = Math.min(sheetHeight / SNAP_HALF, 1) * 0.5;
+  }
+
+  function snapTo(target) {
+    isDragging = false;
+    if (target <= 60) {
+      setSheetHeight(0);
+      setTimeout(() => { sheet.classList.add('hidden'); backdrop.classList.add('hidden'); }, 300);
+    } else {
+      setSheetHeight(target);
+    }
+  }
+
+  function findSnap(h, velocity) {
+    // If flicked down fast, close
+    if (velocity > 0.5) return SNAP_CLOSED;
+    if (velocity < -0.5) return h < SNAP_HALF ? SNAP_HALF : SNAP_FULL;
+    const snaps = [SNAP_CLOSED, SNAP_HALF, SNAP_FULL];
+    return snaps.reduce((prev, curr) => Math.abs(curr - h) < Math.abs(prev - h) ? curr : prev);
+  }
+
+  function open() {
+    sheet.classList.remove('hidden');
+    backdrop.classList.remove('hidden');
+    backdrop.style.opacity = '0';
+    requestAnimationFrame(() => snapTo(SNAP_HALF));
+  }
+
+  function close() {
+    snapTo(SNAP_CLOSED);
+  }
 
   fab.addEventListener('click', open);
   backdrop.addEventListener('click', close);
+
+  // Touch drag on handle
+  let lastTouchY = 0;
+  let lastTouchTime = 0;
+
+  const onTouchStart = (e) => {
+    isDragging = true;
+    dragStartY = e.touches[0].clientY;
+    dragStartHeight = sheetHeight;
+    lastTouchY = dragStartY;
+    lastTouchTime = Date.now();
+  };
+
+  const onTouchMove = (e) => {
+    if (!isDragging) return;
+    const dy = dragStartY - e.touches[0].clientY;
+    setSheetHeight(dragStartHeight + dy);
+    lastTouchY = e.touches[0].clientY;
+    lastTouchTime = Date.now();
+    e.preventDefault();
+  };
+
+  const onTouchEnd = (e) => {
+    if (!isDragging) return;
+    const endY = e.changedTouches[0].clientY;
+    const dt = Math.max(Date.now() - lastTouchTime, 1);
+    const velocity = (lastTouchY - endY) / dt * -1; // positive = dragging down
+    snapTo(findSnap(sheetHeight, velocity));
+  };
+
+  handle.addEventListener('touchstart', onTouchStart, { passive: true });
+  handle.addEventListener('touchmove', onTouchMove, { passive: false });
+  handle.addEventListener('touchend', onTouchEnd, { passive: true });
+
+  // Also allow dragging from the handle with mouse (for desktop)
+  handle.style.cursor = 'grab';
+  handle.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    dragStartY = e.clientY;
+    dragStartHeight = sheetHeight;
+    const onMouseMove = (e2) => {
+      const dy = dragStartY - e2.clientY;
+      setSheetHeight(dragStartHeight + dy);
+    };
+    const onMouseUp = () => {
+      isDragging = false;
+      snapTo(findSnap(sheetHeight, 0));
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
 }
 
 // ── Dashboard auto-refresh (30s polling) ──
@@ -2720,7 +2915,168 @@ function initSplashScreen() {
   document.body.prepend(splash);
 }
 
+// ── Premium UI: CSS injection ──
+function injectPremiumStyles() {
+  if (document.querySelector('#premium-ui-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'premium-ui-styles';
+  s.textContent = `
+    /* Card entrance animation */
+    .card-anim-hidden{opacity:0;transform:translateY(20px);}
+    .card-anim-visible{opacity:1;transform:translateY(0);transition:opacity .4s ease,transform .4s ease;}
+    /* Panel slide */
+    .panel{will-change:transform,opacity;}
+    /* Pull to refresh */
+    .ptr-spinner{position:fixed;top:-50px;left:50%;transform:translateX(-50%);width:36px;height:36px;z-index:9000;pointer-events:none;transition:top .25s ease;}
+    .ptr-spinner svg{width:36px;height:36px;animation:ptr-spin 1s linear infinite;animation-play-state:paused;}
+    .ptr-spinner.is-refreshing svg{animation-play-state:running;}
+    @keyframes ptr-spin{to{transform:rotate(360deg)}}
+    /* Price bounce */
+    @keyframes priceBounce{0%{transform:scale(1)}30%{transform:scale(1.15)}60%{transform:scale(.95)}100%{transform:scale(1)}}
+    .price-bounce{animation:priceBounce .35s ease;}
+    /* Bottom sheet enhancements */
+    .help-sheet{transition:height .3s cubic-bezier(.4,0,.2,1);overflow:hidden;will-change:height;}
+    .help-sheet-handle{width:36px;height:4px;background:#ccc;border-radius:2px;margin:8px auto 12px;cursor:grab;}
+    .help-backdrop{transition:opacity .3s ease;}
+    /* Toast stack positioning fix */
+    .toast{position:fixed;bottom:72px;left:50%;transform:translateX(-50%);white-space:nowrap;}
+  `;
+  document.head.appendChild(s);
+}
+
+// ── Premium UI: Card entrance animations ──
+function initCardAnimations() {
+  if (!('IntersectionObserver' in window)) return;
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        const el = entry.target;
+        const delay = Number(el.dataset.animDelay || 0);
+        setTimeout(() => {
+          el.classList.remove('card-anim-hidden');
+          el.classList.add('card-anim-visible');
+        }, delay);
+        obs.unobserve(el);
+      }
+    });
+  }, { threshold: 0.05, rootMargin: '0px 0px -20px 0px' });
+
+  function observeCards() {
+    const dashboard = document.querySelector('#dashboard');
+    if (!dashboard) return;
+    const cards = dashboard.querySelectorAll('.card, .quick-stat, .area-card, .achievement-card, .product-stat-card');
+    cards.forEach((card, i) => {
+      if (card.classList.contains('card-anim-visible')) return;
+      card.classList.add('card-anim-hidden');
+      card.dataset.animDelay = String(i * 80);
+      obs.observe(card);
+    });
+  }
+
+  // Observe on dashboard render — use MutationObserver
+  const dashPanel = document.querySelector('#dashboard');
+  if (dashPanel) {
+    const mutObs = new MutationObserver(() => {
+      requestAnimationFrame(observeCards);
+    });
+    mutObs.observe(dashPanel, { childList: true, subtree: true });
+  }
+  observeCards();
+}
+
+// ── Premium UI: Pull to refresh ──
+function initPullToRefresh() {
+  const dashboard = document.querySelector('#dashboard');
+  if (!dashboard) return;
+
+  const spinner = document.createElement('div');
+  spinner.className = 'ptr-spinner';
+  spinner.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--primary,#0066cc)" stroke-width="2.5" stroke-linecap="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>';
+  document.body.appendChild(spinner);
+
+  let startY = 0;
+  let pulling = false;
+  let refreshing = false;
+  const THRESHOLD = 40;
+
+  dashboard.addEventListener('touchstart', (e) => {
+    if (refreshing) return;
+    if (dashboard.scrollTop > 0 || window.scrollY > 0) return;
+    startY = e.touches[0].clientY;
+    pulling = true;
+  }, { passive: true });
+
+  dashboard.addEventListener('touchmove', (e) => {
+    if (!pulling || refreshing) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy < 0) { pulling = false; return; }
+    const progress = Math.min(dy / (THRESHOLD * 2.5), 1);
+    spinner.style.top = (-50 + dy * 0.6) + 'px';
+    spinner.querySelector('svg').style.transform = `rotate(${progress * 360}deg)`;
+    spinner.style.opacity = String(progress);
+  }, { passive: true });
+
+  dashboard.addEventListener('touchend', async (e) => {
+    if (!pulling || refreshing) return;
+    pulling = false;
+    const dy = e.changedTouches[0].clientY - startY;
+    if (dy >= THRESHOLD) {
+      refreshing = true;
+      spinner.style.top = '16px';
+      spinner.classList.add('is-refreshing');
+      await loadBootstrap();
+      spinner.classList.remove('is-refreshing');
+      showToast('새로고침 완료!', 'success');
+      refreshing = false;
+    }
+    spinner.style.top = '-50px';
+    spinner.style.opacity = '0';
+  }, { passive: true });
+}
+
+// ── Premium UI: Live price update with bounce ──
+function initLivePriceUpdate() {
+  // Listen to price input changes and update dashboard quick stats in real-time
+  document.addEventListener('input', (e) => {
+    const input = e.target;
+    if (!input.matches || !input.matches('.price-field input')) return;
+    // Count filled prices
+    const allPriceInputs = [...document.querySelectorAll('.price-field input')];
+    const filledCount = allPriceInputs.filter((i) => {
+      const val = i.dataset.rawValue || i.value.replace(/[^0-9]/g, '');
+      return val.length > 0;
+    }).length;
+    // Update any visible price count in dashboard
+    const productLabels = document.querySelectorAll('#product-leaderboard .ps-detail');
+    productLabels.forEach((el) => {
+      if (el._prevText !== el.textContent) {
+        el.classList.remove('price-bounce');
+        void el.offsetWidth; // force reflow
+        el.classList.add('price-bounce');
+        el._prevText = el.textContent;
+      }
+    });
+    // Bounce the price input count badge
+    const badge = document.querySelector('#price-input-count');
+    if (badge) {
+      badge.classList.remove('price-bounce');
+      void badge.offsetWidth;
+      badge.classList.add('price-bounce');
+    }
+  });
+}
+
+// ── Premium scroll effects ──
+window.addEventListener("scroll", () => {
+  const y = window.scrollY;
+  const bar = document.querySelector(".status-bar");
+  const hero = document.querySelector(".hero");
+  if (bar) bar.classList.toggle("is-scrolled", y > 40);
+  if (hero) hero.classList.toggle("is-compact", y > 120);
+}, { passive: true });
+
 // ── Init ──
+injectPremiumStyles();
 initSplashScreen();
 initSkipLink();
 initGps();
@@ -2737,3 +3093,6 @@ initTouchSwipe();
 initRippleEffect();
 initAppVersion();
 renderOfflineQueue();
+initCardAnimations();
+initPullToRefresh();
+initLivePriceUpdate();
