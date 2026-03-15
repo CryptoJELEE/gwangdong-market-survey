@@ -61,8 +61,20 @@ export class SurveyStore {
     return submission;
   }
 
+  async importSubmissions(submissions) {
+    return this.localStore.importSubmissions(submissions);
+  }
+
   async deleteSubmission(submissionId) {
     return this.localStore.deleteSubmission(submissionId);
+  }
+
+  async getAdminPassword() {
+    return this.localStore.getAdminPassword();
+  }
+
+  async setAdminPassword(password) {
+    return this.localStore.setAdminPassword(password);
   }
 
   async getSetting(key) {

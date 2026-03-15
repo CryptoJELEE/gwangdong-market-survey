@@ -102,6 +102,17 @@ async function init() {
   }
 }
 
+// ── Tab switching ──
+document.querySelectorAll('.admin-tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.admin-tab').forEach((t) => t.classList.remove('active'));
+    document.querySelectorAll('.admin-tab-panel').forEach((p) => p.style.display = 'none');
+    tab.classList.add('active');
+    const panel = document.querySelector(`#tab-${tab.dataset.tab}`);
+    if (panel) panel.style.display = 'block';
+  });
+});
+
 // ── Admin data ──
 let adminData = null;
 let knownCount = 0;
@@ -1256,6 +1267,72 @@ document.querySelector('#summary-btn').addEventListener('click', () => {
   const title = document.querySelector('#admin-title');
   title.setAttribute('data-print-date', new Date().toLocaleDateString('ko-KR'));
   window.print();
+});
+
+// ── Data import ──
+document.querySelector('#import-btn').addEventListener('click', () => {
+  document.querySelector('#import-file').click();
+});
+
+document.querySelector('#import-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const submissions = data.submissions || data;
+    if (!Array.isArray(submissions)) {
+      showToast('올바른 JSON 형식이 아니에요.', 'error');
+      return;
+    }
+    const res = await authFetch('/api/admin/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submissions })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      showToast(err.error || '가져오기에 실패했어요.', 'error');
+      return;
+    }
+    const result = await res.json();
+    showToast(`${result.imported}건 가져옴, ${result.skipped}건 중복 스킵`);
+    if (result.imported > 0) await loadAdminData();
+  } catch {
+    showToast('파일을 읽을 수 없어요.', 'error');
+  }
+  e.target.value = '';
+});
+
+// ── Password change ──
+document.querySelector('#change-password-btn').addEventListener('click', async () => {
+  const currentPw = document.querySelector('#current-password').value.trim();
+  const newPw = document.querySelector('#new-password').value.trim();
+  if (!currentPw || !newPw) {
+    showToast('비밀번호를 모두 입력해주세요.', 'error');
+    return;
+  }
+  if (newPw.length < 4) {
+    showToast('새 비밀번호는 4자 이상이어야 합니다.', 'error');
+    return;
+  }
+  try {
+    const res = await authFetch('/api/admin/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || '변경에 실패했어요.', 'error');
+      return;
+    }
+    showToast('비밀번호가 변경되었어요.');
+    document.querySelector('#current-password').value = '';
+    document.querySelector('#new-password').value = '';
+  } catch {
+    showToast('서버에 연결할 수 없어요.', 'error');
+  }
 });
 
 // ── Init ──

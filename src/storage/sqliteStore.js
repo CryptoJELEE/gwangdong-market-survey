@@ -303,6 +303,74 @@ export class SQLiteStore {
     return rowToSubmission(updated);
   }
 
+  async importSubmissions(submissions) {
+    this._ensureDb();
+    let imported = 0;
+    let skipped = 0;
+
+    const insertStmt = this.db.prepare(`
+      INSERT OR IGNORE INTO submissions (
+        id, created_at,
+        researcher_name, researcher_residence_area, researcher_residence_lat, researcher_residence_lng,
+        survey_region, survey_store_type, survey_store_name, survey_pos_count, survey_display_location, survey_location_lat, survey_location_lng,
+        prices_json, notes,
+        photo_filename, photo_mime_type, photo_url,
+        assignment_current_area, assignment_candidate_order, assignment_method,
+        assignment_override_reason, assignment_overridden_by, assignment_overridden_at,
+        sync_mode
+      ) VALUES (
+        ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?,
+        ?, ?,
+        ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?,
+        ?
+      )
+    `);
+
+    const runImport = this.db.transaction((items) => {
+      for (const s of items) {
+        const result = insertStmt.run(
+          s.id,
+          s.createdAt,
+          s.researcher?.name || '',
+          s.researcher?.residenceArea || '',
+          s.researcher?.coordinates?.lat ?? null,
+          s.researcher?.coordinates?.lng ?? null,
+          s.survey?.region || '',
+          s.survey?.storeType || '',
+          s.survey?.storeName || '',
+          s.survey?.posCount || 0,
+          s.survey?.displayLocation || '',
+          s.survey?.coordinates?.lat ?? null,
+          s.survey?.coordinates?.lng ?? null,
+          JSON.stringify(s.prices || []),
+          s.notes || '',
+          s.photo?.filename || null,
+          s.photo?.mimeType || null,
+          s.photo?.url || null,
+          s.assignment?.currentArea || '',
+          s.assignment?.candidateOrder ? JSON.stringify(s.assignment.candidateOrder) : null,
+          s.assignment?.method || null,
+          s.assignment?.overrideReason ?? null,
+          s.assignment?.overriddenBy ?? null,
+          s.assignment?.overriddenAt ?? null,
+          s.sync?.mode || 'local'
+        );
+        if (result.changes > 0) {
+          imported++;
+        } else {
+          skipped++;
+        }
+      }
+    });
+
+    runImport(submissions);
+    return { imported, skipped };
+  }
+
   async deleteSubmission(submissionId) {
     this._ensureDb();
     this.db.prepare('DELETE FROM assignment_overrides WHERE submission_id = ?').run(submissionId);
@@ -322,6 +390,15 @@ export class SQLiteStore {
       INSERT INTO settings (key, value) VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `).run(key, JSON.stringify(value));
+  }
+
+  async getAdminPassword() {
+    const row = await this.getSetting('adminPassword');
+    return row;
+  }
+
+  async setAdminPassword(password) {
+    await this.setSetting('adminPassword', password);
   }
 
   close() {

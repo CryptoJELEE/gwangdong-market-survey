@@ -305,7 +305,9 @@ export function createApp(config = loadConfig(), options = {}) {
       // ── Admin auth endpoints ──
       if (request.method === 'POST' && url.pathname === '/api/admin/login') {
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
-        if (body.password === config.adminPassword) {
+        const dbPassword = await store.getAdminPassword();
+        const activePassword = dbPassword || config.adminPassword;
+        if (body.password === activePassword) {
           json(response, 200, { token: createAdminToken() });
         } else {
           json(response, 401, { error: '비밀번호가 틀렸어요.' });
@@ -566,6 +568,47 @@ export function createApp(config = loadConfig(), options = {}) {
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         if (!body.submissionId) throw new Error('submissionId is required.');
         await store.deleteSubmission(body.submissionId);
+        json(response, 200, { ok: true });
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/admin/import') {
+        if (!checkAuth(request)) {
+          json(response, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const body = await collectJsonBody(request, MAX_BODY_BYTES);
+        if (!Array.isArray(body.submissions)) {
+          json(response, 400, { error: 'submissions 배열이 필요합니다.' });
+          return;
+        }
+        const result = await store.importSubmissions(body.submissions);
+        json(response, 200, result);
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/admin/change-password') {
+        if (!checkAuth(request)) {
+          json(response, 401, { error: 'Unauthorized' });
+          return;
+        }
+        const body = await collectJsonBody(request, MAX_BODY_BYTES);
+        if (!body.currentPassword || !body.newPassword) {
+          json(response, 400, { error: '현재 비밀번호와 새 비밀번호를 입력해주세요.' });
+          return;
+        }
+        if (String(body.newPassword).length < 4) {
+          json(response, 400, { error: '새 비밀번호는 4자 이상이어야 합니다.' });
+          return;
+        }
+        // Check current password against DB override or env config
+        const dbPassword = await store.getAdminPassword();
+        const currentActual = dbPassword || config.adminPassword;
+        if (body.currentPassword !== currentActual) {
+          json(response, 401, { error: '현재 비밀번호가 틀렸어요.' });
+          return;
+        }
+        await store.setAdminPassword(body.newPassword);
         json(response, 200, { ok: true });
         return;
       }

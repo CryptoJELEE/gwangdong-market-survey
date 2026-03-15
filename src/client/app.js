@@ -26,9 +26,23 @@ navTabs.forEach((button) => {
   button.addEventListener('click', () => {
     navTabs.forEach((t) => t.classList.toggle('is-active', t === button));
     panels.forEach((p) => p.classList.toggle('is-active', p.id === button.dataset.tab));
+    saveLocal('_activeTab', button.dataset.tab);
     if (button.dataset.tab === 'dashboard') initMap();
   });
 });
+
+// Restore last active tab
+(function restoreActiveTab() {
+  const saved = loadLocal('_activeTab');
+  if (saved) {
+    const tab = navTabs.find((t) => t.dataset.tab === saved);
+    if (tab) {
+      navTabs.forEach((t) => t.classList.toggle('is-active', t === tab));
+      panels.forEach((p) => p.classList.toggle('is-active', p.id === saved));
+      if (saved === 'dashboard') setTimeout(() => initMap(), 100);
+    }
+  }
+})();
 
 // ── Dashboard share link ──
 const dashboardShareLink = document.querySelector('#dashboard-share');
@@ -358,6 +372,12 @@ function renderStep1(config) {
     posDisplay.textContent = v;
   });
 
+  // Auto-focus first empty field
+  const step1Fields = formStepContainer.querySelectorAll('input[name="researcherName"], #region-input, #store-name-input');
+  for (const f of step1Fields) {
+    if (!f.value.trim()) { setTimeout(() => f.focus(), 100); break; }
+  }
+
   formStepContainer.querySelector('#next-step1').addEventListener('click', () => {
     const name = formStepContainer.querySelector('[name="researcherName"]').value.trim();
     const region = formStepContainer.querySelector('[name="region"]').value.trim();
@@ -386,6 +406,13 @@ function renderStep1(config) {
 }
 
 function renderStep2(config) {
+  // Build placeholder map from last entered prices
+  const lastPrices = {};
+  try {
+    const saved = JSON.parse(loadLocal('_lastEnteredPrices') || '{}');
+    Object.assign(lastPrices, saved);
+  } catch { /* ignore */ }
+
   formStepContainer.innerHTML = `
     <div class="card stack">
       <div>
@@ -403,12 +430,17 @@ function renderStep2(config) {
               <span class="accordion-arrow">\u25BC</span>
             </div>
             <div class="product-body">
-              ${product.sizes.map((size) => `
+              ${product.sizes.map((size) => {
+    const fieldName = priceFieldName(product.id, size);
+    const lastVal = lastPrices[fieldName];
+    const ph = lastVal ? `지난번: \u20A9${Number(lastVal).toLocaleString()}` : '\u20A9 가격';
+    return `
                 <div class="price-field">
                   <span class="size-label">${size}</span>
-                  <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="10" name="${priceFieldName(product.id, size)}" placeholder="\u20A9 가격" />
+                  <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="10" name="${fieldName}" placeholder="${ph}" />
                 </div>
-              `).join('')}
+              `;
+  }).join('')}
             </div>
           </div>
         `).join('')}
@@ -423,6 +455,38 @@ function renderStep2(config) {
   formStepContainer.querySelectorAll('.product-header').forEach((header) => {
     header.addEventListener('click', () => {
       header.closest('.product-accordion').classList.toggle('is-open');
+    });
+  });
+
+  // Enter key navigation: move to next price field, auto-open next accordion
+  const allPriceInputs = [...formStepContainer.querySelectorAll('.price-field input')];
+  const allAccordions = [...formStepContainer.querySelectorAll('.product-accordion')];
+  allPriceInputs.forEach((input, i) => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const nextInput = allPriceInputs[i + 1];
+        if (nextInput) {
+          const nextAccordion = nextInput.closest('.product-accordion');
+          if (nextAccordion && !nextAccordion.classList.contains('is-open')) {
+            nextAccordion.classList.add('is-open');
+          }
+          nextInput.focus();
+        }
+      }
+    });
+    // Auto-open next accordion when last field in current accordion is filled
+    input.addEventListener('input', () => {
+      const accordion = input.closest('.product-accordion');
+      const inputs = [...accordion.querySelectorAll('.price-field input')];
+      const isLast = inputs[inputs.length - 1] === input;
+      if (isLast && input.value.replace(/[^0-9]/g, '')) {
+        const idx = allAccordions.indexOf(accordion);
+        const next = allAccordions[idx + 1];
+        if (next && !next.classList.contains('is-open')) {
+          next.classList.add('is-open');
+        }
+      }
     });
   });
 
@@ -453,6 +517,10 @@ function renderStep2(config) {
       if (val) prices[i.name] = val;
     });
     saveLocal('_step2_prices', JSON.stringify(prices));
+    // Persist for next-session placeholders
+    if (Object.keys(prices).length > 0) {
+      saveLocal('_lastEnteredPrices', JSON.stringify(prices));
+    }
   }
 
   function restorePrices() {
@@ -466,6 +534,13 @@ function renderStep2(config) {
   }
 
   restorePrices();
+
+  // Auto-focus first price input in first open accordion
+  const firstOpenAccordion = formStepContainer.querySelector('.product-accordion.is-open');
+  if (firstOpenAccordion) {
+    const firstInput = firstOpenAccordion.querySelector('.price-field input');
+    if (firstInput) setTimeout(() => firstInput.focus(), 100);
+  }
 
   formStepContainer.querySelector('#prev-step2').addEventListener('click', () => {
     savePrices();
@@ -592,8 +667,43 @@ function renderStep3(config) {
   });
 
   formStepContainer.querySelector('#submit-btn').addEventListener('click', () => {
-    handleSubmit(config);
+    startSubmitCountdown(config);
   });
+}
+
+function startSubmitCountdown(config) {
+  const submitBtn = formStepContainer.querySelector('#submit-btn');
+  if (!submitBtn || submitBtn.dataset.counting === 'true') return;
+  submitBtn.dataset.counting = 'true';
+  let count = 3;
+  const originalText = submitBtn.textContent;
+  submitBtn.textContent = `${count}... (취소하려면 다시 누르세요)`;
+  submitBtn.classList.add('btn-submit-countdown');
+
+  const timer = setInterval(() => {
+    count--;
+    if (count > 0) {
+      submitBtn.textContent = `${count}... (취소하려면 다시 누르세요)`;
+    } else {
+      clearInterval(timer);
+      submitBtn.dataset.counting = 'false';
+      submitBtn.classList.remove('btn-submit-countdown');
+      submitBtn.textContent = '저장!';
+      handleSubmit(config);
+    }
+  }, 1000);
+
+  // Cancel on second click
+  function cancelCountdown() {
+    clearInterval(timer);
+    submitBtn.dataset.counting = 'false';
+    submitBtn.classList.remove('btn-submit-countdown');
+    submitBtn.textContent = originalText;
+    submitBtn.removeEventListener('click', cancelCountdown);
+    showToast('제출을 취소했어요', 'error');
+  }
+  // Replace the click handler temporarily
+  submitBtn.addEventListener('click', cancelCountdown, { once: true });
 }
 
 async function handleSubmit(config) {
@@ -1311,9 +1421,22 @@ function renderDashboard(config) {
   });
 
   const leaderboard = document.querySelector('#product-leaderboard');
+  const activeFilter = state._productFilter || 'all';
+  const filteredStats = productStats.filter((ps) => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'ours') return ps.id === 'ion-kick';
+    if (activeFilter === 'competitor') return ps.id !== 'ion-kick';
+    return true;
+  });
+
   leaderboard.innerHTML = `
     <h2>제품 현황판 🏆</h2>
-    ${productStats.length === 0 ? '<div class="empty-state"><div class="empty-icon">🏆</div><p>데이터가 쌓이면 제품 순위가 표시돼요!</p></div>' : productStats.map((ps, i) => {
+    <div class="product-filter-chips">
+      <button type="button" class="filter-chip ${activeFilter === 'all' ? 'is-active' : ''}" data-filter="all">전체</button>
+      <button type="button" class="filter-chip ${activeFilter === 'ours' ? 'is-active' : ''}" data-filter="ours">자사</button>
+      <button type="button" class="filter-chip ${activeFilter === 'competitor' ? 'is-active' : ''}" data-filter="competitor">경쟁사</button>
+    </div>
+    ${filteredStats.length === 0 ? '<div class="empty-state"><div class="empty-icon">🏆</div><p>데이터가 쌓이면 제품 순위가 표시돼요!</p></div>' : filteredStats.map((ps, i) => {
       const pct = Math.round(ps.discoveryRate * 100);
       const medal = i < 3 ? medals[i] : '';
       const isIonKick = ps.id === 'ion-kick';
@@ -1359,6 +1482,14 @@ function renderDashboard(config) {
       `;
     }).join('')}
   `;
+
+  // Product filter chip click handlers
+  leaderboard.querySelectorAll('.filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      state._productFilter = chip.dataset.filter;
+      renderDashboard(config);
+    });
+  });
 
   // 4. Area Stats
   const areaStats = calcAreaStats(submissions, areas);

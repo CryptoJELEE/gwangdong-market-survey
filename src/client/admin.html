@@ -77,6 +77,9 @@
       .region-table th .sort-arrow{margin-left:4px;font-size:10px}
       .region-table td{padding:8px;border-bottom:1px solid var(--border)}
       .region-table tr:hover td{background:var(--bg)}
+      .admin-tab{flex:1;padding:10px 8px;border:none;background:none;font-size:14px;font-weight:700;color:var(--text-muted);cursor:pointer;border-bottom:3px solid transparent;transition:color .2s,border-color .2s}
+      .admin-tab.active{color:var(--primary);border-bottom-color:var(--primary)}
+      .admin-tab:hover{color:var(--primary)}
       @media print{
         .status-bar,.logout-btn,#login-section,#csv-btn,#backup-btn,.filter-bar,#submission-list,.sub-actions,.btn,.btn-submit,.new-submission-banner,#researcher-stats,.no-print,#settings-section,#price-trend-section,#chart-activity-heatmap{display:none!important}
         #admin-section{display:block!important}
@@ -124,91 +127,125 @@
 
         <div id="admin-stats" class="quick-stats"></div>
 
-        <div id="charts-section" style="display:grid;gap:12px;margin-top:12px;">
-          <div class="card stack" id="chart-daily"></div>
-          <div class="card stack" id="chart-researcher"></div>
-          <div class="card stack" id="chart-area"></div>
-          <div class="card stack" id="chart-quality"></div>
+        <div class="admin-tabs" style="display:flex;gap:0;margin-top:12px;position:sticky;top:0;z-index:50;background:var(--bg);padding:4px 0;border-bottom:2px solid var(--border);">
+          <button class="admin-tab active" data-tab="stats">📊 통계</button>
+          <button class="admin-tab" data-tab="records">📋 기록</button>
+          <button class="admin-tab" data-tab="settings">⚙️ 설정</button>
         </div>
 
-        <div id="chart-store-product" class="card stack" style="margin-top:12px;"></div>
-        <div id="chart-activity-heatmap" class="card stack" style="margin-top:12px;"></div>
-        <div id="chart-region-compare" class="card stack" style="margin-top:12px;"></div>
-
-        <div id="week-compare-section" class="card stack" style="margin-top:12px;"></div>
-
-        <div class="card stack" style="margin-top:12px;">
-          <h2>내보내기 💾</h2>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn btn-primary" id="csv-btn" style="flex:1;">📥 CSV 다운로드</button>
-            <button class="btn btn-secondary" id="backup-btn" style="flex:1;">백업 (JSON)</button>
-            <button class="btn btn-secondary no-print" id="print-btn" style="flex:1;">🖨️ 인쇄</button>
-          </div>
-        </div>
-
-        <div id="researcher-stats" class="card stack" style="margin-top:12px;"></div>
-
-        <div id="price-trend-section" class="card stack" style="margin-top:12px;">
-          <h2>가격 트렌드 📈</h2>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-            <select id="trend-product" style="flex:1;min-width:120px;">
-              <option value="">제품 선택</option>
-            </select>
-            <select id="trend-size" style="flex:1;min-width:120px;">
-              <option value="">사이즈 선택</option>
-            </select>
-          </div>
-          <div id="trend-chart"></div>
-        </div>
-
-        <div style="margin-top:12px;">
-          <button class="btn btn-secondary no-print" id="summary-btn" style="width:100%;">📊 요약 보기</button>
-        </div>
-
-        <div id="settings-section" class="card stack" style="margin-top:12px;">
-          <h2>설정 ⚙️</h2>
-
-          <div id="settings-areas" class="settings-group">
-            <h3>지역 관리</h3>
-            <div id="area-chips" class="chip-list"></div>
-            <div style="display:flex;gap:6px;margin-top:8px;">
-              <input type="text" id="new-area-input" placeholder="새 지역명" style="flex:1;" />
-              <button class="btn btn-primary" id="add-area-btn">추가</button>
-            </div>
+        <!-- TAB: 통계 -->
+        <div id="tab-stats" class="admin-tab-panel">
+          <div id="charts-section" style="display:grid;gap:12px;margin-top:12px;">
+            <div class="card stack" id="chart-daily"></div>
+            <div class="card stack" id="chart-researcher"></div>
+            <div class="card stack" id="chart-area"></div>
+            <div class="card stack" id="chart-quality"></div>
           </div>
 
-          <div id="settings-store-types" class="settings-group" style="margin-top:16px;">
-            <h3>매장유형 관리</h3>
-            <div id="store-type-chips" class="chip-list"></div>
-            <div style="display:flex;gap:6px;margin-top:8px;">
-              <input type="text" id="new-store-type-label" placeholder="매장유형명" style="flex:1;" />
-              <input type="number" id="new-store-type-pos" placeholder="기본 POS" style="width:80px;" min="0" value="1" />
-              <button class="btn btn-primary" id="add-store-type-btn">추가</button>
-            </div>
-          </div>
+          <div id="chart-store-product" class="card stack" style="margin-top:12px;"></div>
+          <div id="chart-activity-heatmap" class="card stack" style="margin-top:12px;"></div>
+          <div id="chart-region-compare" class="card stack" style="margin-top:12px;"></div>
 
-          <div id="settings-products" class="settings-group" style="margin-top:16px;">
-            <h3>제품 관리</h3>
-            <div id="product-list-manage"></div>
-            <div style="display:grid;gap:6px;margin-top:8px;">
-              <input type="text" id="new-product-label" placeholder="제품명" />
-              <select id="new-product-brand">
-                <option value="광동제약">자사 (광동제약)</option>
-                <option value="경쟁사">경쟁사</option>
+          <div id="week-compare-section" class="card stack" style="margin-top:12px;"></div>
+
+          <div id="researcher-stats" class="card stack" style="margin-top:12px;"></div>
+
+          <div id="price-trend-section" class="card stack" style="margin-top:12px;">
+            <h2>가격 트렌드 📈</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+              <select id="trend-product" style="flex:1;min-width:120px;">
+                <option value="">제품 선택</option>
               </select>
-              <input type="text" id="new-product-sizes" placeholder="사이즈 (쉼표 구분, 예: 캔 240ml, PET 500ml)" />
-              <button class="btn btn-primary" id="add-product-btn">제품 추가</button>
+              <select id="trend-size" style="flex:1;min-width:120px;">
+                <option value="">사이즈 선택</option>
+              </select>
             </div>
+            <div id="trend-chart"></div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <button class="btn btn-secondary no-print" id="summary-btn" style="width:100%;">📊 요약 보기</button>
           </div>
         </div>
 
-        <div class="card stack" style="margin-top:12px;">
-          <div class="admin-header">
-            <h2>전체 기록 📋</h2>
-            <p class="hint">기록을 확인하고 담당 지역을 조정하거나 삭제할 수 있어요.</p>
+        <!-- TAB: 기록 -->
+        <div id="tab-records" class="admin-tab-panel" style="display:none;">
+          <div class="card stack" style="margin-top:12px;">
+            <div class="admin-header">
+              <h2>전체 기록 📋</h2>
+              <p class="hint">기록을 확인하고 담당 지역을 조정하거나 삭제할 수 있어요.</p>
+            </div>
+            <div id="admin-filter" class="filter-bar"></div>
+            <div id="submission-list" class="stack"></div>
           </div>
-          <div id="admin-filter" class="filter-bar"></div>
-          <div id="submission-list" class="stack"></div>
+        </div>
+
+        <!-- TAB: 설정 -->
+        <div id="tab-settings" class="admin-tab-panel" style="display:none;">
+          <div class="card stack" style="margin-top:12px;">
+            <h2>내보내기 / 가져오기 💾</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-primary" id="csv-btn" style="flex:1;">📥 CSV 다운로드</button>
+              <button class="btn btn-secondary" id="backup-btn" style="flex:1;">백업 (JSON)</button>
+              <button class="btn btn-secondary no-print" id="print-btn" style="flex:1;">🖨️ 인쇄</button>
+            </div>
+            <div style="margin-top:12px;">
+              <button class="btn btn-secondary" id="import-btn" style="width:100%;">📤 데이터 가져오기</button>
+              <input type="file" id="import-file" accept=".json" style="display:none;" />
+            </div>
+          </div>
+
+          <div id="settings-section" class="card stack" style="margin-top:12px;">
+            <h2>설정 ⚙️</h2>
+
+            <div id="settings-areas" class="settings-group">
+              <h3>지역 관리</h3>
+              <div id="area-chips" class="chip-list"></div>
+              <div style="display:flex;gap:6px;margin-top:8px;">
+                <input type="text" id="new-area-input" placeholder="새 지역명" style="flex:1;" />
+                <button class="btn btn-primary" id="add-area-btn">추가</button>
+              </div>
+            </div>
+
+            <div id="settings-store-types" class="settings-group" style="margin-top:16px;">
+              <h3>매장유형 관리</h3>
+              <div id="store-type-chips" class="chip-list"></div>
+              <div style="display:flex;gap:6px;margin-top:8px;">
+                <input type="text" id="new-store-type-label" placeholder="매장유형명" style="flex:1;" />
+                <input type="number" id="new-store-type-pos" placeholder="기본 POS" style="width:80px;" min="0" value="1" />
+                <button class="btn btn-primary" id="add-store-type-btn">추가</button>
+              </div>
+            </div>
+
+            <div id="settings-products" class="settings-group" style="margin-top:16px;">
+              <h3>제품 관리</h3>
+              <div id="product-list-manage"></div>
+              <div style="display:grid;gap:6px;margin-top:8px;">
+                <input type="text" id="new-product-label" placeholder="제품명" />
+                <select id="new-product-brand">
+                  <option value="광동제약">자사 (광동제약)</option>
+                  <option value="경쟁사">경쟁사</option>
+                </select>
+                <input type="text" id="new-product-sizes" placeholder="사이즈 (쉼표 구분, 예: 캔 240ml, PET 500ml)" />
+                <button class="btn btn-primary" id="add-product-btn">제품 추가</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card stack" style="margin-top:12px;">
+            <h2>비밀번호 변경 🔑</h2>
+            <div style="display:grid;gap:8px;">
+              <div class="field">
+                <label>현재 비밀번호</label>
+                <input type="password" id="current-password" placeholder="현재 비밀번호" />
+              </div>
+              <div class="field">
+                <label>새 비밀번호</label>
+                <input type="password" id="new-password" placeholder="새 비밀번호 (4자 이상)" />
+              </div>
+              <button class="btn btn-primary" id="change-password-btn">비밀번호 변경</button>
+            </div>
+          </div>
         </div>
       </section>
     </main>
