@@ -6149,11 +6149,15 @@ textarea:disabled {
 
 /* ── 38.8 Dark Mode Premium (Toss-style — 깨끗한 다크) ── */
 @media (prefers-color-scheme: dark) {
-  /* Card — 미니멀 다크 */
+  /* Card — 미니멀 다크 + 보더로 구분 */
   .card {
     background: var(--card);
-    border-color: var(--border);
+    border: 1px solid var(--border);
     box-shadow: none;
+  }
+  /* 숫자 강조 — 밝은 흰색 */
+  .quick-stat .qs-value {
+    color: #ffffff;
   }
 
   /* Input — 다크 배경 */

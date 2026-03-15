@@ -137,10 +137,10 @@ class ValidationError extends Error {
 
 const CSP = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline' https://dapi.kakao.com https://t1.daumcdn.net https://mts.daumcdn.net",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "connect-src 'self'",
+  "img-src 'self' data: blob: https://*.daumcdn.net https://*.kakao.com https://mts.daumcdn.net https://ctt-image.kakao.com",
+  "connect-src 'self' https://dapi.kakao.com https://*.daumcdn.net",
   "font-src 'self'",
   "frame-ancestors 'none'"
 ].join('; ');
