@@ -188,6 +188,22 @@ function debounce(fn, delay) {
   return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
 }
 
+function trapFocus(container) {
+  const sel = 'button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  const focusable = [...container.querySelectorAll(sel)];
+  if (!focusable.length) return () => {};
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  first.focus();
+  function handler(e) {
+    if (e.key !== 'Tab') return;
+    if (e.shiftKey) { if (document.activeElement === first) { e.preventDefault(); last.focus(); } }
+    else { if (document.activeElement === last) { e.preventDefault(); first.focus(); } }
+  }
+  container.addEventListener('keydown', handler);
+  return () => container.removeEventListener('keydown', handler);
+}
+
 async function loadAdminData() {
   let loadingBanner = document.querySelector('#admin-loading-banner');
   if (!loadingBanner) {
@@ -1164,9 +1180,9 @@ function showSubmissionDetailModal(sub, areas) {
     </div>
   `;
   document.body.appendChild(overlay);
-  overlay.querySelector('#sub-modal-close').focus();
+  const releaseTrap = trapFocus(overlay.querySelector('.price-reminder-dialog'));
 
-  function close() { overlay.remove(); }
+  function close() { releaseTrap(); overlay.remove(); }
   overlay.querySelector('#sub-modal-close').addEventListener('click', close);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
@@ -1384,8 +1400,8 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
         const overlay = document.createElement('div');
         overlay.className = 'price-reminder-overlay';
         overlay.innerHTML = `
-          <div class="price-reminder-dialog" role="alertdialog" aria-modal="true">
-            <p>${selectedSubmissionIds.size}건을 일괄 삭제할까요?<br/><span style="font-size:.85rem;color:var(--text-muted);">되돌릴 수 없어요.</span></p>
+          <div class="price-reminder-dialog" role="alertdialog" aria-modal="true" aria-labelledby="bdel-title">
+            <p id="bdel-title">${selectedSubmissionIds.size}건을 일괄 삭제할까요?<br/><span style="font-size:.85rem;color:var(--text-muted);">되돌릴 수 없어요.</span></p>
             <div class="price-reminder-actions">
               <button type="button" class="btn btn-secondary" id="bdel-cancel">취소</button>
               <button type="button" class="btn btn-primary" style="background:var(--error,#e74c3c);border-color:var(--error,#e74c3c);" id="bdel-confirm">삭제</button>

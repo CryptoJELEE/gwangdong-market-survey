@@ -1200,8 +1200,7 @@ function calcRecentActivity(submissions, limit) {
 
 function relativeTime(dateStr) {
   const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diff = now - then;
+  const diff = now - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return '방금';
   if (mins < 60) return `${mins}분 전`;
@@ -1209,7 +1208,8 @@ function relativeTime(dateStr) {
   if (hours < 24) return `${hours}시간 전`;
   const days = Math.floor(hours / 24);
   if (days === 1) return '어제';
-  return `${days}일 전`;
+  if (days < 7) return `${days}일 전`;
+  return new Date(dateStr).toLocaleDateString('ko-KR');
 }
 
 // ── Badge system ──
@@ -1321,19 +1321,6 @@ function renderMyRecords(submissions) {
     if (filter === 'month') return ts >= monthAgoTs;
     return true;
   }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-  function relativeTime(dateStr) {
-    const diff = now - new Date(dateStr).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 1) return '방금';
-    if (mins < 60) return `${mins}분 전`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}시간 전`;
-    const days = Math.floor(hours / 24);
-    if (days === 1) return '어제';
-    if (days < 7) return `${days}일 전`;
-    return new Date(dateStr).toLocaleDateString('ko-KR');
-  }
 
   // Group by date label for timeline headers
   const groups = [];
