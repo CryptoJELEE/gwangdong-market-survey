@@ -141,6 +141,13 @@ function renderForm(config) {
 
   const savedName = loadLocal('researcherName');
   if (savedName) statusResearcher.textContent = savedName;
+
+  // Draft restoration toast (once per session)
+  const hasDraft = loadLocal('_step1_region') || loadLocal('_step1_storeName');
+  if (hasDraft && !sessionStorage.getItem('kwangdong_draftNotified')) {
+    sessionStorage.setItem('kwangdong_draftNotified', '1');
+    setTimeout(() => showToast('저장된 임시 데이터를 불러왔어요 📝', 'info'), 600);
+  }
 }
 
 function renderCurrentStep(config) {
@@ -1466,12 +1473,16 @@ function renderDashboard(config) {
   } else {
     const avgCompleteness = total > 0 ? Math.round(submissions.reduce((sum, s) => sum + (s.completenessScore ?? 0), 0) / total) : 0;
     document.querySelector('#quick-stats').innerHTML = `
-      <div class="quick-stat"><span class="qs-icon">🏃</span><span class="qs-value">${total}</span><span class="qs-label">총 기록</span></div>
-      <div class="quick-stat"><span class="qs-icon">📅</span><span class="qs-value">${todayCount}</span><span class="qs-label">오늘</span></div>
-      <div class="quick-stat"><span class="qs-icon">👤</span><span class="qs-value">${uniqueResearchers}</span><span class="qs-label">조사자</span></div>
+      <div class="quick-stat"><span class="qs-icon">🏃</span><span class="qs-value" data-count="${total}">0</span><span class="qs-label">총 기록</span></div>
+      <div class="quick-stat"><span class="qs-icon">📅</span><span class="qs-value" data-count="${todayCount}">0</span><span class="qs-label">오늘</span></div>
+      <div class="quick-stat"><span class="qs-icon">👤</span><span class="qs-value" data-count="${uniqueResearchers}">0</span><span class="qs-label">조사자</span></div>
       <div class="quick-stat"><span class="qs-icon">📍</span><span class="qs-value">${coveredAreas}/${areas.length}</span><span class="qs-label">지역</span></div>
-      <div class="quick-stat"><span class="qs-icon">✅</span><span class="qs-value">${avgCompleteness}점</span><span class="qs-label">평균 완료도</span></div>
+      <div class="quick-stat"><span class="qs-icon">✅</span><span class="qs-value" data-count="${avgCompleteness}" data-suffix="점">0점</span><span class="qs-label">평균 완료도</span></div>
     `;
+    // Animate countable stats
+    document.querySelectorAll('#quick-stats .qs-value[data-count]').forEach((el) => {
+      animateCount(el, Number(el.dataset.count), el.dataset.suffix || '');
+    });
   }
 
   // 2.5 Today's Highlight Card + Streak
@@ -1621,6 +1632,44 @@ function renderDashboard(config) {
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function animateCount(el, target, suffix = '', duration = 600) {
+  if (!el || isNaN(target) || target === 0) { el.textContent = target + suffix; return; }
+  const startTime = performance.now();
+  function tick(now) {
+    const progress = Math.min((now - startTime) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    el.textContent = Math.round(target * eased) + suffix;
+    if (progress < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function showShortcutsPanel() {
+  const existing = document.querySelector('.shortcuts-panel-overlay');
+  if (existing) { existing.remove(); return; }
+  const overlay = document.createElement('div');
+  overlay.className = 'price-reminder-overlay shortcuts-panel-overlay';
+  overlay.innerHTML = `
+    <div class="price-reminder-dialog" style="max-width:320px;">
+      <h3 style="margin:0 0 12px;font-size:1rem;">⌨️ 키보드 단축키</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;line-height:1.8;">
+        <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">← →</td><td>탭 전환 (탭에 포커스 시)</td></tr>
+        <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">Enter</td><td>가격 필드 → 다음 필드 이동</td></tr>
+        <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">Space / Enter</td><td>아코디언 열기/닫기</td></tr>
+        <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">Esc</td><td>팝업/시트 닫기</td></tr>
+        <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">← → (사진)</td><td>라이트박스 사진 전환</td></tr>
+        <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">?</td><td>이 도움말 표시/숨기기</td></tr>
+      </table>
+      <div class="price-reminder-actions" style="margin-top:16px;">
+        <button type="button" class="btn btn-primary" id="shortcuts-close">닫기</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#shortcuts-close').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#shortcuts-close').focus();
 }
 
 async function fileToDataUrl(file) {
@@ -2033,6 +2082,13 @@ function initKeyboardNav() {
         helpBackdrop.classList.add('hidden');
         return;
       }
+    }
+
+    // ? key: shortcuts panel (when not in an input field)
+    if (e.key === '?' && !e.target.matches('input, textarea, select')) {
+      e.preventDefault();
+      showShortcutsPanel();
+      return;
     }
 
     // Arrow keys for tab switching (when a nav-tab is focused)

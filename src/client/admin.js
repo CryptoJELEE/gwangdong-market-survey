@@ -143,6 +143,14 @@ let adminData = null;
 let knownCount = 0;
 let pollTimer = null;
 
+// ── Submission list state ──
+let submissionPage = 1;
+const SUBMISSION_PAGE_SIZE = 20;
+let currentFilters = { date: '', researcher: '', area: '', store: '' };
+let lastFilteredCount = 0;
+let bulkSelectMode = false;
+const selectedSubmissionIds = new Set();
+
 async function loadAdminData() {
   try {
     const [bootstrapRes, submissionsRes] = await Promise.all([
@@ -396,12 +404,12 @@ function renderAdmin() {
   const filterArea = adminFilter.querySelector('#filter-area');
   const filterStore = adminFilter.querySelector('#filter-store');
   const filterStoreClear = adminFilter.querySelector('#filter-store-clear');
-  const doFilter = () => renderSubmissionList(
-    filterDate.value,
-    filterResearcher.value,
-    filterArea.value,
-    filterStore.value
-  );
+  const doFilter = () => {
+    currentFilters = { date: filterDate.value, researcher: filterResearcher.value, area: filterArea.value, store: filterStore.value };
+    submissionPage = 1;
+    selectedSubmissionIds.clear();
+    renderSubmissionList(currentFilters.date, currentFilters.researcher, currentFilters.area, currentFilters.store, 1);
+  };
   filterDate.addEventListener('change', doFilter);
   filterResearcher.addEventListener('change', doFilter);
   filterArea.addEventListener('change', doFilter);
@@ -822,37 +830,66 @@ function applyDateFilter(submissions, dateFilter) {
   return submissions;
 }
 
-function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFilter) {
+function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFilter, page) {
   if (!adminData) return;
+  page = page || submissionPage || 1;
+  submissionPage = page;
+
   const { submissions, areas, products } = adminData;
   let filtered = submissions;
 
   filtered = applyDateFilter(filtered, dateFilter);
-
-  if (researcherFilter) {
-    filtered = filtered.filter((s) => s.researcher.name === researcherFilter);
-  }
-  if (areaFilter) {
-    filtered = filtered.filter((s) => s.assignment?.currentArea === areaFilter);
-  }
+  if (researcherFilter) filtered = filtered.filter((s) => s.researcher.name === researcherFilter);
+  if (areaFilter) filtered = filtered.filter((s) => s.assignment?.currentArea === areaFilter);
   if (storeFilter) {
     const q = storeFilter.toLowerCase();
     filtered = filtered.filter((s) => s.survey.storeName.toLowerCase().includes(q));
   }
 
-  submissionList.innerHTML = filtered.length
-    ? filtered.map((sub) => {
+  const totalCount = filtered.length;
+  lastFilteredCount = totalCount;
+  const totalPages = Math.max(1, Math.ceil(totalCount / SUBMISSION_PAGE_SIZE));
+  if (page > totalPages) { submissionPage = totalPages; page = totalPages; }
+  const paginated = filtered.slice((page - 1) * SUBMISSION_PAGE_SIZE, page * SUBMISSION_PAGE_SIZE);
+
+  // Bulk action toolbar
+  const bulkSelected = selectedSubmissionIds.size;
+  const bulkBar = bulkSelectMode ? `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-alt,#f5f5f5);border-radius:8px;margin-bottom:8px;flex-wrap:wrap;">
+      <label style="display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer;">
+        <input type="checkbox" id="bulk-select-all" ${bulkSelected === paginated.length && paginated.length > 0 ? 'checked' : ''} />
+        전체 선택
+      </label>
+      <span style="font-size:.85rem;color:var(--text-muted);">${bulkSelected}건 선택됨</span>
+      <button type="button" class="btn btn-secondary" id="bulk-delete-btn" ${bulkSelected === 0 ? 'disabled' : ''} style="font-size:.8rem;padding:4px 10px;">🗑️ 선택 삭제</button>
+      <button type="button" class="btn btn-secondary" id="bulk-export-btn" ${bulkSelected === 0 ? 'disabled' : ''} style="font-size:.8rem;padding:4px 10px;">📥 선택 내보내기</button>
+      <button type="button" class="btn btn-secondary" id="bulk-cancel-btn" style="font-size:.8rem;padding:4px 10px;">취소</button>
+    </div>
+  ` : `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:.85rem;color:var(--text-muted);">총 ${totalCount}건</span>
+      <button type="button" class="btn btn-secondary" id="bulk-toggle-btn" style="font-size:.8rem;padding:4px 10px;">☑️ 선택 모드</button>
+    </div>
+  `;
+
+  const cardsHtml = paginated.length
+    ? paginated.map((sub) => {
+        const isSelected = selectedSubmissionIds.has(sub.id);
         const priceRows = (sub.prices || []).map((p) =>
           `<tr><td>${escapeHtml(p.productLabel)}</td><td>${escapeHtml(p.size)}</td><td style="text-align:right;">\u20A9${Number(p.price).toLocaleString()}</td></tr>`
         ).join('');
         const gps = sub.gps || sub.location;
         const gpsText = gps ? `${gps.lat?.toFixed(5)}, ${gps.lng?.toFixed(5)}` : '-';
+        const checkboxHtml = bulkSelectMode
+          ? `<input type="checkbox" class="bulk-checkbox" data-id="${sub.id}" ${isSelected ? 'checked' : ''} style="margin-right:8px;width:16px;height:16px;cursor:pointer;" aria-label="${escapeHtml(sub.survey.storeName)} 선택" />`
+          : '';
 
         return `
-      <article class="submission-card" data-id="${sub.id}">
-        <div class="sub-header" style="cursor:pointer;" data-toggle="${sub.id}">
-          <span class="store-name">${escapeHtml(sub.survey.storeName)}</span>
-          <span class="sub-date">${new Date(sub.createdAt).toLocaleDateString('ko-KR')}</span>
+      <article class="submission-card" data-id="${sub.id}" ${isSelected ? 'style="outline:2px solid var(--primary);"' : ''}>
+        <div class="sub-header" style="cursor:pointer;display:flex;align-items:center;" data-toggle="${sub.id}">
+          ${checkboxHtml}
+          <span class="store-name">${highlightMatch(sub.survey.storeName, storeFilter)}</span>
+          <span class="sub-date" style="margin-left:auto;">${new Date(sub.createdAt).toLocaleDateString('ko-KR')}</span>
         </div>
         <div class="sub-meta">
           ${escapeHtml(sub.researcher.name)} \u00B7 ${escapeHtml(sub.researcher.residenceArea)} \u2192 <strong>${escapeHtml(sub.assignment?.currentArea || '')}</strong>
@@ -882,6 +919,19 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
     `;
       }).join('')
     : '<div class="notice">기록이 없어요.</div>';
+
+  // Pagination controls
+  const paginationHtml = totalPages > 1 ? `
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;flex-wrap:wrap;">
+      <button type="button" class="btn btn-secondary" id="pg-first" ${page === 1 ? 'disabled' : ''} style="font-size:.8rem;padding:4px 10px;">«</button>
+      <button type="button" class="btn btn-secondary" id="pg-prev" ${page === 1 ? 'disabled' : ''} style="font-size:.8rem;padding:4px 10px;">‹ 이전</button>
+      <span style="font-size:.85rem;color:var(--text-muted);">${page} / ${totalPages}페이지</span>
+      <button type="button" class="btn btn-secondary" id="pg-next" ${page >= totalPages ? 'disabled' : ''} style="font-size:.8rem;padding:4px 10px;">다음 ›</button>
+      <button type="button" class="btn btn-secondary" id="pg-last" ${page >= totalPages ? 'disabled' : ''} style="font-size:.8rem;padding:4px 10px;">»</button>
+    </div>
+  ` : '';
+
+  submissionList.innerHTML = bulkBar + cardsHtml + paginationHtml;
 
   // Toggle detail
   submissionList.querySelectorAll('[data-toggle]').forEach((header) => {
@@ -948,6 +998,129 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
       }
     });
   });
+
+  // ── Pagination events ──
+  const pgFirst = submissionList.querySelector('#pg-first');
+  const pgPrev = submissionList.querySelector('#pg-prev');
+  const pgNext = submissionList.querySelector('#pg-next');
+  const pgLast = submissionList.querySelector('#pg-last');
+
+  if (pgFirst) pgFirst.addEventListener('click', () => renderSubmissionList(currentFilters.date, currentFilters.researcher, currentFilters.area, currentFilters.store, 1));
+  if (pgPrev) pgPrev.addEventListener('click', () => renderSubmissionList(currentFilters.date, currentFilters.researcher, currentFilters.area, currentFilters.store, submissionPage - 1));
+  if (pgNext) pgNext.addEventListener('click', () => renderSubmissionList(currentFilters.date, currentFilters.researcher, currentFilters.area, currentFilters.store, submissionPage + 1));
+  if (pgLast) pgLast.addEventListener('click', () => {
+    const last = Math.max(1, Math.ceil(lastFilteredCount / SUBMISSION_PAGE_SIZE));
+    renderSubmissionList(currentFilters.date, currentFilters.researcher, currentFilters.area, currentFilters.store, last);
+  });
+
+  // ── Bulk action events ──
+  const bulkToggleBtn = submissionList.querySelector('#bulk-toggle-btn');
+  if (bulkToggleBtn) {
+    bulkToggleBtn.addEventListener('click', () => {
+      bulkSelectMode = true;
+      selectedSubmissionIds.clear();
+      renderSubmissionList(currentFilters.date, currentFilters.researcher, currentFilters.area, currentFilters.store, submissionPage);
+    });
+  }
+
+  const bulkCancelBtn = submissionList.querySelector('#bulk-cancel-btn');
+  if (bulkCancelBtn) {
+    bulkCancelBtn.addEventListener('click', () => {
+      bulkSelectMode = false;
+      selectedSubmissionIds.clear();
+      renderSubmissionList(currentFilters.date, currentFilters.researcher, currentFilters.area, currentFilters.store, submissionPage);
+    });
+  }
+
+  const bulkSelectAll = submissionList.querySelector('#bulk-select-all');
+  if (bulkSelectAll) {
+    bulkSelectAll.addEventListener('change', () => {
+      submissionList.querySelectorAll('.bulk-checkbox').forEach((cb) => {
+        if (bulkSelectAll.checked) selectedSubmissionIds.add(cb.dataset.id);
+        else selectedSubmissionIds.delete(cb.dataset.id);
+        cb.checked = bulkSelectAll.checked;
+      });
+      renderSubmissionList(currentFilters.date, currentFilters.researcher, currentFilters.area, currentFilters.store, submissionPage);
+    });
+  }
+
+  submissionList.querySelectorAll('.bulk-checkbox').forEach((cb) => {
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      if (cb.checked) selectedSubmissionIds.add(cb.dataset.id);
+      else selectedSubmissionIds.delete(cb.dataset.id);
+      renderSubmissionList(currentFilters.date, currentFilters.researcher, currentFilters.area, currentFilters.store, submissionPage);
+    });
+    cb.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  const bulkDeleteBtn = submissionList.querySelector('#bulk-delete-btn');
+  if (bulkDeleteBtn) {
+    bulkDeleteBtn.addEventListener('click', async () => {
+      if (selectedSubmissionIds.size === 0) return;
+      const confirmed = await new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'price-reminder-overlay';
+        overlay.innerHTML = `
+          <div class="price-reminder-dialog" role="alertdialog" aria-modal="true">
+            <p>${selectedSubmissionIds.size}건을 일괄 삭제할까요?<br/><span style="font-size:.85rem;color:var(--text-muted);">되돌릴 수 없어요.</span></p>
+            <div class="price-reminder-actions">
+              <button type="button" class="btn btn-secondary" id="bdel-cancel">취소</button>
+              <button type="button" class="btn btn-primary" style="background:var(--error,#e74c3c);border-color:var(--error,#e74c3c);" id="bdel-confirm">삭제</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+        const kh = (e) => { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', kh); resolve(false); } };
+        document.addEventListener('keydown', kh);
+        overlay.querySelector('#bdel-cancel').addEventListener('click', () => { overlay.remove(); document.removeEventListener('keydown', kh); resolve(false); });
+        overlay.querySelector('#bdel-confirm').addEventListener('click', () => { overlay.remove(); document.removeEventListener('keydown', kh); resolve(true); });
+        overlay.querySelector('#bdel-confirm').focus();
+      });
+      if (!confirmed) return;
+      let successCount = 0;
+      for (const id of selectedSubmissionIds) {
+        const res = await authFetch('/api/submissions/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submissionId: id }) });
+        if (res.ok) successCount++;
+      }
+      showToast(`${successCount}건 삭제되었어요.`);
+      bulkSelectMode = false;
+      selectedSubmissionIds.clear();
+      await loadAdminData();
+    });
+  }
+
+  const bulkExportBtn = submissionList.querySelector('#bulk-export-btn');
+  if (bulkExportBtn) {
+    bulkExportBtn.addEventListener('click', () => {
+      if (selectedSubmissionIds.size === 0) return;
+      const { submissions, products } = adminData;
+      const selected = submissions.filter((s) => selectedSubmissionIds.has(s.id));
+      const priceHeaders = [];
+      for (const product of (products || [])) {
+        for (const size of product.sizes) priceHeaders.push(`${product.label} ${size}`);
+      }
+      const headers = ['제출일시', '조사자', '조사지역', '매장유형', '매장명', 'POS대수', ...priceHeaders, '메모'];
+      const rows = selected.map((sub) => {
+        const priceMap = {};
+        (sub.prices || []).forEach((p) => { priceMap[`${p.productLabel} ${p.size}`] = p.price; });
+        const priceCols = priceHeaders.map((h) => String(priceMap[h] || '').replace(/[^0-9]/g, ''));
+        return [formatDateCSV(sub.createdAt), sub.researcher.name, sub.assignment?.currentArea || '', sub.survey.storeType, sub.survey.storeName, sub.survey.posCount, ...priceCols, sub.notes || ''];
+      });
+      const csvContent = [headers, ...rows].map((row) => row.map((cell) => {
+        const str = String(cell);
+        return (str.includes(',') || str.includes('"') || str.includes('\n')) ? '"' + str.replace(/"/g, '""') + '"' : str;
+      }).join(',')).join('\r\n');
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ionroad-selected-${selected.length}건-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast(`${selected.length}건 내보내기 완료.`);
+    });
+  }
 }
 
 // ── CSV Export ──
@@ -1052,6 +1225,13 @@ document.querySelector('#backup-btn').addEventListener('click', async () => {
 function escapeHtml(str) {
   if (!str) return '';
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function highlightMatch(text, query) {
+  const escaped = escapeHtml(String(text || ''));
+  if (!query) return escaped;
+  const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escaped.replace(new RegExp('(' + safeQuery + ')', 'gi'), '<mark style="background:#fff3cd;padding:0 2px;border-radius:2px;">$1</mark>');
 }
 
 function showToast(message, type) {

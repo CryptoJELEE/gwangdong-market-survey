@@ -1,5 +1,6 @@
 import http from 'node:http';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile } from 'node:fs/promises';
@@ -7,10 +8,12 @@ import { loadConfig } from './config.js';
 import { assignArea, assignAreaByDistance } from './assignment.js';
 import { createGeocoder } from './geocoding.js';
 import { SurveyStore } from './storage/index.js';
-import { collectJsonBody, json } from './utils.js';
+import { collectJsonBody } from './utils.js';
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
 const MAX_PHOTO_BYTES = 500 * 1024; // 500 KB
+const COMPRESSION_THRESHOLD = 1024; // bytes — compress responses larger than this
+const PAGINATION_MAX_LIMIT = 200;
 const SERVER_STARTED_AT = new Date().toISOString();
 const PKG_VERSION = JSON.parse(await readFile(path.resolve('package.json'), 'utf8')).version;
 
@@ -63,6 +66,64 @@ function buildAveragePrices(submissions) {
       avg: Math.round(v.prices.reduce((a, b) => a + b, 0) / v.prices.length),
       count: v.prices.length
     }));
+}
+
+// ── gzip/deflate JSON response ──
+async function sendJson(request, response, statusCode, payload) {
+  const body = Buffer.from(JSON.stringify(payload));
+  const headers = { 'Content-Type': 'application/json; charset=utf-8' };
+
+  if (body.length > COMPRESSION_THRESHOLD) {
+    const acceptEncoding = request?.headers?.['accept-encoding'] || '';
+    if (acceptEncoding.includes('gzip')) {
+      const compressed = await new Promise((resolve, reject) =>
+        zlib.gzip(body, (err, result) => (err ? reject(err) : resolve(result)))
+      );
+      headers['Content-Encoding'] = 'gzip';
+      headers['Content-Length'] = compressed.length;
+      response.writeHead(statusCode, headers);
+      response.end(compressed);
+      return;
+    } else if (acceptEncoding.includes('deflate')) {
+      const compressed = await new Promise((resolve, reject) =>
+        zlib.deflate(body, (err, result) => (err ? reject(err) : resolve(result)))
+      );
+      headers['Content-Encoding'] = 'deflate';
+      headers['Content-Length'] = compressed.length;
+      response.writeHead(statusCode, headers);
+      response.end(compressed);
+      return;
+    }
+  }
+
+  headers['Content-Length'] = body.length;
+  response.writeHead(statusCode, headers);
+  response.end(body);
+}
+
+// ── Password hashing (scrypt) ──
+// Format: "scrypt$<hex-salt>$<hex-hash>" for hashed; plain text otherwise (backward compat)
+const SCRYPT_KEYLEN = 32;
+const SCRYPT_PREFIX = 'scrypt$';
+
+async function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = await new Promise((resolve, reject) =>
+    crypto.scrypt(password, salt, SCRYPT_KEYLEN, (err, key) => (err ? reject(err) : resolve(key.toString('hex'))))
+  );
+  return `${SCRYPT_PREFIX}${salt}$${hash}`;
+}
+
+async function verifyPassword(provided, stored) {
+  if (!stored || !stored.startsWith(SCRYPT_PREFIX)) {
+    // Plain text stored (config default or legacy) — use timing-safe comparison
+    return safeCompare(provided, stored);
+  }
+  const [, salt, expectedHex] = stored.split('$');
+  const actualHex = await new Promise((resolve, reject) =>
+    crypto.scrypt(provided, salt, SCRYPT_KEYLEN, (err, key) => (err ? reject(err) : resolve(key.toString('hex'))))
+  );
+  return safeCompare(actualHex, expectedHex);
 }
 
 // ── Rate Limiter ──
@@ -271,9 +332,19 @@ export function createApp(config = loadConfig(), options = {}) {
   const server = http.createServer(async (request, response) => {
     const clientIp = getClientIp(request);
     const url = new URL(request.url, `http://${request.headers.host}`);
+    const startMs = Date.now();
 
-    // Request logging
-    console.log(`[${request.method}] ${url.pathname} (${clientIp})`);
+    // Log response time and status when response ends
+    const originalEnd = response.end.bind(response);
+    let logged = false;
+    response.end = function(...args) {
+      if (!logged) {
+        logged = true;
+        const ms = Date.now() - startMs;
+        console.log(`[${request.method}] ${url.pathname} ${response.statusCode} (${ms}ms, ${clientIp})`);
+      }
+      return originalEnd(...args);
+    };
 
     setCorsHeaders(response);
     setSecurityHeaders(response);
@@ -289,18 +360,18 @@ export function createApp(config = loadConfig(), options = {}) {
     const isAdminLogin = request.method === 'POST' && url.pathname === '/api/admin/login';
 
     if (isAdminLogin && checkRate(`login:${clientIp}`, 5)) {
-      console.warn(`[RATE] 429 - login rate exceeded (${clientIp})`);
-      json(response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+      console.warn(`[RATE] login rate exceeded (${clientIp})`);
+      await sendJson(request, response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
       return;
     }
     if (isSubmissionPost && checkRate(`submit:${clientIp}`, 10)) {
-      console.warn(`[RATE] 429 - submission rate exceeded (${clientIp})`);
-      json(response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+      console.warn(`[RATE] submission rate exceeded (${clientIp})`);
+      await sendJson(request, response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
       return;
     }
     if (checkRate(`global:${clientIp}`, 60)) {
-      console.warn(`[RATE] 429 - global rate exceeded (${clientIp})`);
-      json(response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+      console.warn(`[RATE] global rate exceeded (${clientIp})`);
+      await sendJson(request, response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
       return;
     }
 
@@ -311,7 +382,7 @@ export function createApp(config = loadConfig(), options = {}) {
       }
 
       if (request.method === 'GET' && url.pathname === '/health') {
-        json(response, 200, {
+        await sendJson(request, response, 200, {
           status: 'ok',
           uptime: Math.floor(process.uptime()),
           startedAt: SERVER_STARTED_AT,
@@ -374,36 +445,46 @@ export function createApp(config = loadConfig(), options = {}) {
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         const dbPassword = await store.getAdminPassword();
         const activePassword = dbPassword || config.adminPassword;
-        if (safeCompare(body.password, activePassword)) {
-          json(response, 200, { token: createAdminToken() });
+        if (await verifyPassword(body.password, activePassword)) {
+          await sendJson(request, response, 200, { token: createAdminToken() });
         } else {
-          json(response, 401, { error: '비밀번호가 틀렸어요.' });
+          await sendJson(request, response, 401, { error: '비밀번호가 틀렸어요.' });
         }
         return;
       }
 
       if (request.method === 'GET' && url.pathname === '/api/admin/verify') {
         if (checkAuth(request)) {
-          json(response, 200, { ok: true });
+          await sendJson(request, response, 200, { ok: true });
         } else {
-          json(response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: 'Unauthorized' });
         }
         return;
       }
 
       if (request.method === 'GET' && url.pathname === '/api/admin/submissions') {
         if (!checkAuth(request)) {
-          json(response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
-        const submissions = await store.listSubmissions();
-        json(response, 200, submissions);
+        const all = await store.listSubmissions();
+        const pageParam = url.searchParams.get('page');
+        const limitParam = url.searchParams.get('limit');
+        if (pageParam !== null || limitParam !== null) {
+          const page = Math.max(1, Number(pageParam) || 1);
+          const limit = Math.min(PAGINATION_MAX_LIMIT, Math.max(1, Number(limitParam) || 20));
+          const total = all.length;
+          const items = all.slice((page - 1) * limit, page * limit);
+          await sendJson(request, response, 200, { total, page, limit, items });
+        } else {
+          await sendJson(request, response, 200, all);
+        }
         return;
       }
 
       if (request.method === 'GET' && url.pathname === '/api/admin/settings') {
         if (!checkAuth(request)) {
-          json(response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
         const [customAreas, customProducts, customStoreTypes] = await Promise.all([
@@ -411,27 +492,27 @@ export function createApp(config = loadConfig(), options = {}) {
           store.getSetting('customProducts'),
           store.getSetting('customStoreTypes')
         ]);
-        json(response, 200, { customAreas, customProducts, customStoreTypes });
+        await sendJson(request, response, 200, { customAreas, customProducts, customStoreTypes });
         return;
       }
 
       if (request.method === 'POST' && url.pathname === '/api/admin/settings') {
         if (!checkAuth(request)) {
-          json(response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         const allowedKeys = ['customAreas', 'customProducts', 'customStoreTypes'];
         if (!body.key || !allowedKeys.includes(body.key)) {
-          json(response, 400, { error: 'Invalid setting key.' });
+          await sendJson(request, response, 400, { error: 'Invalid setting key.' });
           return;
         }
         if (!Array.isArray(body.value)) {
-          json(response, 400, { error: 'Value must be an array.' });
+          await sendJson(request, response, 400, { error: 'Value must be an array.' });
           return;
         }
         await store.setSetting(body.key, body.value);
-        json(response, 200, { ok: true });
+        await sendJson(request, response, 200, { ok: true });
         return;
       }
 
@@ -458,7 +539,7 @@ export function createApp(config = loadConfig(), options = {}) {
         const topStoreEntry = Object.entries(storeCounts).sort((a, b) => b[1] - a[1])[0];
         const topStore = topStoreEntry ? { name: topStoreEntry[0], count: topStoreEntry[1] } : null;
 
-        json(response, 200, { date: targetDate, totalSubmissions, uniqueResearchers, areasCovered, averagePrices, topResearcher, topStore });
+        await sendJson(request, response, 200, { date: targetDate, totalSubmissions, uniqueResearchers, areasCovered, averagePrices, topResearcher, topStore });
         return;
       }
 
@@ -560,7 +641,7 @@ ${researcherRows}
           store.getSetting('customProducts'),
           store.getSetting('customStoreTypes')
         ]);
-        json(response, 200, {
+        await sendJson(request, response, 200, {
           areas: customAreas || config.areas,
           products: customProducts || config.products,
           storeTypeTemplates: customStoreTypes || config.storeTypeTemplates,
@@ -574,7 +655,7 @@ ${researcherRows}
       if (request.method === 'GET' && url.pathname === '/api/geocode') {
         const query = url.searchParams.get('query') || '';
         const result = await geocoder.geocode(query);
-        json(response, 200, result);
+        await sendJson(request, response, 200, result);
         return;
       }
 
@@ -582,7 +663,7 @@ ${researcherRows}
         const lat = url.searchParams.get('lat');
         const lng = url.searchParams.get('lng');
         if (!lat || !lng) {
-          json(response, 400, { error: 'lat and lng are required.' });
+          await sendJson(request, response, 400, { error: 'lat and lng are required.' });
           return;
         }
         const kakaoUrl = `https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${lng}&y=${lat}`;
@@ -595,7 +676,7 @@ ${researcherRows}
         const address = doc
           ? (doc.road_address ? doc.road_address.address_name : doc.address.address_name)
           : '';
-        json(response, 200, { address, lat: Number(lat), lng: Number(lng) });
+        await sendJson(request, response, 200, { address, lat: Number(lat), lng: Number(lng) });
         return;
       }
 
@@ -604,7 +685,7 @@ ${researcherRows}
         const activeAreas = customAreas || config.areas;
         const submissionCounts = await store.getSubmissionCounts();
         const areaCoordinates = await geocodeAreas(activeAreas);
-        json(response, 200, {
+        await sendJson(request, response, 200, {
           areas: activeAreas.map((area) => ({
             area,
             submissionCount: submissionCounts[area] || 0,
@@ -699,13 +780,13 @@ ${researcherRows}
           } catch { /* fire-and-forget */ }
         })();
 
-        json(response, 201, submission);
+        await sendJson(request, response, 201, submission);
         return;
       }
 
       if (request.method === 'POST' && url.pathname === '/api/assignments/override') {
         if (!checkAuth(request)) {
-          json(response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
@@ -718,105 +799,106 @@ ${researcherRows}
           reason: body.reason || '',
           adminName: body.adminName || 'Admin'
         });
-        json(response, 200, updated);
+        await sendJson(request, response, 200, updated);
         return;
       }
 
       if (request.method === 'GET' && url.pathname === '/api/backup') {
         if (!checkAuth(request)) {
-          json(response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
         const submissions = await store.listSubmissions();
         const cfg = store.getConfig ? store.getConfig() : {};
         const timestamp = new Date().toISOString();
-        json(response, 200, { timestamp, totalSubmissions: submissions.length, submissions, config: cfg });
+        await sendJson(request, response, 200, { timestamp, totalSubmissions: submissions.length, submissions, config: cfg });
         return;
       }
 
       if (request.method === 'POST' && url.pathname === '/api/submissions/delete') {
         if (!checkAuth(request)) {
-          json(response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         if (!body.submissionId) throw new ValidationError('submissionId is required.');
         await store.deleteSubmission(body.submissionId);
-        json(response, 200, { ok: true });
+        await sendJson(request, response, 200, { ok: true });
         return;
       }
 
       if (request.method === 'POST' && url.pathname === '/api/admin/import') {
         if (!checkAuth(request)) {
-          json(response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         if (!Array.isArray(body.submissions)) {
-          json(response, 400, { error: 'submissions 배열이 필요합니다.' });
+          await sendJson(request, response, 400, { error: 'submissions 배열이 필요합니다.' });
           return;
         }
         const result = await store.importSubmissions(body.submissions);
-        json(response, 200, result);
+        await sendJson(request, response, 200, result);
         return;
       }
 
       if (request.method === 'POST' && url.pathname === '/api/admin/webhook') {
         if (!checkAuth(request)) {
-          json(response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         if (!body.url || typeof body.url !== 'string') {
-          json(response, 400, { error: 'url is required.' });
+          await sendJson(request, response, 400, { error: 'url is required.' });
           return;
         }
         const validEvents = ['new_submission', 'daily_summary'];
         const events = Array.isArray(body.events) ? body.events.filter((e) => validEvents.includes(e)) : validEvents;
         await store.setSetting('webhookUrl', body.url);
         await store.setSetting('webhookEvents', events);
-        json(response, 200, { ok: true, url: body.url, events });
+        await sendJson(request, response, 200, { ok: true, url: body.url, events });
         return;
       }
 
       if (request.method === 'POST' && url.pathname === '/api/admin/change-password') {
         if (!checkAuth(request)) {
-          json(response, 401, { error: 'Unauthorized' });
+          await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         if (!body.currentPassword || !body.newPassword) {
-          json(response, 400, { error: '현재 비밀번호와 새 비밀번호를 입력해주세요.' });
+          await sendJson(request, response, 400, { error: '현재 비밀번호와 새 비밀번호를 입력해주세요.' });
           return;
         }
         if (String(body.newPassword).length < 4) {
-          json(response, 400, { error: '새 비밀번호는 4자 이상이어야 합니다.' });
+          await sendJson(request, response, 400, { error: '새 비밀번호는 4자 이상이어야 합니다.' });
           return;
         }
         // Check current password against DB override or env config
         const dbPassword = await store.getAdminPassword();
         const currentActual = dbPassword || config.adminPassword;
-        if (!safeCompare(body.currentPassword, currentActual)) {
-          json(response, 401, { error: '현재 비밀번호가 틀렸어요.' });
+        if (!await verifyPassword(body.currentPassword, currentActual)) {
+          await sendJson(request, response, 401, { error: '현재 비밀번호가 틀렸어요.' });
           return;
         }
-        await store.setAdminPassword(body.newPassword);
-        json(response, 200, { ok: true });
+        // Store new password as scrypt hash
+        await store.setAdminPassword(await hashPassword(body.newPassword));
+        await sendJson(request, response, 200, { ok: true });
         return;
       }
 
-      json(response, 404, { error: 'Not found' });
+      await sendJson(request, response, 404, { error: 'Not found' });
     } catch (error) {
       const isClientError = error.isValidationError ||
         error instanceof SyntaxError ||
         error.message === 'Request body too large.';
       if (isClientError) {
         console.warn(`[400] ${request.method} ${url.pathname} (${clientIp}): ${error.message}`);
-        json(response, 400, { error: error.message });
+        await sendJson(request, response, 400, { error: error.message });
       } else {
         console.error(`[500] ${request.method} ${url.pathname} (${clientIp}): ${error.message}`);
         console.error(error.stack);
-        json(response, 500, { error: 'Internal server error' });
+        await sendJson(request, response, 500, { error: 'Internal server error' });
       }
     }
   });

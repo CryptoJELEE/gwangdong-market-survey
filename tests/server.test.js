@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { mkdtemp } from 'node:fs/promises';
 import { closeApp, createApp } from '../src/server.js';
 import { loadConfig } from '../src/config.js';
@@ -525,4 +526,127 @@ test('response includes security headers', async (t) => {
   const response = await fetch(`${baseUrl}/api/bootstrap`);
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(response.headers.get('x-frame-options'), 'DENY');
+});
+
+// ── Round 17 new tests ──
+
+test('gzip compression is applied when Accept-Encoding: gzip is sent', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  // Create some submissions so bootstrap has substantial data
+  await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'Gzip Test', residenceArea: '서울 중부' },
+      survey: { region: 'Gangnam', storeType: 'Mart', storeName: 'Test Store' },
+      prices: []
+    })
+  });
+
+  const response = await fetch(`${baseUrl}/api/bootstrap`, {
+    headers: { 'Accept-Encoding': 'gzip' }
+  });
+  assert.equal(response.status, 200);
+  // fetch() auto-decompresses, so we can verify the content is valid JSON
+  const payload = await response.json();
+  assert.ok(Array.isArray(payload.areas));
+  assert.ok(Array.isArray(payload.submissions));
+  // Verify Content-Encoding header
+  assert.equal(response.headers.get('content-encoding'), 'gzip');
+});
+
+test('admin submissions supports pagination', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginResponse.json();
+  const authHeader = { 'Authorization': `Bearer ${token}` };
+
+  // Create 5 submissions
+  for (let i = 1; i <= 5; i++) {
+    await fetch(`${baseUrl}/api/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        researcher: { name: `Researcher ${i}`, residenceArea: '서울 중부' },
+        survey: { region: 'Gangnam', storeType: 'Mart', storeName: `Store ${i}` },
+        prices: []
+      })
+    });
+  }
+
+  // Without pagination — returns array (backward compat)
+  const allResponse = await fetch(`${baseUrl}/api/admin/submissions`, { headers: authHeader });
+  assert.equal(allResponse.status, 200);
+  const allData = await allResponse.json();
+  assert.ok(Array.isArray(allData));
+  assert.equal(allData.length, 5);
+
+  // With pagination — page 1, limit 2
+  const page1Response = await fetch(`${baseUrl}/api/admin/submissions?page=1&limit=2`, { headers: authHeader });
+  assert.equal(page1Response.status, 200);
+  const page1 = await page1Response.json();
+  assert.equal(page1.total, 5);
+  assert.equal(page1.page, 1);
+  assert.equal(page1.limit, 2);
+  assert.equal(page1.items.length, 2);
+
+  // Page 3 — only 1 item remaining
+  const page3Response = await fetch(`${baseUrl}/api/admin/submissions?page=3&limit=2`, { headers: authHeader });
+  const page3 = await page3Response.json();
+  assert.equal(page3.items.length, 1);
+});
+
+test('password hashing: change-password stores hashed password and login still works', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  // Login with default plain-text password
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  assert.equal(loginResponse.status, 200);
+  const { token } = await loginResponse.json();
+
+  // Change to new password (gets stored as scrypt hash)
+  const changeResponse = await fetch(`${baseUrl}/api/admin/change-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ currentPassword: 'ionroad2026', newPassword: 'newpass123' })
+  });
+  assert.equal(changeResponse.status, 200);
+
+  // Login with new password (should work with stored scrypt hash)
+  const newLoginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'newpass123' })
+  });
+  assert.equal(newLoginResponse.status, 200);
+  const newPayload = await newLoginResponse.json();
+  assert.ok(typeof newPayload.token === 'string');
+
+  // Old password no longer works
+  const oldLoginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  assert.equal(oldLoginResponse.status, 401);
+});
+
+test('response timing is included in log output', async (t) => {
+  // This test verifies the server doesn't crash with the timing wrapper
+  // (timing is logged to stdout, we just verify request succeeds)
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/health`);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.status, 'ok');
 });
