@@ -650,3 +650,64 @@ test('response timing is included in log output', async (t) => {
   const payload = await response.json();
   assert.equal(payload.status, 'ok');
 });
+
+// ── Round 18 new tests ──
+
+test('Content-Security-Policy header is present on API responses', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/bootstrap`);
+  const csp = response.headers.get('content-security-policy');
+  assert.ok(csp, 'CSP header should be present');
+  assert.ok(csp.includes("default-src 'self'"), 'CSP should include default-src');
+  assert.ok(csp.includes("frame-ancestors 'none'"), 'CSP should block framing');
+});
+
+test('oversized body for auth endpoint is rejected', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  // 4KB + 1 byte — exceeds MAX_AUTH_BODY_BYTES for the login endpoint
+  const oversizedPassword = 'x'.repeat(4 * 1024 + 1);
+  const response = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: oversizedPassword })
+  });
+  assert.equal(response.status, 400);
+});
+
+test('graceful shutdown closes server cleanly', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  // Verify the server is up
+  const before = await fetch(`${baseUrl}/health`);
+  assert.equal(before.status, 200);
+  // closeApp is called by t.after() - this test just verifies the server
+  // lifecycle works end-to-end without errors (t.after registers closeApp)
+});
+
+test('concurrent requests during init are handled safely', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  // Fire 5 requests simultaneously on a fresh server
+  const results = await Promise.all(
+    Array.from({ length: 5 }, () => fetch(`${baseUrl}/health`))
+  );
+  for (const r of results) {
+    assert.equal(r.status, 200);
+  }
+});
+
+test('admin submissions pagination respects max limit cap', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginResponse.json();
+
+  // Request limit=999 — should be capped at 200
+  const response = await fetch(`${baseUrl}/api/admin/submissions?page=1&limit=999`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.limit, 200, 'limit should be capped at PAGINATION_MAX_LIMIT');
+});

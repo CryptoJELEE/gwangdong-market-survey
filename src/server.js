@@ -10,7 +10,9 @@ import { createGeocoder } from './geocoding.js';
 import { SurveyStore } from './storage/index.js';
 import { collectJsonBody } from './utils.js';
 
-const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB — for submissions/import (includes photos)
+const MAX_AUTH_BODY_BYTES = 4 * 1024; // 4 KB — for login, change-password
+const MAX_SETTINGS_BODY_BYTES = 256 * 1024; // 256 KB — for settings updates
 const MAX_PHOTO_BYTES = 500 * 1024; // 500 KB
 const COMPRESSION_THRESHOLD = 1024; // bytes — compress responses larger than this
 const PAGINATION_MAX_LIMIT = 200;
@@ -25,11 +27,22 @@ class ValidationError extends Error {
   }
 }
 
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "connect-src 'self'",
+  "font-src 'self'",
+  "frame-ancestors 'none'"
+].join('; ');
+
 function setSecurityHeaders(response) {
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('X-Frame-Options', 'DENY');
   response.setHeader('X-XSS-Protection', '1; mode=block');
   response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  response.setHeader('Content-Security-Policy', CSP);
 }
 
 function safeCompare(a, b) {
@@ -267,7 +280,7 @@ function setCorsHeaders(response) {
   response.setHeader('Access-Control-Max-Age', '86400');
 }
 
-export async function closeApp(server) {
+export async function closeApp(server, { drainMs = 5000 } = {}) {
   if (!server) return;
 
   await new Promise((resolve, reject) => {
@@ -278,7 +291,9 @@ export async function closeApp(server) {
       }
       resolve();
     });
+    // Close keep-alive connections immediately; in-flight requests get drainMs to finish
     server.closeIdleConnections?.();
+    setTimeout(() => server.closeAllConnections?.(), drainMs);
   });
 
   server._store?.close?.();
@@ -292,6 +307,7 @@ export function createApp(config = loadConfig(), options = {}) {
     fetchImpl: options.fetchImpl || fetch
   });
   let initialized = false;
+  let initPromise = null;
 
   // ── Admin auth ──
   const adminTokens = new Map();
@@ -329,6 +345,30 @@ export function createApp(config = loadConfig(), options = {}) {
 
   const checkRate = createRateLimiter();
 
+  // ── Rate limit rules (endpoint-specific) ──
+  // Returns true if the request should be blocked
+  function applyRateLimits(request, url, clientIp) {
+    const method = request.method;
+    const path = url.pathname;
+
+    if (method === 'POST' && path === '/api/admin/login') {
+      // Strict: 5 attempts per 15-minute window (brute-force protection)
+      if (checkRate(`login:${clientIp}`, 5, 15 * 60_000)) return true;
+    } else if (method === 'POST' && path === '/api/submissions') {
+      // 30 submissions per minute per IP
+      if (checkRate(`submit:${clientIp}`, 30)) return true;
+    } else if (method === 'GET' && (path === '/api/geocode' || path === '/api/reverse-geocode')) {
+      // 30 geocode requests per minute (external API cost)
+      if (checkRate(`geocode:${clientIp}`, 30)) return true;
+    } else if (path.startsWith('/api/admin/')) {
+      // 60 admin API calls per minute
+      if (checkRate(`admin:${clientIp}`, 60)) return true;
+    }
+
+    // Global fallback: 120 requests per minute across all endpoints
+    return checkRate(`global:${clientIp}`, 120);
+  }
+
   const server = http.createServer(async (request, response) => {
     const clientIp = getClientIp(request);
     const url = new URL(request.url, `http://${request.headers.host}`);
@@ -356,29 +396,22 @@ export function createApp(config = loadConfig(), options = {}) {
     }
 
     // Rate limiting
-    const isSubmissionPost = request.method === 'POST' && url.pathname === '/api/submissions';
-    const isAdminLogin = request.method === 'POST' && url.pathname === '/api/admin/login';
-
-    if (isAdminLogin && checkRate(`login:${clientIp}`, 5)) {
-      console.warn(`[RATE] login rate exceeded (${clientIp})`);
-      await sendJson(request, response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
-      return;
-    }
-    if (isSubmissionPost && checkRate(`submit:${clientIp}`, 10)) {
-      console.warn(`[RATE] submission rate exceeded (${clientIp})`);
-      await sendJson(request, response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
-      return;
-    }
-    if (checkRate(`global:${clientIp}`, 60)) {
-      console.warn(`[RATE] global rate exceeded (${clientIp})`);
+    if (applyRateLimits(request, url, clientIp)) {
+      console.warn(`[RATE] rate limited (${clientIp}) ${request.method} ${url.pathname}`);
       await sendJson(request, response, 429, { error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
       return;
     }
 
     try {
       if (!initialized) {
-        await store.init();
-        initialized = true;
+        if (!initPromise) initPromise = store.init();
+        try {
+          await initPromise;
+          initialized = true;
+        } catch (err) {
+          initPromise = null; // allow retry on next request
+          throw err;
+        }
       }
 
       if (request.method === 'GET' && url.pathname === '/health') {
@@ -442,7 +475,7 @@ export function createApp(config = loadConfig(), options = {}) {
 
       // ── Admin auth endpoints ──
       if (request.method === 'POST' && url.pathname === '/api/admin/login') {
-        const body = await collectJsonBody(request, MAX_BODY_BYTES);
+        const body = await collectJsonBody(request, MAX_AUTH_BODY_BYTES);
         const dbPassword = await store.getAdminPassword();
         const activePassword = dbPassword || config.adminPassword;
         if (await verifyPassword(body.password, activePassword)) {
@@ -501,7 +534,7 @@ export function createApp(config = loadConfig(), options = {}) {
           await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
-        const body = await collectJsonBody(request, MAX_BODY_BYTES);
+        const body = await collectJsonBody(request, MAX_SETTINGS_BODY_BYTES);
         const allowedKeys = ['customAreas', 'customProducts', 'customStoreTypes'];
         if (!body.key || !allowedKeys.includes(body.key)) {
           await sendJson(request, response, 400, { error: 'Invalid setting key.' });
@@ -847,7 +880,7 @@ ${researcherRows}
           await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
-        const body = await collectJsonBody(request, MAX_BODY_BYTES);
+        const body = await collectJsonBody(request, MAX_SETTINGS_BODY_BYTES);
         if (!body.url || typeof body.url !== 'string') {
           await sendJson(request, response, 400, { error: 'url is required.' });
           return;
@@ -865,7 +898,7 @@ ${researcherRows}
           await sendJson(request, response, 401, { error: 'Unauthorized' });
           return;
         }
-        const body = await collectJsonBody(request, MAX_BODY_BYTES);
+        const body = await collectJsonBody(request, MAX_AUTH_BODY_BYTES);
         if (!body.currentPassword || !body.newPassword) {
           await sendJson(request, response, 400, { error: '현재 비밀번호와 새 비밀번호를 입력해주세요.' });
           return;
@@ -911,6 +944,15 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const config = loadConfig();
   const server = createApp(config);
   const host = '0.0.0.0';
+
+  // Pre-warm the DB and perform a basic integrity check before accepting traffic
+  server._store.init().then(async () => {
+    await server._store.getSubmissionCounts();
+    console.log('[DB] integrity check passed');
+  }).catch((err) => {
+    console.error('[DB] integrity check failed:', err.message);
+    process.exit(1);
+  });
 
   server.listen(config.port, host, () => {
     console.log(`Market survey app running at http://${host}:${config.port}`);
