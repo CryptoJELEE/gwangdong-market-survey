@@ -123,7 +123,8 @@ function renderStepIndicator() {
     const cls = s.num === state.currentStep ? 'is-active' : (s.num < state.currentStep ? 'is-done' : '');
     const line = i < steps.length - 1 ? `<span class="step-line ${s.num < state.currentStep ? 'is-done' : ''}"></span>` : '';
     const icon = s.num < state.currentStep ? '\u2713' : s.num;
-    return `<span class="step ${cls}"><span class="step-num">${icon}</span><span class="step-label">${s.num}/3 ${s.label}</span></span>${line}`;
+    const ariaCurrent = s.num === state.currentStep ? ' aria-current="step"' : '';
+    return `<span class="step ${cls}"${ariaCurrent}><span class="step-num">${icon}</span><span class="step-label">${s.num}/3 ${s.label}</span></span>${line}`;
   }).join('');
 }
 
@@ -163,7 +164,7 @@ function renderStep1(config) {
     <div class="card stack">
       <div class="field">
         <label>이름 (누구세요? 😊)</label>
-        <input name="researcherName" required value="${escapeHtml(savedName)}" placeholder="이름을 입력하세요" />
+        <input name="researcherName" required aria-required="true" value="${escapeHtml(savedName)}" placeholder="이름을 입력하세요" autocomplete="name" />
       </div>
       <div class="field">
         <label>거주 지역</label>
@@ -177,14 +178,14 @@ function renderStep1(config) {
           \u{1F4CD} 현재 위치 사용
         </button>
         <div class="address-search-wrap">
-          <input name="region" required placeholder="주소를 검색하세요 (예: 강남역)" id="region-input" value="${escapeHtml(savedRegion)}" autocomplete="off" />
+          <input name="region" required aria-required="true" placeholder="주소를 검색하세요 (예: 강남역)" id="region-input" value="${escapeHtml(savedRegion)}" autocomplete="off" />
           <ul class="address-dropdown" id="address-dropdown"></ul>
         </div>
       </div>
       <div class="field">
         <label>어떤 매장이었나요?</label>
         <div class="store-type-grid">
-          ${config.storeTypeTemplates.map((t) => `<button type="button" class="store-type-btn ${t.label === state.selectedStoreType ? 'is-active' : ''}" data-store-type="${t.id}" data-label="${t.label}" data-pos="${t.defaultPosCount}">${t.label}</button>`).join('')}
+          ${config.storeTypeTemplates.map((t) => `<button type="button" class="store-type-btn ${t.label === state.selectedStoreType ? 'is-active' : ''}" data-store-type="${t.id}" data-label="${t.label}" data-pos="${t.defaultPosCount}" aria-pressed="${t.label === state.selectedStoreType ? 'true' : 'false'}">${t.label}</button>`).join('')}
         </div>
         <input type="hidden" name="storeType" value="${escapeHtml(state.selectedStoreType)}" />
       </div>
@@ -198,7 +199,7 @@ function renderStep1(config) {
       <div class="field">
         <label>매장 이름</label>
         <div class="address-search-wrap">
-          <input name="storeName" required placeholder="예: GS25 역삼점, 이마트 강남점" value="${escapeHtml(savedStoreName)}" id="store-name-input" autocomplete="off" />
+          <input name="storeName" required aria-required="true" placeholder="예: GS25 역삼점, 이마트 강남점" value="${escapeHtml(savedStoreName)}" id="store-name-input" autocomplete="off" />
           <ul class="address-dropdown" id="store-name-dropdown"></ul>
         </div>
       </div>
@@ -348,8 +349,9 @@ function renderStep1(config) {
 
   formStepContainer.querySelectorAll('.store-type-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      formStepContainer.querySelectorAll('.store-type-btn').forEach((b) => b.classList.remove('is-active'));
+      formStepContainer.querySelectorAll('.store-type-btn').forEach((b) => { b.classList.remove('is-active'); b.setAttribute('aria-pressed', 'false'); });
       btn.classList.add('is-active');
+      btn.setAttribute('aria-pressed', 'true');
       state.selectedStoreType = btn.dataset.label;
       formStepContainer.querySelector('[name="storeType"]').value = btn.dataset.label;
       const posInput = formStepContainer.querySelector('#pos-input');
@@ -383,9 +385,22 @@ function renderStep1(config) {
     const region = formStepContainer.querySelector('[name="region"]').value.trim();
     const storeName = formStepContainer.querySelector('[name="storeName"]').value.trim();
     if (!name || !region || !storeName) {
+      const nameEl = formStepContainer.querySelector('[name="researcherName"]');
+      const regionEl = formStepContainer.querySelector('[name="region"]');
+      const storeEl = formStepContainer.querySelector('[name="storeName"]');
+      [nameEl, regionEl, storeEl].forEach((el) => {
+        const isEmpty = !el?.value.trim();
+        el?.setAttribute('aria-invalid', isEmpty ? 'true' : 'false');
+        if (el) el.style.outline = isEmpty ? '2px solid var(--error, #e74c3c)' : '';
+      });
+      const firstEmpty = [nameEl, regionEl, storeEl].find((el) => !el?.value.trim());
+      if (firstEmpty) firstEmpty.focus();
       showToast('앗, 빠진 항목이 있어요! 확인해주세요 🙏', 'error');
       return;
     }
+    [formStepContainer.querySelector('[name="researcherName"]'), formStepContainer.querySelector('[name="region"]'), formStepContainer.querySelector('[name="storeName"]')].forEach((el) => {
+      if (el) { el.setAttribute('aria-invalid', 'false'); el.style.outline = ''; }
+    });
     const residenceArea = formStepContainer.querySelector('[name="residenceArea"]').value;
     const storeType = formStepContainer.querySelector('[name="storeType"]')?.value || state.selectedStoreType || '';
     const posCount = formStepContainer.querySelector('[name="posCount"]')?.value || '1';
@@ -1253,27 +1268,47 @@ function openLightbox(photos, startIdx) {
   let idx = startIdx;
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', '사진 보기');
+
+  function closeOverlay() {
+    overlay.remove();
+    document.removeEventListener('keydown', keyHandler);
+  }
 
   function render() {
     const p = photos[idx];
     overlay.innerHTML = `
-      <div style="position:absolute;top:12px;right:16px;color:#fff;font-size:1.5rem;cursor:pointer;z-index:10001;" id="lb-close">\u2715</div>
-      ${photos.length > 1 ? `<div style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#fff;font-size:2rem;cursor:pointer;z-index:10001;padding:8px;" id="lb-prev">\u2039</div>` : ''}
-      ${photos.length > 1 ? `<div style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#fff;font-size:2rem;cursor:pointer;z-index:10001;padding:8px;" id="lb-next">\u203A</div>` : ''}
+      <div style="position:absolute;top:12px;right:16px;color:#fff;font-size:1.5rem;cursor:pointer;z-index:10001;" id="lb-close" aria-label="닫기" role="button" tabindex="0">\u2715</div>
+      ${photos.length > 1 ? `<div style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#fff;font-size:2rem;cursor:pointer;z-index:10001;padding:8px;" id="lb-prev" aria-label="이전 사진" role="button" tabindex="0">\u2039</div>` : ''}
+      ${photos.length > 1 ? `<div style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#fff;font-size:2rem;cursor:pointer;z-index:10001;padding:8px;" id="lb-next" aria-label="다음 사진" role="button" tabindex="0">\u203A</div>` : ''}
       <img src="${p.url}" alt="${escapeHtml(p.storeName)}" style="max-width:90%;max-height:75vh;border-radius:8px;object-fit:contain;" />
       <div style="color:#fff;text-align:center;margin-top:12px;font-size:.9rem;">
         <strong>${escapeHtml(p.storeName)}</strong><br/>${p.date}
+        ${photos.length > 1 ? `<div style="margin-top:4px;font-size:.8rem;opacity:.7;">${idx + 1} / ${photos.length}</div>` : ''}
       </div>
     `;
-    overlay.querySelector('#lb-close').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#lb-close').addEventListener('click', closeOverlay);
     const prevBtn = overlay.querySelector('#lb-prev');
     const nextBtn = overlay.querySelector('#lb-next');
     if (prevBtn) prevBtn.addEventListener('click', (e) => { e.stopPropagation(); idx = (idx - 1 + photos.length) % photos.length; render(); });
     if (nextBtn) nextBtn.addEventListener('click', (e) => { e.stopPropagation(); idx = (idx + 1) % photos.length; render(); });
+    // Focus close button for screen readers
+    overlay.querySelector('#lb-close').focus();
   }
 
+  function keyHandler(e) {
+    if (!document.body.contains(overlay)) { document.removeEventListener('keydown', keyHandler); return; }
+    if (e.key === 'Escape') { closeOverlay(); return; }
+    if (photos.length <= 1) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); idx = (idx - 1 + photos.length) % photos.length; render(); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); idx = (idx + 1) % photos.length; render(); }
+  }
+  document.addEventListener('keydown', keyHandler);
+
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
+    if (e.target === overlay) closeOverlay();
   });
 
   // Swipe support
@@ -1821,6 +1856,15 @@ function initOnboarding() {
 
   function finishOnboarding() {
     const name = nameInput.value.trim();
+    if (!name && current === 2) {
+      nameInput.setAttribute('aria-invalid', 'true');
+      nameInput.style.outline = '2px solid var(--error, #e74c3c)';
+      nameInput.placeholder = '이름을 입력해야 시작할 수 있어요';
+      nameInput.focus();
+      return;
+    }
+    nameInput.removeAttribute('aria-invalid');
+    nameInput.style.outline = '';
     if (name) {
       saveLocal('researcherName', name);
       statusResearcher.textContent = name;
@@ -1930,6 +1974,10 @@ async function flushPendingSubmissions() {
 }
 
 window.addEventListener('online', () => {
+  const pending = getPendingSubmissions();
+  if (pending.length > 0) {
+    showToast(`📶 온라인 복구! 오프라인 기록 ${pending.length}건 전송 중...`, 'info');
+  }
   flushPendingSubmissions();
 });
 

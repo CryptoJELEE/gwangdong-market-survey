@@ -70,7 +70,7 @@ test('submission API stores a survey and exposes it in bootstrap data', async (t
   assert.equal(bootstrap.adminTokenConfigured, false);
 });
 
-test('override API updates assignment area', async (t) => {
+test('override API requires auth and updates assignment area', async (t) => {
   const { baseUrl } = await createTestServer(t);
 
   const createResponse = await fetch(`${baseUrl}/api/submissions`, {
@@ -92,9 +92,26 @@ test('override API updates assignment area', async (t) => {
   });
   const created = await createResponse.json();
 
-  const overrideResponse = await fetch(`${baseUrl}/api/assignments/override`, {
+  // Unauthenticated override should be rejected
+  const unauthResponse = await fetch(`${baseUrl}/api/assignments/override`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ submissionId: created.id, assignedArea: '경기 북부' })
+  });
+  assert.equal(unauthResponse.status, 401);
+
+  // Get admin token
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  assert.equal(loginResponse.status, 200);
+  const { token } = await loginResponse.json();
+
+  const overrideResponse = await fetch(`${baseUrl}/api/assignments/override`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
     body: JSON.stringify({
       submissionId: created.id,
       assignedArea: '경기 북부',
@@ -268,4 +285,244 @@ test('submission API uses distance-based assignment when coordinates are availab
   assert.equal(payload.assignment.method, 'distance-fairness-blend');
   assert.deepEqual(payload.researcher.coordinates, { lat: 0, lng: 0 });
   assert.deepEqual(payload.survey.coordinates, { lat: 0, lng: 5 });
+});
+
+// ── New test coverage ──
+
+test('health endpoint returns server status', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/health`);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.status, 'ok');
+  assert.ok(typeof payload.uptime === 'number');
+  assert.ok(typeof payload.version === 'string');
+});
+
+test('unknown route returns 404', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/does-not-exist`);
+  assert.equal(response.status, 404);
+  const payload = await response.json();
+  assert.ok(payload.error);
+});
+
+test('admin login succeeds with correct password and returns token', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.ok(typeof payload.token === 'string' && payload.token.length > 0);
+});
+
+test('admin login rejects wrong password', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'wrong-password' })
+  });
+  assert.equal(response.status, 401);
+  const payload = await response.json();
+  assert.ok(payload.error);
+});
+
+test('admin verify rejects unauthenticated request', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/admin/verify`);
+  assert.equal(response.status, 401);
+});
+
+test('admin verify accepts a valid token', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginResponse.json();
+
+  const verifyResponse = await fetch(`${baseUrl}/api/admin/verify`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  assert.equal(verifyResponse.status, 200);
+  const payload = await verifyResponse.json();
+  assert.equal(payload.ok, true);
+});
+
+test('admin submissions list requires authentication', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/admin/submissions`);
+  assert.equal(response.status, 401);
+});
+
+test('submission API rejects missing required fields', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'Kim' },
+      survey: { storeType: 'Mart' }
+      // missing residenceArea, region, storeName
+    })
+  });
+  assert.equal(response.status, 400);
+  const payload = await response.json();
+  assert.ok(payload.error);
+});
+
+test('submission API rejects price out of valid range', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'Kim', residenceArea: '서울 중부' },
+      survey: { region: 'Gangnam', storeType: 'Pharmacy', storeName: 'Test Store' },
+      prices: [{ productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 9999999 }]
+    })
+  });
+  assert.equal(response.status, 400);
+  const payload = await response.json();
+  assert.ok(payload.error);
+});
+
+test('daily summary aggregates submissions for a date', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  // Create two submissions
+  await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'Alice', residenceArea: '서울 중부' },
+      survey: { region: 'Gangnam', storeType: 'Mart', storeName: 'Mart A' },
+      prices: [{ productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 1200 }]
+    })
+  });
+  await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'Bob', residenceArea: '서울 서부' },
+      survey: { region: 'Mapo', storeType: 'Pharmacy', storeName: 'Pharmacy B' },
+      prices: [{ productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 1400 }]
+    })
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
+  const response = await fetch(`${baseUrl}/api/daily-summary?date=${today}`);
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.totalSubmissions, 2);
+  assert.equal(payload.uniqueResearchers, 2);
+  assert.ok(Array.isArray(payload.averagePrices));
+  const vita = payload.averagePrices.find((p) => p.label === 'Vita 500');
+  assert.ok(vita);
+  assert.equal(vita.avg, 1300); // (1200+1400)/2
+  assert.equal(vita.count, 2);
+});
+
+test('admin settings stores and retrieves custom areas', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginResponse.json();
+  const authHeader = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  // Save custom areas
+  const saveResponse = await fetch(`${baseUrl}/api/admin/settings`, {
+    method: 'POST',
+    headers: authHeader,
+    body: JSON.stringify({ key: 'customAreas', value: ['서울 A', '서울 B'] })
+  });
+  assert.equal(saveResponse.status, 200);
+
+  // Retrieve settings
+  const getResponse = await fetch(`${baseUrl}/api/admin/settings`, { headers: authHeader });
+  assert.equal(getResponse.status, 200);
+  const settings = await getResponse.json();
+  assert.deepStrictEqual(settings.customAreas, ['서울 A', '서울 B']);
+
+  // Bootstrap should reflect custom areas
+  const bootstrap = await (await fetch(`${baseUrl}/api/bootstrap`)).json();
+  assert.deepStrictEqual(bootstrap.areas, ['서울 A', '서울 B']);
+});
+
+test('admin delete submission removes it from list', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  const loginResponse = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ionroad2026' })
+  });
+  const { token } = await loginResponse.json();
+  const authHeader = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
+
+  // Create a submission
+  const createResponse = await fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'To Delete', residenceArea: '서울 중부' },
+      survey: { region: 'Gangnam', storeType: 'Mart', storeName: 'Delete Test' },
+      prices: []
+    })
+  });
+  const created = await createResponse.json();
+
+  // Delete requires auth
+  const noAuthDelete = await fetch(`${baseUrl}/api/submissions/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ submissionId: created.id })
+  });
+  assert.equal(noAuthDelete.status, 401);
+
+  // Authenticated delete
+  const deleteResponse = await fetch(`${baseUrl}/api/submissions/delete`, {
+    method: 'POST',
+    headers: authHeader,
+    body: JSON.stringify({ submissionId: created.id })
+  });
+  assert.equal(deleteResponse.status, 200);
+  const result = await deleteResponse.json();
+  assert.equal(result.ok, true);
+
+  // Submission no longer in bootstrap
+  const bootstrap = await (await fetch(`${baseUrl}/api/bootstrap`)).json();
+  assert.equal(bootstrap.submissions.length, 0);
+});
+
+test('static file returns 304 when ETag matches', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+
+  // First request to get ETag
+  const first = await fetch(`${baseUrl}/styles.css`);
+  assert.equal(first.status, 200);
+  const etag = first.headers.get('etag');
+  assert.ok(etag, 'ETag header should be present');
+
+  // Second request with ETag should return 304
+  const second = await fetch(`${baseUrl}/styles.css`, {
+    headers: { 'If-None-Match': etag }
+  });
+  assert.equal(second.status, 304);
+});
+
+test('response includes security headers', async (t) => {
+  const { baseUrl } = await createTestServer(t);
+  const response = await fetch(`${baseUrl}/api/bootstrap`);
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('x-frame-options'), 'DENY');
 });

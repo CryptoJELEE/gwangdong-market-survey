@@ -14,6 +14,57 @@ const MAX_PHOTO_BYTES = 500 * 1024; // 500 KB
 const SERVER_STARTED_AT = new Date().toISOString();
 const PKG_VERSION = JSON.parse(await readFile(path.resolve('package.json'), 'utf8')).version;
 
+class ValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ValidationError';
+    this.isValidationError = true;
+  }
+}
+
+function setSecurityHeaders(response) {
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('X-Frame-Options', 'DENY');
+  response.setHeader('X-XSS-Protection', '1; mode=block');
+  response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+}
+
+function safeCompare(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function filterSubmissionsByDate(submissions, targetDate) {
+  return submissions.filter((s) => {
+    const d = new Date(s.createdAt);
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return ymd === targetDate;
+  });
+}
+
+function buildAveragePrices(submissions) {
+  const priceMap = {};
+  for (const s of submissions) {
+    if (!s.prices) continue;
+    for (const p of s.prices) {
+      const key = `${p.productLabel || p.productId}|${p.size}`;
+      if (!priceMap[key]) priceMap[key] = { label: p.productLabel || p.productId, size: p.size, prices: [] };
+      const num = Number(String(p.price).replace(/[^0-9]/g, ''));
+      if (num > 0) priceMap[key].prices.push(num);
+    }
+  }
+  return Object.values(priceMap)
+    .filter((v) => v.prices.length > 0)
+    .map((v) => ({
+      label: v.label,
+      size: v.size,
+      avg: Math.round(v.prices.reduce((a, b) => a + b, 0) / v.prices.length),
+      count: v.prices.length
+    }));
+}
+
 // ── Rate Limiter ──
 function createRateLimiter() {
   const buckets = new Map(); // key → { count, resetTime }
@@ -53,7 +104,7 @@ function validateSubmission(body, config) {
     body.survey?.storeName
   ];
   if (required.some((item) => !item)) {
-    throw new Error('Missing required submission fields.');
+    throw new ValidationError('Missing required submission fields.');
   }
 
   // Input length validation
@@ -62,17 +113,17 @@ function validateSubmission(body, config) {
   const region = String(body.survey.region).trim();
   const notes = String(body.notes || '').trim();
 
-  if (researcherName.length > 50) throw new Error('researcherName은 최대 50자입니다.');
-  if (storeName.length > 100) throw new Error('storeName은 최대 100자입니다.');
-  if (region.length > 200) throw new Error('region은 최대 200자입니다.');
-  if (notes.length > 2000) throw new Error('notes는 최대 2000자입니다.');
+  if (researcherName.length > 50) throw new ValidationError('researcherName은 최대 50자입니다.');
+  if (storeName.length > 100) throw new ValidationError('storeName은 최대 100자입니다.');
+  if (region.length > 200) throw new ValidationError('region은 최대 200자입니다.');
+  if (notes.length > 2000) throw new ValidationError('notes는 최대 2000자입니다.');
 
   // Photo size validation
   const photoDataUrl = String(body.photoDataUrl || '').trim();
   if (photoDataUrl.length > 0) {
     const base64Part = photoDataUrl.includes(',') ? photoDataUrl.split(',')[1] : photoDataUrl;
     const estimatedBytes = Math.ceil(base64Part.length * 3 / 4);
-    if (estimatedBytes > MAX_PHOTO_BYTES) throw new Error('사진은 최대 500KB입니다.');
+    if (estimatedBytes > MAX_PHOTO_BYTES) throw new ValidationError('사진은 최대 500KB입니다.');
   }
 
   const prices = (body.prices || []).filter((item) => item.price !== '' && item.price !== null && item.price !== undefined);
@@ -81,7 +132,7 @@ function validateSubmission(body, config) {
   for (const item of prices) {
     const price = Number(item.price);
     if (!Number.isFinite(price) || price < 0 || price > 999999) {
-      throw new Error('가격은 0~999999 범위의 숫자여야 합니다.');
+      throw new ValidationError('가격은 0~999999 범위의 숫자여야 합니다.');
     }
   }
 
@@ -108,7 +159,7 @@ function validateSubmission(body, config) {
   };
 }
 
-async function serveStatic(response, filePath) {
+async function serveStatic(response, filePath, request) {
   const contents = await readFile(filePath);
   const extension = path.extname(filePath).toLowerCase();
   const contentTypes = {
@@ -126,6 +177,14 @@ async function serveStatic(response, filePath) {
 
   // ETag + Cache-Control
   const etag = `"${crypto.createHash('md5').update(contents).digest('hex')}"`;
+
+  // Respond 304 if client has a fresh copy
+  if (request?.headers?.['if-none-match'] === etag) {
+    response.writeHead(304);
+    response.end();
+    return;
+  }
+
   const cacheHeaders = { 'Content-Type': contentTypes[extension] || 'application/octet-stream', 'ETag': etag };
 
   if (extension === '.html') {
@@ -217,6 +276,7 @@ export function createApp(config = loadConfig(), options = {}) {
     console.log(`[${request.method}] ${url.pathname} (${clientIp})`);
 
     setCorsHeaders(response);
+    setSecurityHeaders(response);
 
     if (request.method === 'OPTIONS') {
       response.writeHead(204);
@@ -261,23 +321,23 @@ export function createApp(config = loadConfig(), options = {}) {
       }
 
       if (request.method === 'GET' && url.pathname === '/') {
-        await serveStatic(response, path.resolve('src/client/index.html'));
+        await serveStatic(response, path.resolve('src/client/index.html'), request);
         return;
       }
       if (request.method === 'GET' && url.pathname === '/app.js') {
-        await serveStatic(response, path.resolve('src/client/app.js'));
+        await serveStatic(response, path.resolve('src/client/app.js'), request);
         return;
       }
       if (request.method === 'GET' && url.pathname === '/styles.css') {
-        await serveStatic(response, path.resolve('src/client/styles.css'));
+        await serveStatic(response, path.resolve('src/client/styles.css'), request);
         return;
       }
       if (request.method === 'GET' && (url.pathname === '/favicon.svg' || url.pathname === '/favicon.ico')) {
-        await serveStatic(response, path.resolve('src/client/favicon.svg'));
+        await serveStatic(response, path.resolve('src/client/favicon.svg'), request);
         return;
       }
       if (request.method === 'GET' && url.pathname === '/manifest.json') {
-        await serveStatic(response, path.resolve('src/client/manifest.json'));
+        await serveStatic(response, path.resolve('src/client/manifest.json'), request);
         return;
       }
       if (request.method === 'GET' && url.pathname === '/sw.js') {
@@ -291,21 +351,21 @@ export function createApp(config = loadConfig(), options = {}) {
         return;
       }
       if (request.method === 'GET' && (url.pathname === '/icon-192.png' || url.pathname === '/icon-512.png')) {
-        await serveStatic(response, path.resolve('src/client', url.pathname.slice(1)));
+        await serveStatic(response, path.resolve('src/client', url.pathname.slice(1)), request);
         return;
       }
       if (request.method === 'GET' && url.pathname.startsWith('/uploads/')) {
-        await serveStatic(response, path.resolve(config.uploadsDir, url.pathname.replace('/uploads/', '')));
+        await serveStatic(response, path.resolve(config.uploadsDir, url.pathname.replace('/uploads/', '')), request);
         return;
       }
 
       // ── Admin page static files ──
       if (request.method === 'GET' && url.pathname === '/admin') {
-        await serveStatic(response, path.resolve('src/client/admin.html'));
+        await serveStatic(response, path.resolve('src/client/admin.html'), request);
         return;
       }
       if (request.method === 'GET' && url.pathname === '/admin.js') {
-        await serveStatic(response, path.resolve('src/client/admin.js'));
+        await serveStatic(response, path.resolve('src/client/admin.js'), request);
         return;
       }
 
@@ -314,7 +374,7 @@ export function createApp(config = loadConfig(), options = {}) {
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         const dbPassword = await store.getAdminPassword();
         const activePassword = dbPassword || config.adminPassword;
-        if (body.password === activePassword) {
+        if (safeCompare(body.password, activePassword)) {
           json(response, 200, { token: createAdminToken() });
         } else {
           json(response, 401, { error: '비밀번호가 틀렸어요.' });
@@ -379,37 +439,12 @@ export function createApp(config = loadConfig(), options = {}) {
         const dateParam = url.searchParams.get('date');
         const targetDate = dateParam || new Date().toISOString().slice(0, 10);
         const submissions = await store.listSubmissions();
-        const daySubs = submissions.filter((s) => {
-          const d = new Date(s.createdAt);
-          const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-          return ymd === targetDate;
-        });
+        const daySubs = filterSubmissionsByDate(submissions, targetDate);
 
         const totalSubmissions = daySubs.length;
-        const researcherSet = new Set(daySubs.map((s) => s.researcher.name));
-        const uniqueResearchers = researcherSet.size;
-        const areaSet = new Set(daySubs.map((s) => s.assignment?.currentArea).filter(Boolean));
-        const areasCovered = areaSet.size;
-
-        // Average prices per product (today only)
-        const priceMap = {};
-        daySubs.forEach((s) => {
-          if (!s.prices) return;
-          s.prices.forEach((p) => {
-            const key = `${p.productLabel || p.productId}|${p.size}`;
-            if (!priceMap[key]) priceMap[key] = { label: p.productLabel || p.productId, size: p.size, prices: [] };
-            const num = Number(String(p.price).replace(/[^0-9]/g, ''));
-            if (num > 0) priceMap[key].prices.push(num);
-          });
-        });
-        const averagePrices = Object.values(priceMap)
-          .filter((v) => v.prices.length > 0)
-          .map((v) => ({
-            label: v.label,
-            size: v.size,
-            avg: Math.round(v.prices.reduce((a, b) => a + b, 0) / v.prices.length),
-            count: v.prices.length
-          }));
+        const uniqueResearchers = new Set(daySubs.map((s) => s.researcher.name)).size;
+        const areasCovered = new Set(daySubs.map((s) => s.assignment?.currentArea).filter(Boolean)).size;
+        const averagePrices = buildAveragePrices(daySubs);
 
         // Top researcher
         const researcherCounts = {};
@@ -431,37 +466,12 @@ export function createApp(config = loadConfig(), options = {}) {
         const dateParam = url.searchParams.get('date');
         const targetDate = dateParam || new Date().toISOString().slice(0, 10);
         const submissions = await store.listSubmissions();
-        const daySubs = submissions.filter((s) => {
-          const d = new Date(s.createdAt);
-          const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-          return ymd === targetDate;
-        });
+        const daySubs = filterSubmissionsByDate(submissions, targetDate);
 
         const totalSubmissions = daySubs.length;
-        const researcherSet = new Set(daySubs.map((s) => s.researcher.name));
-        const uniqueResearchers = researcherSet.size;
-        const regionSet = new Set(daySubs.map((s) => s.survey.region).filter(Boolean));
-        const regionsCovered = regionSet.size;
-
-        // Average prices per product
-        const priceMap = {};
-        daySubs.forEach((s) => {
-          if (!s.prices) return;
-          s.prices.forEach((p) => {
-            const key = `${p.productLabel || p.productId}|${p.size}`;
-            if (!priceMap[key]) priceMap[key] = { label: p.productLabel || p.productId, size: p.size, prices: [] };
-            const num = Number(String(p.price).replace(/[^0-9]/g, ''));
-            if (num > 0) priceMap[key].prices.push(num);
-          });
-        });
-        const avgPrices = Object.values(priceMap)
-          .filter((v) => v.prices.length > 0)
-          .map((v) => ({
-            label: v.label,
-            size: v.size,
-            avg: Math.round(v.prices.reduce((a, b) => a + b, 0) / v.prices.length),
-            count: v.prices.length
-          }));
+        const uniqueResearchers = new Set(daySubs.map((s) => s.researcher.name)).size;
+        const regionsCovered = new Set(daySubs.map((s) => s.survey.region).filter(Boolean)).size;
+        const avgPrices = buildAveragePrices(daySubs);
 
         // Researcher contributions
         const researcherCounts = {};
@@ -694,9 +704,13 @@ ${researcherRows}
       }
 
       if (request.method === 'POST' && url.pathname === '/api/assignments/override') {
+        if (!checkAuth(request)) {
+          json(response, 401, { error: 'Unauthorized' });
+          return;
+        }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         if (!body.submissionId || !body.assignedArea) {
-          throw new Error('submissionId and assignedArea are required.');
+          throw new ValidationError('submissionId and assignedArea are required.');
         }
         const updated = await store.overrideAssignment({
           submissionId: body.submissionId,
@@ -726,7 +740,7 @@ ${researcherRows}
           return;
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
-        if (!body.submissionId) throw new Error('submissionId is required.');
+        if (!body.submissionId) throw new ValidationError('submissionId is required.');
         await store.deleteSubmission(body.submissionId);
         json(response, 200, { ok: true });
         return;
@@ -782,7 +796,7 @@ ${researcherRows}
         // Check current password against DB override or env config
         const dbPassword = await store.getAdminPassword();
         const currentActual = dbPassword || config.adminPassword;
-        if (body.currentPassword !== currentActual) {
+        if (!safeCompare(body.currentPassword, currentActual)) {
           json(response, 401, { error: '현재 비밀번호가 틀렸어요.' });
           return;
         }
@@ -793,9 +807,17 @@ ${researcherRows}
 
       json(response, 404, { error: 'Not found' });
     } catch (error) {
-      console.warn(`[400] ${request.method} ${url.pathname} (${clientIp}): ${error.message}`);
-      console.error(error.stack);
-      json(response, 400, { error: error.message });
+      const isClientError = error.isValidationError ||
+        error instanceof SyntaxError ||
+        error.message === 'Request body too large.';
+      if (isClientError) {
+        console.warn(`[400] ${request.method} ${url.pathname} (${clientIp}): ${error.message}`);
+        json(response, 400, { error: error.message });
+      } else {
+        console.error(`[500] ${request.method} ${url.pathname} (${clientIp}): ${error.message}`);
+        console.error(error.stack);
+        json(response, 500, { error: 'Internal server error' });
+      }
     }
   });
 

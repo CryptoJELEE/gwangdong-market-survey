@@ -26,6 +26,28 @@ const logoutBtn = document.querySelector('#logout-btn');
 const submissionList = document.querySelector('#submission-list');
 const adminFilter = document.querySelector('#admin-filter');
 
+// ── Accessibility: login error live region ──
+if (loginError) {
+  loginError.setAttribute('aria-live', 'polite');
+  loginError.setAttribute('role', 'alert');
+}
+
+// ── Password visibility toggle ──
+(function addPasswordToggle() {
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.textContent = '표시';
+  toggleBtn.style.cssText = 'margin-left:8px;padding:6px 12px;background:none;border:1px solid var(--border,#ddd);border-radius:6px;cursor:pointer;font-size:.85rem;color:var(--text-muted,#666);';
+  toggleBtn.setAttribute('aria-label', '비밀번호 표시/숨기기');
+  toggleBtn.addEventListener('click', () => {
+    const isText = passwordInput.type === 'text';
+    passwordInput.type = isText ? 'password' : 'text';
+    toggleBtn.textContent = isText ? '표시' : '숨김';
+    passwordInput.focus();
+  });
+  passwordInput.parentNode.insertBefore(toggleBtn, passwordInput.nextSibling);
+})();
+
 // ── Login ──
 loginBtn.addEventListener('click', handleLogin);
 passwordInput.addEventListener('keydown', (e) => {
@@ -40,6 +62,7 @@ async function handleLogin() {
     return;
   }
   loginBtn.disabled = true;
+  loginBtn.textContent = '확인 중...';
   try {
     const res = await fetch('/api/admin/login', {
       method: 'POST',
@@ -50,6 +73,7 @@ async function handleLogin() {
     if (!res.ok) {
       loginError.textContent = data.error || '로그인에 실패했어요.';
       loginBtn.disabled = false;
+      loginBtn.textContent = '로그인';
       return;
     }
     setToken(data.token);
@@ -57,6 +81,7 @@ async function handleLogin() {
   } catch {
     loginError.textContent = '서버에 연결할 수 없어요.';
     loginBtn.disabled = false;
+    loginBtn.textContent = '로그인';
   }
 }
 
@@ -165,15 +190,19 @@ async function pollNewSubmissions() {
 function showNewSubmissionBanner(count) {
   const banner = document.querySelector('#new-submission-banner');
   banner.innerHTML = `
-    <div class="new-submission-banner">
+    <div class="new-submission-banner" role="status" aria-live="polite">
       <span>\uD83D\uDD14 새 기록 ${count}건이 추가됐어요!</span>
       <button id="refresh-btn">새로고침</button>
+      <button id="dismiss-banner-btn" style="background:none;border:none;cursor:pointer;margin-left:4px;color:inherit;font-size:1rem;" aria-label="닫기">\u2715</button>
     </div>
   `;
   banner.querySelector('#refresh-btn').addEventListener('click', async () => {
     banner.innerHTML = '';
     await loadAdminData();
   });
+  banner.querySelector('#dismiss-banner-btn').addEventListener('click', () => hideNewSubmissionBanner());
+  // Auto-dismiss after 30 seconds
+  setTimeout(() => hideNewSubmissionBanner(), 30000);
 }
 
 function hideNewSubmissionBanner() {
@@ -357,12 +386,16 @@ function renderAdmin() {
       <option value="">전체 지역</option>
       ${areas.map((a) => `<option value="${a}">${a}</option>`).join('')}
     </select>
-    <input type="text" id="filter-store" placeholder="매장명 검색" />
+    <div style="position:relative;display:inline-block;">
+      <input type="text" id="filter-store" placeholder="매장명 검색" style="padding-right:28px;" aria-label="매장명 검색" />
+      <button type="button" id="filter-store-clear" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-muted,#999);font-size:16px;padding:2px 6px;display:none;line-height:1;" aria-label="검색 초기화">\u00D7</button>
+    </div>
   `;
   const filterDate = adminFilter.querySelector('#filter-date');
   const filterResearcher = adminFilter.querySelector('#filter-researcher');
   const filterArea = adminFilter.querySelector('#filter-area');
   const filterStore = adminFilter.querySelector('#filter-store');
+  const filterStoreClear = adminFilter.querySelector('#filter-store-clear');
   const doFilter = () => renderSubmissionList(
     filterDate.value,
     filterResearcher.value,
@@ -372,7 +405,16 @@ function renderAdmin() {
   filterDate.addEventListener('change', doFilter);
   filterResearcher.addEventListener('change', doFilter);
   filterArea.addEventListener('change', doFilter);
-  filterStore.addEventListener('input', doFilter);
+  filterStore.addEventListener('input', () => {
+    filterStoreClear.style.display = filterStore.value ? 'block' : 'none';
+    doFilter();
+  });
+  filterStoreClear.addEventListener('click', () => {
+    filterStore.value = '';
+    filterStoreClear.style.display = 'none';
+    filterStore.focus();
+    doFilter();
+  });
   renderSubmissionList('', '', '', '');
   renderCharts();
   renderStoreProductChart();
@@ -871,7 +913,28 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
 
   submissionList.querySelectorAll('[data-action="delete"]').forEach((button) => {
     button.addEventListener('click', async () => {
-      if (!confirm('정말 삭제할까요?')) return;
+      const confirmed = await new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'price-reminder-overlay';
+        overlay.innerHTML = `
+          <div class="price-reminder-dialog" role="alertdialog" aria-modal="true" aria-labelledby="del-dialog-title">
+            <p id="del-dialog-title">이 기록을 삭제할까요?<br/><span style="font-size:.85rem;color:var(--text-muted,#666);">되돌릴 수 없어요.</span></p>
+            <div class="price-reminder-actions">
+              <button type="button" class="btn btn-secondary" id="del-cancel-btn">취소</button>
+              <button type="button" class="btn btn-primary" style="background:var(--error,#e74c3c);border-color:var(--error,#e74c3c);" id="del-confirm-btn">삭제</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+        const keyHandler = (e) => {
+          if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', keyHandler); resolve(false); }
+        };
+        document.addEventListener('keydown', keyHandler);
+        overlay.querySelector('#del-cancel-btn').addEventListener('click', () => { overlay.remove(); document.removeEventListener('keydown', keyHandler); resolve(false); });
+        overlay.querySelector('#del-confirm-btn').addEventListener('click', () => { overlay.remove(); document.removeEventListener('keydown', keyHandler); resolve(true); });
+        overlay.querySelector('#del-confirm-btn').focus();
+      });
+      if (!confirmed) return;
       const response = await authFetch('/api/submissions/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
