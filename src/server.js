@@ -31,6 +31,48 @@ const log = {
 };
 
 /**
+ * Validate the runtime configuration and log warnings for common misconfigurations.
+ * Returns the list of warning strings (empty if all is well).
+ *
+ * @param {object} config  Loaded app config
+ * @returns {string[]}     Warning messages
+ */
+function validateEnvironment(config) {
+  const warnings = [];
+  if (!config.adminPassword || config.adminPassword === 'ionroad2026') {
+    warnings.push('ADMIN_PASSWORD is using the default value — change it in production');
+  }
+  if (config.googleSheets?.enabled) {
+    if (!config.googleSheets.spreadsheetId) {
+      warnings.push('GOOGLE_SHEETS_ENABLED=true but GOOGLE_SHEETS_SPREADSHEET_ID is not set');
+    }
+    if (!config.googleSheets.clientEmail) {
+      warnings.push('GOOGLE_SHEETS_ENABLED=true but GOOGLE_SHEETS_CLIENT_EMAIL is not set');
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Run a WAL checkpoint on the SQLite database (best-effort).
+ * Accesses `store.localStore.db` — a better-sqlite3 Database handle.
+ * Silently skips if the DB handle is not accessible (e.g., in tests with mocks).
+ *
+ * @param {object} store  SurveyStore instance
+ */
+function walCheckpoint(store) {
+  try {
+    const db = store?.localStore?.db;
+    if (db && typeof db.pragma === 'function') {
+      db.pragma('wal_checkpoint(TRUNCATE)');
+      log.info('[DB] WAL checkpoint completed');
+    }
+  } catch (err) {
+    log.warn('[DB] WAL checkpoint failed:', err.message);
+  }
+}
+
+/**
  * Copy the SQLite DB file to a dated backup file.
  * Best-effort — never throws. Safe with WAL mode (default in better-sqlite3)
  * because the main db file is always page-consistent.
@@ -149,8 +191,14 @@ function buildAveragePrices(submissions) {
 
 /**
  * Serialise `payload` as JSON and write it to `response`.
- * Automatically compresses with gzip or deflate when the payload exceeds
+ *
+ * Envelope pattern: object payloads automatically receive a `success` boolean
+ * (true for 2xx, false otherwise). Arrays are returned as-is to preserve
+ * backward compatibility with clients that expect a plain array.
+ *
+ * Compression: gzip or deflate applied automatically when the payload exceeds
  * COMPRESSION_THRESHOLD and the client signals support via Accept-Encoding.
+ * Saved bytes are logged at INFO level for monitoring.
  *
  * @param {http.IncomingMessage} request
  * @param {http.ServerResponse}  response
@@ -158,7 +206,12 @@ function buildAveragePrices(submissions) {
  * @param {unknown}              payload     Value to JSON-serialise
  */
 async function sendJson(request, response, statusCode, payload) {
-  const body = Buffer.from(JSON.stringify(payload));
+  // Envelope: inject success flag into object payloads only (not arrays)
+  const enveloped = (payload !== null && typeof payload === 'object' && !Array.isArray(payload))
+    ? { success: statusCode < 400, ...payload }
+    : payload;
+
+  const body = Buffer.from(JSON.stringify(enveloped));
   const headers = { 'Content-Type': 'application/json; charset=utf-8' };
 
   if (body.length > COMPRESSION_THRESHOLD) {
@@ -167,6 +220,8 @@ async function sendJson(request, response, statusCode, payload) {
       const compressed = await new Promise((resolve, reject) =>
         zlib.gzip(body, (err, result) => (err ? reject(err) : resolve(result)))
       );
+      const saved = body.length - compressed.length;
+      log.info(`[GZIP] ${body.length}B → ${compressed.length}B (saved ${saved}B, ${Math.round(saved / body.length * 100)}%)`);
       headers['Content-Encoding'] = 'gzip';
       headers['Vary'] = 'Accept-Encoding';
       headers['Content-Length'] = compressed.length;
@@ -177,6 +232,8 @@ async function sendJson(request, response, statusCode, payload) {
       const compressed = await new Promise((resolve, reject) =>
         zlib.deflate(body, (err, result) => (err ? reject(err) : resolve(result)))
       );
+      const saved = body.length - compressed.length;
+      log.info(`[DEFLATE] ${body.length}B → ${compressed.length}B (saved ${saved}B, ${Math.round(saved / body.length * 100)}%)`);
       headers['Content-Encoding'] = 'deflate';
       headers['Vary'] = 'Accept-Encoding';
       headers['Content-Length'] = compressed.length;
@@ -686,32 +743,60 @@ export function createApp(config = loadConfig(), options = {}) {
       if (request.method === 'GET' && url.pathname === '/api/docs') {
         await sendJson(request, response, 200, {
           version: PKG_VERSION,
+          envelope: 'Object responses include { success: boolean, ...data }. Arrays are returned as-is.',
+          errorFormat: '{ success: false, error: "Korean error message" }',
           endpoints: [
-            { method: 'GET',  path: '/health',                   auth: false, description: '서버 상태 및 DB 연결 확인' },
-            { method: 'GET',  path: '/api/docs',                 auth: false, description: 'API 문서 (이 페이지)' },
-            { method: 'GET',  path: '/api/status',               auth: true,  description: '상세 서버 모니터링 (DB 크기, 연결 수, 메모리)' },
-            { method: 'GET',  path: '/api/metrics',              auth: true,  description: '요청 통계 (p99 응답시간, 에러율)' },
-            { method: 'GET',  path: '/api/bootstrap',            auth: false, description: '앱 초기화 데이터 (지역, 제품, 제출 목록)' },
-            { method: 'GET',  path: '/api/survey-stats',         auth: false, description: '지역별 제출 현황 및 좌표' },
-            { method: 'GET',  path: '/api/daily-summary',        auth: false, description: '일별 집계 요약 (?date=YYYY-MM-DD)' },
-            { method: 'GET',  path: '/api/daily-report',         auth: false, description: '일별 HTML 리포트 (?date=YYYY-MM-DD)' },
-            { method: 'GET',  path: '/api/geocode',              auth: false, description: '주소 → 좌표 변환 (?query=주소)' },
-            { method: 'GET',  path: '/api/reverse-geocode',      auth: false, description: '좌표 → 주소 변환 (?lat=&lng=)' },
-            { method: 'GET',  path: '/api/stats',                auth: true,  description: '기간별/조사자별 집계 통계 (?from=YYYY-MM-DD&to=YYYY-MM-DD)' },
-            { method: 'GET',  path: '/api/price-outliers',       auth: true,  description: '가격 이상치 감지 (?sigma=2, 기본 ±2σ)' },
-            { method: 'POST', path: '/api/submissions',          auth: false, description: '새 시장조사 제출 (중복 감지 포함)' },
-            { method: 'POST', path: '/api/admin/login',          auth: false, description: '관리자 로그인 → Bearer 토큰 발급' },
-            { method: 'GET',  path: '/api/admin/verify',         auth: true,  description: '토큰 유효성 확인' },
-            { method: 'POST', path: '/api/admin/refresh',        auth: true,  description: '토큰 갱신 (새 토큰 발급)' },
-            { method: 'GET',  path: '/api/admin/submissions',    auth: true,  description: '전체 제출 목록 (?page=&limit=)' },
-            { method: 'GET',  path: '/api/admin/settings',       auth: true,  description: '커스텀 설정 조회' },
-            { method: 'POST', path: '/api/admin/settings',       auth: true,  description: '커스텀 설정 저장' },
-            { method: 'POST', path: '/api/admin/change-password',auth: true,  description: '관리자 비밀번호 변경' },
-            { method: 'POST', path: '/api/admin/webhook',        auth: true,  description: '웹훅 URL 및 이벤트 설정' },
-            { method: 'POST', path: '/api/admin/import',         auth: true,  description: '데이터 일괄 가져오기' },
-            { method: 'GET',  path: '/api/backup',               auth: true,  description: '필터된 데이터 내보내기 (?from=&to=&researcher=&area=)' },
-            { method: 'POST', path: '/api/submissions/delete',   auth: true,  description: '제출 삭제' },
-            { method: 'POST', path: '/api/assignments/override', auth: true,  description: '배정 지역 수동 변경' }
+            { method: 'GET',  path: '/health',      auth: false, description: '서버 상태 및 DB 연결 확인',
+              responseExample: { success: true, status: 'ok', db: 'ok', uptime: 120 } },
+            { method: 'GET',  path: '/api/docs',    auth: false, description: 'API 문서 (이 페이지)' },
+            { method: 'GET',  path: '/api/status',  auth: true,  description: '상세 서버 모니터링',
+              responseExample: { success: true, status: 'ok', uptime: 120, db: { sizeBytes: 49152, sizeMb: 0 }, activeConnections: 2 } },
+            { method: 'GET',  path: '/api/metrics', auth: true,  description: '요청 통계 (p99 응답시간, 에러율)',
+              responseExample: { success: true, requests: 500, errors: 2, avgResponseMs: 12, p99ResponseMs: 48 } },
+            { method: 'GET',  path: '/api/bootstrap', auth: false, description: '앱 초기화 데이터 (지역, 제품, 제출 목록)' },
+            { method: 'GET',  path: '/api/survey-stats', auth: false, description: '지역별 제출 현황 및 좌표' },
+            { method: 'GET',  path: '/api/daily-summary', auth: false, description: '일별 집계 요약',
+              queryParams: { date: 'YYYY-MM-DD (기본: 오늘)' },
+              responseExample: { success: true, date: '2026-03-15', totalSubmissions: 42, uniqueResearchers: 8 } },
+            { method: 'GET',  path: '/api/daily-report', auth: false, description: '일별 HTML 리포트',
+              queryParams: { date: 'YYYY-MM-DD (기본: 오늘)' } },
+            { method: 'GET',  path: '/api/geocode',  auth: false, description: '주소 → 좌표 변환',
+              queryParams: { query: '검색할 주소' } },
+            { method: 'GET',  path: '/api/reverse-geocode', auth: false, description: '좌표 → 주소 변환',
+              queryParams: { lat: '위도', lng: '경도' } },
+            { method: 'GET',  path: '/api/stats',   auth: true,  description: '기간별/조사자별 집계 통계',
+              queryParams: { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' },
+              responseExample: { success: true, total: 100, byResearcher: [{ name: '홍길동', count: 20 }], byArea: [], byDay: [] } },
+            { method: 'GET',  path: '/api/price-outliers', auth: true, description: '가격 이상치 감지 (±Nσ)',
+              queryParams: { sigma: '표준편차 배수 (기본 2, 범위 1~5)' },
+              responseExample: { success: true, sigma: 2, total: 3, outliers: [{ product: 'Vita500', price: 9999, deviation: 3.2 }] } },
+            { method: 'POST', path: '/api/submissions', auth: false, description: '새 시장조사 제출 (중복 감지 포함)',
+              requestExample: { researcher: { name: '홍길동', residenceArea: '서울 중부' }, survey: { region: '강남구', storeType: '약국', storeName: '서울약국' }, prices: [{ productId: 'vita500', size: '100ml', price: 1200 }] },
+              responseExample: { success: true, id: 'uuid-string', sync: { mode: 'local' } } },
+            { method: 'POST', path: '/api/admin/login', auth: false, description: '관리자 로그인 → Bearer 토큰 발급',
+              requestExample: { password: 'your-password' },
+              responseExample: { success: true, token: 'uuid-string' } },
+            { method: 'GET',  path: '/api/admin/verify', auth: true, description: '토큰 유효성 확인',
+              responseExample: { success: true, ok: true } },
+            { method: 'POST', path: '/api/admin/refresh', auth: true, description: '토큰 갱신 (새 토큰 발급)',
+              responseExample: { success: true, token: 'new-uuid-string' } },
+            { method: 'GET',  path: '/api/admin/submissions', auth: true, description: '전체 제출 목록',
+              queryParams: { page: '페이지 번호', limit: `페이지 크기 (최대 ${PAGINATION_MAX_LIMIT})` } },
+            { method: 'GET',  path: '/api/admin/settings', auth: true, description: '커스텀 설정 조회' },
+            { method: 'POST', path: '/api/admin/settings', auth: true, description: '커스텀 설정 저장',
+              requestExample: { key: 'customAreas', value: ['서울 중부', '서울 동부'] } },
+            { method: 'POST', path: '/api/admin/change-password', auth: true, description: '관리자 비밀번호 변경',
+              requestExample: { currentPassword: 'old', newPassword: 'new-secure-pw' } },
+            { method: 'POST', path: '/api/admin/webhook', auth: true, description: '웹훅 URL 및 이벤트 설정',
+              requestExample: { url: 'https://hooks.example.com/notify', events: ['new_submission'] } },
+            { method: 'POST', path: '/api/admin/import', auth: true, description: '데이터 일괄 가져오기',
+              requestExample: { submissions: [] } },
+            { method: 'GET',  path: '/api/backup', auth: true, description: '필터된 데이터 내보내기',
+              queryParams: { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD', researcher: '조사자명', area: '지역명' } },
+            { method: 'POST', path: '/api/submissions/delete', auth: true, description: '제출 삭제',
+              requestExample: { submissionId: 'uuid' } },
+            { method: 'POST', path: '/api/assignments/override', auth: true, description: '배정 지역 수동 변경',
+              requestExample: { submissionId: 'uuid', assignedArea: '서울 동부', reason: '요청에 의한 변경' } }
           ]
         });
         return;
@@ -1414,12 +1499,19 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT',  () => shutdown('SIGINT'));
 
-  // Sequential startup: DB init → integrity check → backup → bind port → print banner
+  // Sequential startup: validate env → DB init → integrity check → WAL checkpoint → backup → bind port → print banner
   (async () => {
     try {
+      // Environment validation — warn early about misconfigurations
+      const envWarnings = validateEnvironment(config);
+      for (const w of envWarnings) log.warn(`[CONFIG] ${w}`);
+
       await server._store.init();
       await server._store.getSubmissionCounts();
       log.info('[DB] integrity check passed');
+
+      walCheckpoint(server._store);
+      setInterval(() => walCheckpoint(server._store), 6 * 60 * 60_000).unref(); // every 6h
 
       await backupDatabase(config.dbFile);
       setInterval(() => backupDatabase(config.dbFile), BACKUP_INTERVAL_MS).unref();

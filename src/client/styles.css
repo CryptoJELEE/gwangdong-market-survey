@@ -4466,4 +4466,435 @@ a:not([class]):hover { text-decoration-thickness: 2px; }
   .notif-dot::after { animation: none; }
   .wizard-step.is-active::before { animation: none !important; }
 }
+
+/* ═══════════════════════════════════════════════
+   Round 24 — Visual Flourishes & Micro-Delight
+   ═══════════════════════════════════════════════ */
+
+/* ── Hero Gradient Mesh Background ── */
+/* Usage: add .has-mesh to .hero */
+.hero.has-mesh {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.hero.has-mesh::before {
+  content: '';
+  position: absolute;
+  inset: -60% -40%;
+  width: 180%;
+  height: 220%;
+  background:
+    radial-gradient(ellipse 55% 45% at 20% 30%, rgba(22,120,90,0.18) 0%, transparent 60%),
+    radial-gradient(ellipse 45% 55% at 80% 20%, rgba(2,132,199,0.14) 0%, transparent 55%),
+    radial-gradient(ellipse 65% 40% at 55% 80%, rgba(124,58,237,0.09) 0%, transparent 50%),
+    radial-gradient(ellipse 38% 48% at 40% 55%, rgba(217,119,6,0.07) 0%, transparent 45%);
+  pointer-events: none;
+  z-index: -1;
+  animation: meshFloat 14s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes meshFloat {
+  0%   { transform: translate(0, 0)          rotate(0deg)   scale(1); }
+  30%  { transform: translate(1.5%, 1%)      rotate(0.8deg) scale(1.01); }
+  60%  { transform: translate(-1%, 1.8%)     rotate(-0.6deg) scale(0.99); }
+  100% { transform: translate(0.8%, -0.8%)   rotate(0.4deg) scale(1.01); }
+}
+/* Subtle gradient top-line accent */
+.hero.has-mesh::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--color-primary) 35%, var(--color-info) 65%, transparent 100%);
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+/* ── Card Glowing Border — conic-gradient ── */
+/* Usage: add .card-glow to any .card */
+@property --glow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.card-glow {
+  --glow-angle: 0deg;
+  position: relative;
+  isolation: isolate;
+}
+.card-glow::before {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: calc(var(--radius) + 2px);
+  background: conic-gradient(
+    from var(--glow-angle),
+    transparent 0deg,
+    var(--color-primary) 60deg,
+    var(--color-info) 120deg,
+    var(--color-primary-light) 180deg,
+    transparent 240deg
+  );
+  opacity: 0;
+  z-index: -1;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+@media (hover: hover) {
+  .card-glow:hover::before {
+    opacity: 1;
+    animation: glowRotate 3s linear infinite;
+  }
+}
+@keyframes glowRotate {
+  to { --glow-angle: 360deg; }
+}
+/* Mask out interior so only border strip glows */
+.card-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  background: var(--card);
+  z-index: -1;
+  pointer-events: none;
+}
+/* Fallback for browsers without conic-gradient @property support */
+@supports not (background: conic-gradient(from 1deg, red, blue)) {
+  .card-glow::before {
+    background: linear-gradient(135deg, var(--color-primary), var(--color-info), var(--color-primary-light));
+    animation: none !important;
+    opacity: 0;
+  }
+  @media (hover: hover) {
+    .card-glow:hover::before { opacity: 0.8; }
+  }
+}
+
+/* ── Badge Shimmer Sweep ── */
+/* Usage: add .badge-shimmer to any .badge */
+.badge-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.badge-shimmer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.55) 50%,
+    transparent 100%
+  );
+  animation: badgeShimmer 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes badgeShimmer {
+  0%       { left: -100%; }
+  35%, 100% { left: 160%; }
+}
+
+/* ── Success / Celebration CSS Effect ── */
+/* JS adds .is-celebrating to .success-card on submit */
+.success-card.is-celebrating {
+  position: relative;
+  overflow: visible;
+}
+/* Confetti ring — multi-dot burst via box-shadow */
+.success-card.is-celebrating::before,
+.success-card.is-celebrating::after {
+  content: '';
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 10;
+}
+.success-card.is-celebrating::before {
+  background: var(--color-primary);
+  box-shadow:
+    -64px -44px 0 4px var(--chart-2),
+     64px -52px 0 4px var(--chart-3),
+    -96px -12px 0 3px var(--chart-4),
+     96px -18px 0 3px var(--chart-5),
+    -44px -88px 0 4px var(--chart-6),
+     44px -80px 0 3px var(--color-primary-light),
+    -76px -68px 0 3px var(--chart-4),
+     76px -60px 0 4px var(--chart-2);
+  animation: confettiBurst 1s var(--ease-out) forwards;
+}
+.success-card.is-celebrating::after {
+  width: 6px;
+  height: 6px;
+  background: var(--chart-3);
+  animation-delay: 0.1s;
+  animation-duration: 1.1s;
+  box-shadow:
+     48px -58px 0 3px var(--chart-1),
+    -48px -48px 0 3px var(--chart-4),
+     84px -28px 0 4px var(--chart-5),
+    -84px -22px 0 4px var(--chart-6),
+     28px -94px 0 3px var(--color-primary),
+    -28px -88px 0 4px var(--chart-2);
+  animation: confettiBurst 1.1s var(--ease-out) forwards;
+}
+@keyframes confettiBurst {
+  0%   { transform: translate(-50%, -50%) scale(0);    opacity: 1; }
+  55%  { opacity: 1; }
+  100% { transform: translate(-50%, -210%) scale(1.6); opacity: 0; }
+}
+/* Celebration: success icon spring entrance */
+.success-card.is-celebrating .success-icon {
+  display: inline-block;
+  animation: celebIconBounce 0.75s var(--ease-spring) both;
+}
+@keyframes celebIconBounce {
+  0%   { transform: scale(0.4) rotate(-15deg); opacity: 0; }
+  55%  { transform: scale(1.3) rotate(6deg);  opacity: 1; }
+  80%  { transform: scale(0.92) rotate(-2deg); }
+  100% { transform: scale(1)   rotate(0deg);  opacity: 1; }
+}
+
+/* ── Loading Pulse Pattern Variants ── */
+/* Bouncing dots loader */
+.loading-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.loading-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: dotBounce 1.2s ease-in-out infinite;
+}
+.loading-dots span:nth-child(2) { animation-delay: 0.18s; }
+.loading-dots span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes dotBounce {
+  0%, 65%, 100% { transform: translateY(0);    opacity: 0.45; }
+  32%            { transform: translateY(-7px); opacity: 1; }
+}
+
+/* Wave skeleton (horizontal sweep via background-position) */
+.skeleton-wave {
+  background: linear-gradient(
+    90deg,
+    var(--surface-sunken) 0%,
+    var(--border) 22%,
+    var(--surface-sunken) 44%
+  );
+  background-size: 400% 100%;
+  animation: skeletonWave 1.6s ease infinite;
+  border-radius: var(--radius-xs);
+}
+@keyframes skeletonWave {
+  0%   { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+/* Glow pulse skeleton */
+.skeleton-glow {
+  background: var(--surface-sunken);
+  border-radius: var(--radius-xs);
+  animation: skeletonGlow 1.9s ease-in-out infinite;
+}
+@keyframes skeletonGlow {
+  0%, 100% { opacity: 0.55; box-shadow: none; }
+  50%       { opacity: 1;    box-shadow: 0 0 14px rgba(22,120,90,0.14); }
+}
+
+/* ── Value Up / Down Color Flash ── */
+/* JS adds .value-up or .value-down to numeric elements on change */
+.value-up   { color: var(--success) !important; animation: valueFlashUp   1.4s var(--ease-out) forwards; }
+.value-down { color: var(--error)   !important; animation: valueFlashDown 1.4s var(--ease-out) forwards; }
+
+@keyframes valueFlashUp {
+  0%   { background: rgba(13,150,104,0.22); border-radius: 4px; }
+  70%  { background: rgba(13,150,104,0.06); }
+  100% { background: transparent; }
+}
+@keyframes valueFlashDown {
+  0%   { background: rgba(220,38,38,0.18); border-radius: 4px; }
+  70%  { background: rgba(220,38,38,0.05); }
+  100% { background: transparent; }
+}
+/* Inline delta arrows */
+.delta-up::before   { content: '▲\00a0'; font-size: 0.75em; }
+.delta-down::before { content: '▼\00a0'; font-size: 0.75em; }
+
+/* ── Scroll-Based Reveal (animation-timeline) ── */
+/* Modern: CSS scroll-driven animations (Chrome 115+, Safari 18+) */
+@supports (animation-timeline: view()) {
+  .reveal-on-scroll {
+    animation: revealUp linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 28%;
+  }
+  .reveal-on-scroll-left {
+    animation: revealLeft linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 28%;
+  }
+  .reveal-on-scroll-right {
+    animation: revealRight linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 28%;
+  }
+  @keyframes revealUp {
+    from { opacity: 0; transform: translateY(28px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes revealLeft {
+    from { opacity: 0; transform: translateX(-22px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes revealRight {
+    from { opacity: 0; transform: translateX(22px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+}
+/* Fallback: JS IntersectionObserver toggles .is-visible */
+@supports not (animation-timeline: view()) {
+  .reveal-on-scroll,
+  .reveal-on-scroll-left,
+  .reveal-on-scroll-right {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out);
+  }
+  .reveal-on-scroll-left  { transform: translateX(-18px); }
+  .reveal-on-scroll-right { transform: translateX(18px); }
+  .reveal-on-scroll.is-visible,
+  .reveal-on-scroll-left.is-visible,
+  .reveal-on-scroll-right.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Modal Exit Animation ── */
+/* JS adds .is-closing to .modal-backdrop before removing from DOM */
+.modal-backdrop.is-closing {
+  animation: modalBackdropOut 0.2s var(--ease-in) forwards;
+}
+.modal-backdrop.is-closing .modal {
+  animation: modalOut 0.2s var(--ease-in) forwards;
+}
+@keyframes modalBackdropOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@keyframes modalOut {
+  from { opacity: 1; transform: scale(1)    translateY(0);  }
+  to   { opacity: 0; transform: scale(0.91) translateY(18px); }
+}
+
+/* ── Spacing Fine-Tune (Final Pass) ── */
+/* Hero: a touch more breathing room */
+.hero { padding-top: var(--sp-6); padding-bottom: var(--sp-4); }
+/* Consistent section title bottom margin */
+.section-header { margin-bottom: var(--sp-5); }
+/* Form fields: slightly tighter vertical rhythm */
+.field + .field { margin-top: var(--sp-4); }
+/* Stack spacing: prevent double-gap between stacked stacks */
+.stack + .stack { margin-top: 0; }
+
+/* ── Dark Mode: Gradient & Glass Final Tuning ── */
+@media (prefers-color-scheme: dark) {
+  /* Mesh — subtler opacity on dark bg */
+  .hero.has-mesh::before { opacity: 0.65; }
+
+  /* Gradient text — bump brightness */
+  .gradient-text {
+    --grad-start: var(--color-primary-light);
+    --grad-end: #38bdf8;
+  }
+
+  /* Glass card — deeper frost */
+  .card-glass {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.09);
+  }
+
+  /* Conic glow border — slightly less opacity on dark (already vibrant) */
+  @media (hover: hover) {
+    .card-glow:hover::before { opacity: 0.65; }
+  }
+
+  /* Badge shimmer — lighter sweep for dark surfaces */
+  .badge-shimmer::before {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255,255,255,0.18) 50%,
+      transparent 100%
+    );
+  }
+
+  /* Celebration — more saturated particles on dark bg */
+  .success-card.is-celebrating::before,
+  .success-card.is-celebrating::after {
+    filter: brightness(1.25) saturate(1.4);
+  }
+
+  /* Skeleton wave — dark surface tones */
+  .skeleton-wave {
+    background: linear-gradient(
+      90deg,
+      rgba(255,255,255,0.04) 0%,
+      rgba(255,255,255,0.10) 22%,
+      rgba(255,255,255,0.04) 44%
+    );
+    background-size: 400% 100%;
+    animation: skeletonWave 1.6s ease infinite;
+  }
+  .skeleton-glow {
+    background: rgba(255,255,255,0.06);
+  }
+
+  /* Value flash — readable greens/reds on dark */
+  .value-up   { color: #34d399 !important; }
+  .value-down { color: #f87171 !important; }
+  @keyframes valueFlashUp {
+    0%   { background: rgba(52,211,153,0.2); }
+    70%  { background: rgba(52,211,153,0.06); }
+    100% { background: transparent; }
+  }
+  @keyframes valueFlashDown {
+    0%   { background: rgba(248,113,113,0.18); }
+    70%  { background: rgba(248,113,113,0.05); }
+    100% { background: transparent; }
+  }
+
+  /* Modal exit — darker backdrop end state */
+  .modal-backdrop.is-closing {
+    animation: modalBackdropOut 0.2s var(--ease-in) forwards;
+  }
+}
+
+/* ── Reduced Motion: Round 24 ── */
+@media (prefers-reduced-motion: reduce) {
+  .hero.has-mesh::before                   { animation: none; }
+  .card-glow:hover::before                 { animation: none; --glow-angle: 45deg; }
+  .badge-shimmer::before                   { animation: none; opacity: 0; }
+  .loading-dots span                       { animation: none; opacity: 0.8; }
+  .skeleton-wave, .skeleton-glow           { animation: none; }
+  .value-up, .value-down                   { animation: none; }
+  .success-card.is-celebrating::before,
+  .success-card.is-celebrating::after      { animation: none; }
+  .success-card.is-celebrating .success-icon { animation: none; }
+  .reveal-on-scroll,
+  .reveal-on-scroll-left,
+  .reveal-on-scroll-right                  { opacity: 1 !important; transform: none !important; transition: none !important; }
+  .modal-backdrop.is-closing,
+  .modal-backdrop.is-closing .modal        { animation: none; }
 }
