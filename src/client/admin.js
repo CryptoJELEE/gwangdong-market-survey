@@ -399,6 +399,47 @@ function renderCharts() {
   `;
 }
 
+function renderAdminSummaryWidget({ topResearcher, topArea, weekCount, total, areas }) {
+  let widget = document.querySelector('#admin-summary-widget');
+  if (!widget) {
+    widget = document.createElement('div');
+    widget.id = 'admin-summary-widget';
+    widget.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;';
+    const adminStats = document.querySelector('#admin-stats');
+    adminStats.parentNode.insertBefore(widget, adminStats);
+  }
+
+  const weekCoverage = areas.length > 0 ? Math.round((weekCount / (areas.length * 5)) * 100) : 0;
+  const coverColor = weekCoverage >= 80 ? 'var(--success,#27ae60)' : weekCoverage >= 50 ? '#f39c12' : 'var(--error,#e74c3c)';
+
+  widget.innerHTML = `
+    <div style="background:var(--bg-card,#fff);border:1px solid var(--border,#eee);border-radius:10px;padding:12px 14px;">
+      <div style="font-size:.72rem;color:var(--text-muted,#888);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">🏆 이번 주 MVP</div>
+      ${topResearcher
+    ? `<div style="font-size:1rem;font-weight:700;color:var(--text,#222);">${escapeHtml(topResearcher[0])}</div>
+         <div style="font-size:.8rem;color:var(--text-muted);">${topResearcher[1]}건 제출</div>`
+    : `<div style="font-size:.85rem;color:var(--text-muted);">아직 기록 없음</div>`}
+    </div>
+    <div style="background:var(--bg-card,#fff);border:1px solid var(--border,#eee);border-radius:10px;padding:12px 14px;">
+      <div style="font-size:.72rem;color:var(--text-muted,#888);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;">📍 가장 활발한 지역</div>
+      ${topArea
+    ? `<div style="font-size:1rem;font-weight:700;color:var(--text,#222);">${escapeHtml(topArea[0])}</div>
+         <div style="font-size:.8rem;color:var(--text-muted);">${topArea[1]}건 제출</div>`
+    : `<div style="font-size:.85rem;color:var(--text-muted);">아직 기록 없음</div>`}
+    </div>
+    <div style="grid-column:1/-1;background:var(--bg-card,#fff);border:1px solid var(--border,#eee);border-radius:10px;padding:12px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-size:.72rem;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em;">📊 이번 주 전체 커버리지</span>
+        <span style="font-size:.8rem;font-weight:700;color:${coverColor};">${weekCoverage}%</span>
+      </div>
+      <div style="height:6px;background:var(--border,#eee);border-radius:3px;overflow:hidden;">
+        <div style="height:100%;width:${Math.min(100, weekCoverage)}%;background:${coverColor};border-radius:3px;transition:width .5s ease;"></div>
+      </div>
+      <div style="font-size:.72rem;color:var(--text-muted);margin-top:4px;">이번 주 ${weekCount}건 / 목표 ${areas.length * 5}건 (지역당 5건)</div>
+    </div>
+  `;
+}
+
 function renderAdmin() {
   if (!adminData) return;
   const { submissions, areas } = adminData;
@@ -425,12 +466,25 @@ function renderAdmin() {
   });
   const coveredAreas = Object.keys(areaCounts).length;
 
+  // Extra stats for summary widget
+  const weekAgoTs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const weekCount = submissions.filter((s) => new Date(s.createdAt).getTime() >= weekAgoTs).length;
+  const avgCompleteness = total > 0
+    ? Math.round(submissions.reduce((sum, s) => sum + (s.completenessScore ?? 0), 0) / total) : 0;
+  const topResearcher = Object.entries(researchers).sort((a, b) => b[1] - a[1])[0];
+  const topArea = Object.entries(areaCounts).sort((a, b) => b[1] - a[1])[0];
+
   document.querySelector('#admin-stats').innerHTML = `
     <div class="quick-stat"><span class="qs-icon">🏃</span><span class="qs-value">${total}</span><span class="qs-label">총 기록</span></div>
     <div class="quick-stat"><span class="qs-icon">📅</span><span class="qs-value">${todayCount}</span><span class="qs-label">오늘</span></div>
+    <div class="quick-stat"><span class="qs-icon">📆</span><span class="qs-value">${weekCount}</span><span class="qs-label">이번 주</span></div>
     <div class="quick-stat"><span class="qs-icon">👤</span><span class="qs-value">${uniqueResearchers}</span><span class="qs-label">조사자</span></div>
     <div class="quick-stat"><span class="qs-icon">📍</span><span class="qs-value">${coveredAreas}/${areas.length}</span><span class="qs-label">지역</span></div>
+    <div class="quick-stat"><span class="qs-icon">✅</span><span class="qs-value">${avgCompleteness}점</span><span class="qs-label">평균 완료도</span></div>
   `;
+
+  // Summary widget — top performer + most active area
+  renderAdminSummaryWidget({ topResearcher, topArea, weekCount, total, areas });
 
   // Researcher performance comparison
   const researcherStats = document.querySelector('#researcher-stats');

@@ -1756,11 +1756,21 @@ function renderDashboard(config) {
   // 1. Quick Stats
   if (total === 0) {
     document.querySelector('#quick-stats').innerHTML = `
-      <div class="empty-state" style="width:100%;">
+      <div class="empty-state" style="width:100%;text-align:center;padding:24px 16px;">
         <div class="empty-icon">🏃</div>
-        <p>아직 기록이 없어요<br/>첫 번째 기록을 남겨볼까요?</p>
+        <p style="margin:8px 0 16px;">아직 기록이 없어요<br/>첫 번째 매장을 조사해 볼까요?</p>
+        <button type="button" id="empty-dashboard-cta" class="btn btn-primary" style="font-size:.9rem;padding:10px 24px;">
+          지금 조사 시작하기 →
+        </button>
       </div>
     `;
+    const cta = document.querySelector('#empty-dashboard-cta');
+    if (cta) {
+      cta.addEventListener('click', () => {
+        const surveyTab = navTabs.find((t) => t.dataset.tab === 'survey');
+        if (surveyTab) surveyTab.click();
+      });
+    }
   } else {
     const avgCompleteness = total > 0 ? Math.round(submissions.reduce((sum, s) => sum + (s.completenessScore ?? 0), 0) / total) : 0;
     document.querySelector('#quick-stats').innerHTML = `
