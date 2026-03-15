@@ -597,7 +597,7 @@ export function createApp(config = loadConfig(), options = {}) {
       log.warn(`[TIMEOUT] ${request.method} ${url.pathname} (${clientIp}) exceeded ${timeoutMs}ms`);
       if (!response.headersSent) {
         response.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
-        response.end(JSON.stringify({ error: '요청 처리 시간이 초과되었습니다.' }));
+        response.end(JSON.stringify({ success: false, error: '요청 처리 시간이 초과되었습니다.' }));
       } else {
         request.socket?.destroy();
       }
@@ -1336,7 +1336,7 @@ ${researcherRows}
         }
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
         if (!body.submissionId || !body.assignedArea) {
-          throw new ValidationError('submissionId and assignedArea are required.');
+          throw new ValidationError('submissionId와 assignedArea는 필수입니다.');
         }
         const updated = await store.overrideAssignment({
           submissionId: body.submissionId,
@@ -1372,10 +1372,9 @@ ${researcherRows}
         if (exportArea) {
           submissions = submissions.filter((s) => s.assignment?.currentArea === exportArea);
         }
-        const cfg = store.getConfig ? store.getConfig() : {};
         const timestamp = new Date().toISOString();
         const filters = { from: exportFrom || null, to: exportTo || null, researcher: exportResearcher || null, area: exportArea || null };
-        await sendJson(request, response, 200, { timestamp, filters, totalSubmissions: submissions.length, submissions, config: cfg });
+        await sendJson(request, response, 200, { timestamp, filters, totalSubmissions: submissions.length, submissions });
         return;
       }
 

@@ -1709,3 +1709,289 @@ describe('Round 24: /api/docs examples', () => {
     assert.ok(data.endpoints.length > 0, 'should document at least one endpoint');
   });
 });
+
+describe('Round 25: security — all auth-required endpoints reject unauthenticated requests', () => {
+  const authRequiredRoutes = [
+    { method: 'GET',  path: '/api/metrics' },
+    { method: 'GET',  path: '/api/status' },
+    { method: 'GET',  path: '/api/stats' },
+    { method: 'GET',  path: '/api/price-outliers' },
+    { method: 'GET',  path: '/api/admin/submissions' },
+    { method: 'GET',  path: '/api/admin/settings' },
+    { method: 'GET',  path: '/api/admin/verify' },
+    { method: 'GET',  path: '/api/backup' },
+    { method: 'POST', path: '/api/admin/refresh' },
+    { method: 'POST', path: '/api/admin/settings' },
+    { method: 'POST', path: '/api/admin/change-password' },
+    { method: 'POST', path: '/api/admin/webhook' },
+    { method: 'POST', path: '/api/admin/import' },
+    { method: 'POST', path: '/api/submissions/delete' },
+    { method: 'POST', path: '/api/assignments/override' },
+  ];
+
+  for (const { method, path } of authRequiredRoutes) {
+    test(`${method} ${path} → 401 without token`, async (t) => {
+      const { baseUrl } = await createTestServer(t);
+      const res = await fetch(`${baseUrl}${path}`, { method });
+      assert.equal(res.status, 401, `${method} ${path} should require auth`);
+      const data = await res.json();
+      assert.strictEqual(data.success, false, 'auth error should have success:false');
+      assert.ok(data.error, 'auth error should include error message');
+    });
+  }
+});
+
+describe('Round 25: backup and import endpoints', () => {
+  test('/api/backup returns filtered submissions', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Alice', residenceArea: '서울 중부' },
+      survey: { region: '강남', storeType: 'Mart', storeName: 'Store A' }
+    });
+    await postSubmission(baseUrl, {
+      researcher: { name: 'Bob', residenceArea: '서울 중부' },
+      survey: { region: '강북', storeType: 'Mart', storeName: 'Store B' }
+    });
+
+    const res = await fetch(`${baseUrl}/api/backup?researcher=Alice`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.success, true);
+    assert.equal(data.totalSubmissions, 1);
+    assert.equal(data.submissions[0].researcher.name, 'Alice');
+    assert.ok(data.timestamp, 'should include timestamp');
+    assert.ok(data.filters, 'should include filters');
+  });
+
+  test('/api/backup with date range filter', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    await postSubmission(baseUrl);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const res = await fetch(`${baseUrl}/api/backup?from=${today}&to=${tomorrow}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.ok(data.totalSubmissions >= 1, 'should return submissions within date range');
+  });
+
+  test('/api/admin/import rejects non-array body', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/import`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submissions: 'not-an-array' })
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+  });
+
+  test('/api/admin/import accepts empty array', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/import`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submissions: [] })
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.success, true);
+  });
+});
+
+describe('Round 25: webhook configuration', () => {
+  test('/api/admin/webhook rejects missing url', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/webhook`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events: ['new_submission'] })
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+    assert.ok(data.error);
+  });
+
+  test('/api/admin/webhook stores url and events', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/webhook`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://hooks.example.com/test', events: ['new_submission'] })
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.strictEqual(data.success, true);
+    assert.strictEqual(data.ok, true);
+    assert.strictEqual(data.url, 'https://hooks.example.com/test');
+    assert.deepEqual(data.events, ['new_submission']);
+  });
+
+  test('/api/admin/webhook filters unknown events', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/webhook`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: 'https://hooks.example.com/test', events: ['new_submission', 'unknown_event', 'daily_summary'] })
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.deepEqual(data.events, ['new_submission', 'daily_summary'], 'unknown events should be filtered out');
+  });
+});
+
+describe('Round 25: change password flow', () => {
+  test('change password then login with new password', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    // Change password
+    const changeRes = await fetch(`${baseUrl}/api/admin/change-password`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: 'ionroad2026', newPassword: 'newpass123' })
+    });
+    assert.equal(changeRes.status, 200);
+    const changeData = await changeRes.json();
+    assert.strictEqual(changeData.success, true);
+
+    // Old password should no longer work
+    const oldLoginRes = await fetch(`${baseUrl}/api/admin/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'ionroad2026' })
+    });
+    assert.equal(oldLoginRes.status, 401);
+
+    // New password should work
+    const newToken = await loginAs(baseUrl, 'newpass123');
+    assert.ok(typeof newToken === 'string' && newToken.length > 0);
+  });
+
+  test('change password rejects wrong current password', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/change-password`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: 'wrongcurrent', newPassword: 'newpass123' })
+    });
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+  });
+
+  test('change password rejects password shorter than 4 chars', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/admin/change-password`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: 'ionroad2026', newPassword: 'abc' })
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+  });
+});
+
+describe('Round 25: concurrent request handling', () => {
+  test('handles 10 concurrent submissions without errors', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const results = await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        postSubmission(baseUrl, {
+          researcher: { name: `User${i}`, residenceArea: '서울 중부' },
+          survey: { region: `Region${i}`, storeType: 'Mart', storeName: `Store${i}` }
+        })
+      )
+    );
+
+    for (const res of results) {
+      assert.equal(res.status, 201, 'all concurrent submissions should succeed');
+    }
+
+    const token = await loginAs(baseUrl);
+    const listRes = await fetch(`${baseUrl}/api/admin/submissions`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const submissions = await listRes.json();
+    assert.equal(submissions.length, 10, 'all 10 submissions should be persisted');
+  });
+
+  test('handles 20 concurrent GET /health requests', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => fetch(`${baseUrl}/health`))
+    );
+
+    for (const res of results) {
+      assert.equal(res.status, 200, 'all concurrent health checks should succeed');
+    }
+  });
+});
+
+describe('Round 25: error response consistency', () => {
+  test('404 response includes success:false', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/api/nonexistent-route`);
+    assert.equal(res.status, 404);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+    assert.ok(data.error, '404 should include error message');
+  });
+
+  test('validation error (400) includes success:false', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+
+    const res = await fetch(`${baseUrl}/api/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ researcher: { name: '' }, survey: {} })
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+    assert.ok(data.error);
+  });
+
+  test('override with missing fields returns success:false', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    const res = await fetch(`${baseUrl}/api/assignments/override`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submissionId: 'some-id' }) // missing assignedArea
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.strictEqual(data.success, false);
+    assert.ok(data.error, 'should include Korean error message');
+  });
+});

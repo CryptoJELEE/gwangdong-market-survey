@@ -361,7 +361,7 @@ select {
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 14px var(--sp-3);
-  background: #fafbfc;
+  background: var(--surface-raised);
   font-size: 15px;
   color: var(--text);
   transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
@@ -372,11 +372,11 @@ select {
 .field input:focus, .field select:focus, .field textarea:focus {
   outline: none;
   border-color: var(--color-primary);
-  background: white;
+  background: var(--surface);
   box-shadow: 0 0 0 3px var(--color-primary-ghost);
 }
 .field textarea { min-height: 100px; resize: vertical; }
-.field input::placeholder, .field textarea::placeholder { color: #a0a8b4; }
+.field input::placeholder, .field textarea::placeholder { color: var(--text-muted); opacity: 0.7; }
 
 /* Field validation states */
 .field.is-error input, .field.is-error select, .field.is-error textarea {
@@ -422,8 +422,8 @@ select {
   cursor: pointer;
   transition: background var(--transition), transform var(--transition);
 }
-.gps-btn:hover { background: #ddf3e8; }
-.gps-btn:active { background: #d0eddf; transform: scale(0.98); }
+.gps-btn:hover { background: var(--color-primary-subtle); filter: brightness(0.96); }
+.gps-btn:active { background: var(--color-primary-subtle); filter: brightness(0.92); transform: scale(0.98); }
 .gps-btn.is-loading { opacity: 0.6; pointer-events: none; }
 
 /* ── Store type buttons ── */
@@ -468,7 +468,7 @@ select {
   width: var(--sp-12);
   height: var(--sp-12);
   border: none;
-  background: #f3f4f6;
+  background: var(--surface-sunken);
   font-size: 20px;
   font-weight: 700;
   color: var(--text);
@@ -478,14 +478,14 @@ select {
   justify-content: center;
   transition: background var(--transition);
 }
-.stepper button:hover { background: #e9ebee; }
-.stepper button:active { background: #dfe1e5; }
+.stepper button:hover { background: var(--border); }
+.stepper button:active { background: var(--border-hover); }
 .stepper .stepper-value {
   width: var(--sp-12);
   text-align: center;
   font-size: 17px;
   font-weight: 700;
-  background: white;
+  background: var(--surface);
 }
 
 /* ── Buttons ── */
@@ -522,11 +522,11 @@ select {
 
 .btn-secondary {
   flex: 1;
-  background: #f0f1f3;
+  background: var(--surface-sunken);
   color: var(--text);
 }
-.btn-secondary:hover { background: #e5e7eb; }
-.btn-secondary:active { background: #d9dce0; }
+.btn-secondary:hover { background: var(--border); }
+.btn-secondary:active { background: var(--border-hover); }
 
 .btn-submit {
   width: 100%;
@@ -780,7 +780,7 @@ select {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 14px;
-  background: #fafbfc;
+  background: var(--surface-raised);
   transition: border-color var(--transition);
 }
 .product-stat-card:hover { border-color: var(--border-hover); }
@@ -4897,4 +4897,266 @@ a:not([class]):hover { text-decoration-thickness: 2px; }
   .reveal-on-scroll-right                  { opacity: 1 !important; transform: none !important; transition: none !important; }
   .modal-backdrop.is-closing,
   .modal-backdrop.is-closing .modal        { animation: none; }
+}
+
+/* ═══════════════════════════════════════════════
+   Round 25 — Modern CSS & Final Polish
+   ═══════════════════════════════════════════════ */
+
+/* ── Extended Design Tokens ── */
+:root {
+  /* Error/Warning/Gold subtle surfaces (replaces last hardcoded bg values) */
+  --color-error-subtle:   rgba(220,38,38,0.06);
+  --color-warning-subtle: rgba(217,119,6,0.08);
+  --color-gold-subtle:    #fffbeb;
+  --color-success-subtle: rgba(13,150,104,0.07);
+
+  /* Interaction state: disabled */
+  --disabled-opacity: 0.45;
+  --disabled-cursor: not-allowed;
+}
+
+/* ── color-mix() Enhanced Tokens ── */
+/* Progressive enhancement: uses color-mix in supporting browsers */
+@supports (color: color-mix(in srgb, red 50%, blue)) {
+  :root {
+    /* Tinted surfaces derived from primary — no more hardcoded hex */
+    --color-primary-tint-10: color-mix(in srgb, var(--color-primary) 10%, white);
+    --color-primary-tint-20: color-mix(in srgb, var(--color-primary) 20%, white);
+    --color-primary-tint-05: color-mix(in srgb, var(--color-primary)  5%, white);
+    --surface-hover: color-mix(in srgb, var(--color-primary)  4%, var(--surface));
+  }
+}
+
+/* ── oklch() Perceptually-Uniform Colors ── */
+@supports (color: oklch(50% 0.2 145)) {
+  :root {
+    /* Primary palette in oklch for perceptual uniformity */
+    --oklch-primary:       oklch(44% 0.12 155);
+    --oklch-primary-light: oklch(55% 0.13 155);
+    --oklch-primary-dark:  oklch(35% 0.10 155);
+    /* Success / Warning / Error in oklch */
+    --oklch-success: oklch(52% 0.14 155);
+    --oklch-warning: oklch(62% 0.15 65);
+    --oklch-error:   oklch(50% 0.22 25);
+  }
+  /* Opt-in to oklch via modifier class */
+  .use-oklch {
+    --color-primary:       var(--oklch-primary);
+    --color-primary-light: var(--oklch-primary-light);
+    --color-primary-dark:  var(--oklch-primary-dark);
+    --success: var(--oklch-success);
+    --warning: var(--oklch-warning);
+    --error:   var(--oklch-error);
+  }
+}
+
+/* ── :has() State-Based Styling ── */
+@supports selector(:has(*)) {
+  /* Field with error input — no JS class needed */
+  .field:has(input:invalid:not(:placeholder-shown)),
+  .field:has(select:invalid:not(:placeholder-shown)) {
+    --field-border: var(--error);
+  }
+  .field:has(input:invalid:not(:placeholder-shown)) input,
+  .field:has(select:invalid:not(:placeholder-shown)) select {
+    border-color: var(--error);
+    background: var(--color-error-subtle);
+  }
+
+  /* Card that contains an active toggle/checkbox */
+  .card:has(input[type="checkbox"]:checked) {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px var(--color-primary-ghost), var(--shadow);
+  }
+
+  /* Form nav: hide secondary btn when primary is full-width only child */
+  .form-nav:has(.btn-primary:only-child) .btn-primary { flex: none; width: 100%; }
+
+  /* Section header: tighter gap when no action link present */
+  .section-header:not(:has(.section-action)) { margin-bottom: var(--sp-4); }
+
+  /* Stack that directly contains a card-glow: no translateY glitch */
+  .stack:has(.card-glow) { transform: none; }
+
+  /* Table row selected state via checkbox */
+  .table tbody tr:has(input[type="checkbox"]:checked) {
+    background: var(--color-primary-ghost);
+  }
+
+  /* Sidebar nav item with active child */
+  .sidebar-nav-section:has(.is-active) > .sidebar-nav-section-title {
+    color: var(--color-primary);
+    font-weight: 700;
+  }
+}
+
+/* ── CSS Nesting ── */
+@supports selector(& > *) {
+  /* Nested card states — single declaration block */
+  .card {
+    & .card-header { border-bottom: 1px solid var(--border); }
+    & .card-footer { border-top: 1px solid var(--border); }
+    &.card-flat { box-shadow: none; }
+
+    @media (hover: hover) {
+      &:hover .card-header { border-bottom-color: var(--border-hover); }
+    }
+  }
+
+  /* Nested badge with shimmer */
+  .badge {
+    &.badge-shimmer { position: relative; overflow: hidden; }
+  }
+
+  /* Nested form field validation */
+  .field {
+    &.is-error {
+      & input, & select, & textarea {
+        border-color: var(--error);
+        background: var(--color-error-subtle);
+      }
+      & .field-error-msg { display: flex; }
+    }
+    &.is-success {
+      & input, & select, & textarea { border-color: var(--success); }
+    }
+  }
+}
+
+/* ── Disabled States: All Interactive Elements ── */
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: var(--disabled-opacity);
+  cursor: var(--disabled-cursor);
+  pointer-events: none;
+  transform: none !important;
+  box-shadow: none !important;
+}
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: var(--disabled-opacity);
+  cursor: var(--disabled-cursor);
+  background: var(--surface-sunken) !important;
+  border-color: var(--border) !important;
+  color: var(--text-muted);
+}
+.nav-tab:disabled,
+.nav-tab[aria-disabled="true"] {
+  opacity: var(--disabled-opacity);
+  pointer-events: none;
+}
+/* Read-only field variant */
+.field input[readonly],
+.field textarea[readonly] {
+  background: var(--surface-sunken);
+  border-style: dashed;
+  cursor: default;
+}
+
+/* ── Print Styles: Final Check ── */
+@media print {
+  /* Ensure scroll-progress bar is hidden */
+  .scroll-progress { display: none !important; }
+
+  /* Offcanvas / sidebar always hidden in print */
+  .offcanvas, .offcanvas-backdrop { display: none !important; }
+
+  /* Preserve celebration card layout without confetti overflow */
+  .success-card.is-celebrating::before,
+  .success-card.is-celebrating::after { display: none !important; }
+
+  /* Reveal animations should show content immediately */
+  .reveal-on-scroll,
+  .reveal-on-scroll-left,
+  .reveal-on-scroll-right { opacity: 1 !important; transform: none !important; }
+
+  /* Data comparison cards — ensure legible borders */
+  .compare-delta { border: 1px solid #ccc; }
+  .sparkline-bar { border: 1px solid #ccc; }
+
+  /* Tooltips: suppress hover content in print */
+  [data-tooltip]::before,
+  [data-tooltip]::after { display: none !important; }
+}
+
+/* ── Dark Mode: Final Integrated Audit ── */
+@media (prefers-color-scheme: dark) {
+  /* Fix remaining hardcoded colours in dark context */
+  .product-stat-card.is-highlight {
+    background: rgba(217,119,6,0.08);
+    border-color: var(--gold);
+  }
+  .field.is-error input,
+  .field.is-error select,
+  .field.is-error textarea {
+    background: rgba(220,38,38,0.08);
+  }
+  .field input::placeholder,
+  .field textarea::placeholder { color: var(--text-muted); opacity: 0.55; }
+  .stepper .stepper-value { background: var(--surface); }
+  .stepper button { background: var(--surface); }
+  .stepper button:hover { background: var(--surface-raised); }
+
+  /* :has() dark mode card highlight */
+  .card:has(input[type="checkbox"]:checked) {
+    border-color: var(--color-primary-light);
+    box-shadow: 0 0 0 2px rgba(30,153,112,0.18), var(--shadow);
+  }
+
+  /* Table selected row */
+  .table tbody tr:has(input[type="checkbox"]:checked) {
+    background: rgba(22,120,90,0.1);
+  }
+
+  /* Hero mesh — apply on dark card containers too */
+  .card.has-mesh::before { opacity: 0.5; }
+
+  /* Disabled state on dark bg */
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    background: rgba(255,255,255,0.04) !important;
+    color: rgba(255,255,255,0.3);
+  }
+}
+
+/* ── CSS Variable Documentation: Round 25 Additions ── */
+/*
+  NEW TOKENS (Round 25)
+  ─────────────────────
+  SEMANTIC SURFACES
+    --color-error-subtle    (rgba red 6%)
+    --color-warning-subtle  (rgba amber 8%)
+    --color-gold-subtle     (#fffbeb)
+    --color-success-subtle  (rgba green 7%)
+
+  COLOR-MIX DERIVED (progressive enhancement)
+    --color-primary-tint-05/10/20
+    --surface-hover
+
+  OKLCH (progressive enhancement, opt-in via .use-oklch)
+    --oklch-primary/light/dark
+    --oklch-success/warning/error
+
+  INTERACTION
+    --disabled-opacity (0.45)
+    --disabled-cursor  (not-allowed)
+
+  :has() PATTERNS
+    .field:has(input:invalid) — auto error border without JS
+    .card:has(input:checked)  — checked card highlight
+    .table tbody tr:has(:checked) — row selection highlight
+
+  CSS NESTING
+    @supports selector(& > *)
+    .card { & .card-header { ... } }
+    .field { &.is-error { ... } }
+*/
+
+/* ── Reduced Motion: Round 25 ── */
+@media (prefers-reduced-motion: reduce) {
+  .gps-btn { transition: none; }
+  .btn:not(:disabled) { transition: background var(--duration-fast) linear, color var(--duration-fast) linear; }
 }
