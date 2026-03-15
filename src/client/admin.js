@@ -384,25 +384,56 @@ function renderAdmin() {
     <div class="quick-stat"><span class="qs-icon">📍</span><span class="qs-value">${coveredAreas}/${areas.length}</span><span class="qs-label">지역</span></div>
   `;
 
-  // Researcher stats with last activity + detail profile
+  // Researcher performance comparison
   const researcherStats = document.querySelector('#researcher-stats');
   const sortedResearchers = Object.entries(researchers).sort((a, b) => b[1] - a[1]);
+  const maxCount = sortedResearchers[0]?.[1] || 1;
+
+  // Per-researcher avg completeness
+  const researcherCompleteness = {};
+  submissions.forEach((s) => {
+    const name = s.researcher.name;
+    if (!researcherCompleteness[name]) researcherCompleteness[name] = { sum: 0, count: 0 };
+    researcherCompleteness[name].sum += s.completenessScore ?? 0;
+    researcherCompleteness[name].count += 1;
+  });
+
   researcherStats.innerHTML = `
     <h2>조사자별 현황 👤</h2>
-    <div class="area-cards">
-      ${sortedResearchers.map(([name, count], idx) => {
-        const lastDate = new Date(researcherLastActivity[name]).toLocaleDateString('ko-KR');
-        const rank = idx + 1;
-        return `
-        <div class="area-card" data-researcher="${escapeHtml(name)}">
-          <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px;">#${rank}</div>
-          <div class="area-name">${escapeHtml(name)}</div>
-          <div class="area-count">${count}건</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">최근 ${lastDate}</div>
-        </div>
-        <div class="researcher-detail" id="rd-${idx}"></div>
-      `;
-      }).join('')}
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;">
+        <thead><tr style="border-bottom:2px solid var(--border,#eee);text-align:left;">
+          <th style="padding:6px 8px;">순위</th>
+          <th style="padding:6px 8px;">이름</th>
+          <th style="padding:6px 8px;text-align:right;">기록</th>
+          <th style="padding:6px 8px;">기여도</th>
+          <th style="padding:6px 8px;text-align:right;">완료도</th>
+          <th style="padding:6px 8px;">최근 활동</th>
+        </tr></thead>
+        <tbody>
+          ${sortedResearchers.map(([name, count], idx) => {
+    const lastDate = new Date(researcherLastActivity[name]).toLocaleDateString('ko-KR');
+    const barPct = Math.round((count / maxCount) * 100);
+    const rc = researcherCompleteness[name];
+    const avgScore = rc ? Math.round(rc.sum / rc.count) : 0;
+    const scoreColor = avgScore >= 80 ? 'var(--success,#27ae60)' : avgScore >= 50 ? '#f39c12' : 'var(--error,#e74c3c)';
+    const medals = ['🥇', '🥈', '🥉'];
+    return `
+            <tr style="border-bottom:1px solid var(--border,#eee);">
+              <td style="padding:8px;">${medals[idx] || `#${idx + 1}`}</td>
+              <td style="padding:8px;font-weight:600;">${escapeHtml(name)}</td>
+              <td style="padding:8px;text-align:right;">${count}건</td>
+              <td style="padding:8px;min-width:80px;">
+                <div style="height:6px;background:var(--border,#eee);border-radius:3px;overflow:hidden;">
+                  <div style="height:100%;width:${barPct}%;background:var(--primary,#0066cc);border-radius:3px;"></div>
+                </div>
+              </td>
+              <td style="padding:8px;text-align:right;color:${scoreColor};font-weight:600;">${avgScore}점</td>
+              <td style="padding:8px;color:var(--text-muted);font-size:.8rem;">${lastDate}</td>
+            </tr>`;
+  }).join('')}
+        </tbody>
+      </table>
     </div>
     <h3 style="margin-top:16px;">지역별 현황</h3>
     <div class="area-cards">
@@ -414,6 +445,7 @@ function renderAdmin() {
       `).join('')}
     </div>
   `;
+  renderIntegrityCheck(submissions);
 
   // Filters
   const researcherNames = Object.keys(researchers).sort();
@@ -847,6 +879,86 @@ function renderRegionCompare() {
       renderRegionCompare();
     });
   });
+}
+
+// ── Data integrity check ──
+function renderIntegrityCheck(submissions) {
+  let container = document.querySelector('#integrity-check');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'integrity-check';
+    container.style.cssText = 'margin-top:16px;';
+    const researcherStats = document.querySelector('#researcher-stats');
+    if (researcherStats) researcherStats.appendChild(container);
+  }
+
+  // Find duplicates: same researcher + same storeName + same day
+  const seen = {};
+  const duplicates = [];
+  submissions.forEach((s) => {
+    const dayKey = `${s.researcher.name}|${s.survey.storeName}|${new Date(s.createdAt).toDateString()}`;
+    if (seen[dayKey]) {
+      duplicates.push(s);
+    } else {
+      seen[dayKey] = true;
+    }
+  });
+
+  // Find price outliers: per product+size, flag price > mean + 2*stdev
+  const priceGroups = {};
+  submissions.forEach((s) => {
+    (s.prices || []).forEach((p) => {
+      const key = `${p.productLabel}|${p.size}`;
+      const num = Number(String(p.price).replace(/[^0-9]/g, ''));
+      if (num > 0) {
+        if (!priceGroups[key]) priceGroups[key] = [];
+        priceGroups[key].push({ num, storeName: s.survey.storeName, date: s.createdAt });
+      }
+    });
+  });
+  const outliers = [];
+  Object.entries(priceGroups).forEach(([key, vals]) => {
+    if (vals.length < 3) return;
+    const mean = vals.reduce((a, b) => a + b.num, 0) / vals.length;
+    const variance = vals.reduce((a, b) => a + Math.pow(b.num - mean, 2), 0) / vals.length;
+    const stdev = Math.sqrt(variance);
+    if (stdev < 1) return;
+    vals.forEach((v) => {
+      if (Math.abs(v.num - mean) > 2 * stdev) {
+        outliers.push({ key, price: v.num, storeName: v.storeName, mean: Math.round(mean) });
+      }
+    });
+  });
+
+  const issues = duplicates.length + outliers.length;
+  if (issues === 0) {
+    container.innerHTML = `<div style="padding:10px;background:var(--bg-alt,#f5f5f5);border-radius:8px;font-size:.85rem;color:var(--success,#27ae60);">✅ 데이터 무결성 이상 없음</div>`;
+    return;
+  }
+
+  const dupHtml = duplicates.length > 0 ? `
+    <div style="margin-bottom:8px;">
+      <strong>⚠️ 중복 의심 ${duplicates.length}건</strong>
+      <div style="font-size:.82rem;color:var(--text-muted);margin-top:4px;">
+        ${duplicates.slice(0, 5).map((s) => `${escapeHtml(s.researcher.name)} · ${escapeHtml(s.survey.storeName)} (${new Date(s.createdAt).toLocaleDateString('ko-KR')})`).join('<br>')}
+        ${duplicates.length > 5 ? `<span> 외 ${duplicates.length - 5}건</span>` : ''}
+      </div>
+    </div>` : '';
+
+  const outlierHtml = outliers.length > 0 ? `
+    <div>
+      <strong>📊 가격 이상값 ${outliers.length}건</strong>
+      <div style="font-size:.82rem;color:var(--text-muted);margin-top:4px;">
+        ${outliers.slice(0, 5).map((o) => `${escapeHtml(o.key)}: ₩${o.price.toLocaleString()} (평균 ₩${o.mean.toLocaleString()}) — ${escapeHtml(o.storeName)}`).join('<br>')}
+        ${outliers.length > 5 ? `<span> 외 ${outliers.length - 5}건</span>` : ''}
+      </div>
+    </div>` : '';
+
+  container.innerHTML = `
+    <details style="background:var(--bg-alt,#f5f5f5);border-radius:8px;padding:10px;">
+      <summary style="cursor:pointer;font-size:.88rem;font-weight:600;color:#e67e22;">⚠️ 데이터 이상 ${issues}건 감지됨</summary>
+      <div style="margin-top:8px;font-size:.85rem;">${dupHtml}${outlierHtml}</div>
+    </details>`;
 }
 
 function applyDateFilter(submissions, dateFilter) {

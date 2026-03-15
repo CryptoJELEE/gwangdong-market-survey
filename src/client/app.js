@@ -222,7 +222,7 @@ function renderStep1(config) {
       <div class="field" id="favorite-stores-section">
         <label>\u2B50 자주 가는 매장</label>
         <div class="favorite-chips" style="display:flex;flex-wrap:wrap;gap:6px;">
-          ${getFavoriteStores().map((f, i) => `<button type="button" class="btn btn-secondary favorite-chip" data-fav-idx="${i}" style="font-size:.85rem;padding:4px 12px;border-radius:16px;">${escapeHtml(f.storeName)}</button>`).join('')}
+          ${getFavoriteStores().map((f, i) => `<span style="display:inline-flex;align-items:center;gap:2px;border:1px solid var(--border,#ddd);border-radius:16px;overflow:hidden;"><button type="button" class="btn btn-secondary favorite-chip" data-fav-idx="${i}" style="font-size:.85rem;padding:4px 10px;border:none;border-radius:0;background:transparent;">${escapeHtml(f.storeName)}</button><button type="button" class="fav-delete-btn" data-fav-idx="${i}" style="background:none;border:none;padding:0 8px 0 2px;cursor:pointer;color:var(--text-muted);font-size:.9rem;line-height:1;" aria-label="${escapeHtml(f.storeName)} 삭제">×</button></span>`).join('')}
         </div>
       </div>` : ''}
       <div class="field">
@@ -376,6 +376,39 @@ function renderStep1(config) {
     });
   });
 
+  // Favorite store delete buttons
+  formStepContainer.querySelectorAll('.fav-delete-btn').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = Number(btn.dataset.favIdx);
+      const favs = getFavoriteStores();
+      const fav = favs[idx];
+      if (!fav) return;
+      favs.splice(idx, 1);
+      saveFavoriteStores(favs);
+      showToast(`${fav.storeName} 즐겨찾기에서 삭제했어요`, 'info');
+      // Re-render the favorites section
+      const section = formStepContainer.querySelector('#favorite-stores-section');
+      const chipsWrap = section?.querySelector('.favorite-chips');
+      if (chipsWrap) {
+        const remaining = getFavoriteStores();
+        if (remaining.length === 0) {
+          section.remove();
+        } else {
+          chipsWrap.innerHTML = remaining.map((f, i) => `<span style="display:inline-flex;align-items:center;gap:2px;border:1px solid var(--border,#ddd);border-radius:16px;overflow:hidden;"><button type="button" class="btn btn-secondary favorite-chip" data-fav-idx="${i}" style="font-size:.85rem;padding:4px 10px;border:none;border-radius:0;background:transparent;">${escapeHtml(f.storeName)}</button><button type="button" class="fav-delete-btn" data-fav-idx="${i}" style="background:none;border:none;padding:0 8px 0 2px;cursor:pointer;color:var(--text-muted);font-size:.9rem;line-height:1;" aria-label="${escapeHtml(f.storeName)} 삭제">×</button></span>`).join('');
+          // Re-bind events for updated chips
+          chipsWrap.querySelectorAll('.fav-delete-btn').forEach((b) => b.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            const i2 = Number(b.dataset.favIdx);
+            const fs = getFavoriteStores();
+            const f2 = fs[i2];
+            if (f2) { fs.splice(i2, 1); saveFavoriteStores(fs); showToast(`${f2.storeName} 삭제`, 'info'); renderStep1(config); }
+          }));
+        }
+      }
+    });
+  });
+
   formStepContainer.querySelectorAll('.store-type-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       formStepContainer.querySelectorAll('.store-type-btn').forEach((b) => { b.classList.remove('is-active'); b.setAttribute('aria-pressed', 'false'); });
@@ -460,7 +493,7 @@ function renderStep2(config) {
   formStepContainer.innerHTML = `
     <div class="card stack">
       <div>
-        <h3>가격 체크 💰</h3>
+        <h3>가격 체크 💰 <span id="price-input-count" style="font-size:.8rem;font-weight:normal;color:var(--text-muted);margin-left:6px;">0개 입력됨</span></h3>
         <p class="small">없는 건 그냥 넘어가세요~ 있는 것만 적어주면 돼요 👌</p>
       </div>
       <div class="stack" id="product-list">
@@ -554,6 +587,21 @@ function renderStep2(config) {
       }
     });
   });
+
+  function updatePriceCount() {
+    const inputs = [...formStepContainer.querySelectorAll('.price-field input')];
+    const filled = inputs.filter((i) => (i.dataset.rawValue || i.value.replace(/[^0-9]/g, '')).length > 0).length;
+    const badge = formStepContainer.querySelector('#price-input-count');
+    if (badge) {
+      badge.textContent = `${filled}개 입력됨`;
+      badge.style.color = filled > 0 ? 'var(--primary,#0066cc)' : 'var(--text-muted)';
+    }
+  }
+  formStepContainer.querySelectorAll('.price-field input').forEach((input) => {
+    input.addEventListener('input', updatePriceCount);
+    input.addEventListener('blur', () => setTimeout(updatePriceCount, 50));
+  });
+  updatePriceCount();
 
   function savePrices() {
     const inputs = formStepContainer.querySelectorAll('.price-field input');
@@ -1246,43 +1294,93 @@ function renderMyRecords(submissions) {
   if (!myName) { container.innerHTML = ''; return; }
 
   const mySubs = getMySubmissions(submissions);
-  const sorted = [...mySubs].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const now = Date.now();
+  const todayStr = new Date().toDateString();
+  const weekAgoTs = now - 7 * 24 * 60 * 60 * 1000;
+  const monthAgoTs = now - 30 * 24 * 60 * 60 * 1000;
 
-  if (sorted.length === 0) {
-    container.innerHTML = `
-      <div class="card stack">
-        <h2>내 기록 📋</h2>
-        <div class="empty-state">
-          <div class="empty-icon">🏃</div>
-          <p>아직 기록이 없어요</p>
-        </div>
-      </div>
-    `;
-    return;
+  const filter = state._historyFilter || 'all';
+  const filterLabels = { today: '오늘', week: '이번주', month: '이번달', all: '전체' };
+  const filterChips = Object.entries(filterLabels).map(([key, label]) =>
+    `<button type="button" class="my-record-filter-chip${filter === key ? ' is-active' : ''}" data-filter="${key}" style="padding:4px 12px;border-radius:14px;border:1px solid var(--border,#ddd);background:${filter === key ? 'var(--primary,#0066cc)' : 'transparent'};color:${filter === key ? '#fff' : 'inherit'};cursor:pointer;font-size:.82rem;">${label}</button>`
+  ).join('');
+
+  const filtered = mySubs.filter((s) => {
+    const ts = new Date(s.createdAt).getTime();
+    if (filter === 'today') return new Date(s.createdAt).toDateString() === todayStr;
+    if (filter === 'week') return ts >= weekAgoTs;
+    if (filter === 'month') return ts >= monthAgoTs;
+    return true;
+  }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  function relativeTime(dateStr) {
+    const diff = now - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return '방금';
+    if (mins < 60) return `${mins}분 전`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}시간 전`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return '어제';
+    if (days < 7) return `${days}일 전`;
+    return new Date(dateStr).toLocaleDateString('ko-KR');
   }
+
+  // Group by date label for timeline headers
+  const groups = [];
+  let lastDateStr = null;
+  filtered.forEach((sub) => {
+    const dateStr = new Date(sub.createdAt).toDateString();
+    const label = dateStr === todayStr ? '오늘' : dateStr === new Date(now - 86400000).toDateString() ? '어제' : new Date(sub.createdAt).toLocaleDateString('ko-KR');
+    if (dateStr !== lastDateStr) { groups.push({ label, items: [] }); lastDateStr = dateStr; }
+    groups[groups.length - 1].items.push(sub);
+  });
+
+  const itemsHtml = filtered.length === 0
+    ? `<div class="empty-state"><div class="empty-icon">📭</div><p>해당 기간 기록이 없어요</p></div>`
+    : groups.map((g) => `
+      <div class="timeline-date-header" style="font-size:.8rem;color:var(--text-muted);font-weight:600;padding:8px 0 4px;border-bottom:1px solid var(--border,#eee);margin-bottom:4px;">${escapeHtml(g.label)}</div>
+      ${g.items.map((sub) => {
+    const priceCount = sub.prices ? sub.prices.length : 0;
+    const score = sub.completenessScore ?? 0;
+    const scoreBadge = score >= 90 ? '🟢' : score >= 60 ? '🟡' : '🔴';
+    const uid = 'tl-' + sub.id;
+    return `
+        <div class="my-record-item timeline-item" style="border-left:3px solid var(--primary,#0066cc);padding-left:10px;margin-bottom:8px;">
+          <div class="my-record-main" style="cursor:pointer;" data-toggle="${uid}">
+            <span class="my-record-store">${escapeHtml(sub.survey.storeName)}</span>
+            <span class="my-record-date">${relativeTime(sub.createdAt)}</span>
+          </div>
+          <div class="my-record-meta">${escapeHtml(sub.survey.storeType)} · 가격 ${priceCount}건 · ${scoreBadge} ${score}점</div>
+          <div id="${uid}" class="hidden" style="margin-top:6px;font-size:.83rem;color:var(--text-muted);">
+            ${sub.prices && sub.prices.length > 0 ? sub.prices.map((p) => `<span style="margin-right:8px;">${escapeHtml(p.productLabel)} ${escapeHtml(p.size)}: ₩${Number(p.price).toLocaleString()}</span>`).join('') : '가격 없음'}
+            ${sub.notes ? `<div style="margin-top:4px;color:var(--text);">💬 ${escapeHtml(sub.notes)}</div>` : ''}
+          </div>
+        </div>`;
+  }).join('')}`).join('');
 
   container.innerHTML = `
     <div class="card stack">
-      <h2>내 기록 📋</h2>
-      <div class="my-records-list">
-        ${sorted.map((sub) => {
-    const date = new Date(sub.createdAt).toLocaleDateString('ko-KR');
-    const priceCount = sub.prices ? sub.prices.length : 0;
-    const score = sub.completenessScore ?? 0;
-    const cBadge = score >= 90 ? '🟢 완벽!' : score >= 60 ? '🟡 좋아요' : '🔴 보완 필요';
-    return `
-            <div class="my-record-item">
-              <div class="my-record-main">
-                <span class="my-record-store">${escapeHtml(sub.survey.storeName)}</span>
-                <span class="my-record-date">${date}</span>
-              </div>
-              <div class="my-record-meta">가격 ${priceCount}건 · <span title="완료도 ${score}점">${cBadge}</span></div>
-            </div>
-          `;
-  }).join('')}
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <h2 style="margin:0;">내 기록 📋 <span style="font-size:.8rem;font-weight:normal;color:var(--text-muted);">${filtered.length}건</span></h2>
+        <div style="display:flex;gap:4px;" role="group" aria-label="기간 필터">${filterChips}</div>
       </div>
+      <div class="my-records-list" style="margin-top:8px;">${itemsHtml}</div>
     </div>
   `;
+
+  container.querySelectorAll('.my-record-filter-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state._historyFilter = btn.dataset.filter;
+      renderMyRecords(submissions);
+    });
+  });
+  container.querySelectorAll('[data-toggle]').forEach((el) => {
+    el.addEventListener('click', () => {
+      const detail = container.querySelector('#' + el.dataset.toggle);
+      if (detail) detail.classList.toggle('hidden');
+    });
+  });
 }
 
 // ── Photo Gallery ──
@@ -2224,6 +2322,37 @@ function initPwaInstall() {
   });
 }
 
+// ── Touch swipe for tab switching ──
+function initTouchSwipe() {
+  let startX = 0;
+  let startY = 0;
+  const SWIPE_THRESHOLD = 60;
+  const VERTICAL_LIMIT = 80;
+
+  document.addEventListener('touchstart', (e) => {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!e.changedTouches.length) return;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = Math.abs(e.changedTouches[0].clientY - startY);
+    if (Math.abs(dx) < SWIPE_THRESHOLD || dy > VERTICAL_LIMIT) return;
+    // Don't swipe if user is interacting with an input/textarea/select
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (['input', 'textarea', 'select', 'button'].includes(tag)) return;
+
+    const activeTabs = navTabs.filter((t) => !t.classList.contains('hidden'));
+    const currentIdx = activeTabs.findIndex((t) => t.classList.contains('is-active'));
+    const nextIdx = dx < 0 ? currentIdx + 1 : currentIdx - 1;
+    if (nextIdx < 0 || nextIdx >= activeTabs.length) return;
+
+    activeTabs[nextIdx].click();
+    showToast(activeTabs[nextIdx].textContent.trim(), 'info');
+  }, { passive: true });
+}
+
 // ── Skip-to-content ──
 function initSkipLink() {
   const link = document.createElement('a');
@@ -2331,3 +2460,4 @@ initKeyboardNav();
 initNetworkMonitor();
 initDarkMode();
 initPwaInstall();
+initTouchSwipe();
