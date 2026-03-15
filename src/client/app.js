@@ -864,8 +864,8 @@ async function handleSubmit(config) {
       const overlay = document.createElement('div');
       overlay.className = 'price-reminder-overlay';
       overlay.innerHTML = `
-        <div class="price-reminder-dialog">
-          <p>오늘 이미 <strong>${escapeHtml(payload.survey.storeName)}</strong>을(를) 기록했어요. 추가로 기록할까요?</p>
+        <div class="price-reminder-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dup-dialog-title">
+          <p id="dup-dialog-title">오늘 이미 <strong>${escapeHtml(payload.survey.storeName)}</strong>을(를) 기록했어요.<br/>추가로 기록할까요?</p>
           <div class="price-reminder-actions">
             <button type="button" class="btn btn-secondary" id="dup-cancel">취소</button>
             <button type="button" class="btn btn-primary" id="dup-ok">추가 기록</button>
@@ -873,8 +873,11 @@ async function handleSubmit(config) {
         </div>
       `;
       document.body.appendChild(overlay);
-      overlay.querySelector('#dup-cancel').addEventListener('click', () => { overlay.remove(); resolve(false); });
-      overlay.querySelector('#dup-ok').addEventListener('click', () => { overlay.remove(); resolve(true); });
+      const releaseDupTrap = trapFocus(overlay.querySelector('.price-reminder-dialog'));
+      const closeDup = (val) => { releaseDupTrap(); overlay.remove(); resolve(val); };
+      overlay.querySelector('#dup-cancel').addEventListener('click', () => closeDup(false));
+      overlay.querySelector('#dup-ok').addEventListener('click', () => closeDup(true));
+      overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDup(false); });
     });
     if (!confirmed) {
       submitBtn.disabled = false;
@@ -905,16 +908,17 @@ async function handleSubmit(config) {
     });
     clearTimeout(timeoutId);
     if (!response.ok) {
+      let errMsg;
       if (response.status === 429) {
-        statusEl.textContent = '요청이 너무 많아요. 잠시 후 다시 시도해주세요';
+        errMsg = '요청이 너무 많아요. 잠시 후 다시 시도해주세요 ⏳';
       } else if (response.status >= 500) {
-        statusEl.textContent = '서버에 문제가 생겼어요. 잠시 후 다시 시도해주세요';
-      } else if (response.status >= 400) {
-        statusEl.textContent = '입력 데이터를 확인해주세요';
+        errMsg = '서버에 문제가 생겼어요. 잠시 후 다시 시도해주세요 🛠️';
       } else {
         const result = await response.json().catch(() => ({}));
-        statusEl.textContent = result.error || '저장에 실패했어요.';
+        errMsg = result.error || '입력 내용을 확인하고 다시 시도해주세요';
       }
+      statusEl.textContent = errMsg;
+      showToast(errMsg, 'error');
       submitBtn.disabled = false;
       submitBtn.textContent = '\u2705 기록 완료!';
       return;
@@ -954,11 +958,11 @@ async function handleSubmit(config) {
     panels.forEach((p) => p.classList.toggle('is-active', p.id === 'dashboard'));
     initMap();
   } catch (err) {
-    if (err.name === 'AbortError') {
-      statusEl.textContent = '시간 초과. 다시 시도해주세요 ⏱️';
-    } else {
-      statusEl.textContent = '인터넷 연결을 확인해주세요 📶';
-    }
+    const errMsg = err.name === 'AbortError'
+      ? '응답 시간이 초과됐어요. 다시 시도해주세요 ⏱️'
+      : '인터넷 연결을 확인하고 다시 시도해주세요 📶';
+    statusEl.textContent = errMsg;
+    showToast(errMsg, 'error');
     submitBtn.disabled = false;
     submitBtn.textContent = '\u2705 기록 완료!';
   }
@@ -971,8 +975,8 @@ function promptFavoriteStore(step1Data) {
   const overlay = document.createElement('div');
   overlay.className = 'price-reminder-overlay';
   overlay.innerHTML = `
-    <div class="price-reminder-dialog">
-      <p>\u2B50 <strong>${escapeHtml(step1Data.storeName)}</strong>을(를) 즐겨찾기에 추가할까요?</p>
+    <div class="price-reminder-dialog" role="dialog" aria-modal="true" aria-labelledby="fav-dialog-title">
+      <p id="fav-dialog-title">⭐ <strong>${escapeHtml(step1Data.storeName)}</strong>을(를) 즐겨찾기에 추가할까요?</p>
       <p class="small">다음에 더 빠르게 기록할 수 있어요!</p>
       <div class="price-reminder-actions">
         <button type="button" class="btn btn-secondary" id="fav-no">괜찮아요</button>
@@ -981,7 +985,10 @@ function promptFavoriteStore(step1Data) {
     </div>
   `;
   document.body.appendChild(overlay);
-  overlay.querySelector('#fav-no').addEventListener('click', () => overlay.remove());
+  const releaseFavTrap = trapFocus(overlay.querySelector('.price-reminder-dialog'));
+  const closeFav = () => { releaseFavTrap(); overlay.remove(); };
+  overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFav(); });
+  overlay.querySelector('#fav-no').addEventListener('click', closeFav);
   overlay.querySelector('#fav-yes').addEventListener('click', () => {
     addFavoriteStore({
       storeType: step1Data.storeType || '',
@@ -990,7 +997,7 @@ function promptFavoriteStore(step1Data) {
       displayLocation: step1Data.displayLocation || ''
     });
     showToast(`${step1Data.storeName} 즐겨찾기 추가! \u2B50`, 'success');
-    overlay.remove();
+    closeFav();
   });
 }
 
@@ -1013,7 +1020,7 @@ function showSuccess(result) {
       .share-btn { margin-top: 8px; background: none; border: 1px solid var(--border, #ddd); border-radius: 8px; padding: 8px 16px; cursor: pointer; font-size: .9rem; color: inherit; }
       .share-btn:active { opacity: .7; }
     </style>
-    <div class="success-card" aria-label="기록 완료">
+    <div class="success-card" role="status" aria-label="기록 완료" aria-live="polite">
       <div class="confetti-wrap" id="confetti-wrap" aria-hidden="true"></div>
       <div class="success-check" aria-hidden="true">✅</div>
       <h3>수고했어요!</h3>
@@ -2068,15 +2075,7 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// ── Global error handling ──
-window.onerror = function (msg, source, line, col, error) {
-  console.error('Global error:', { msg, source, line, col, error });
-  showToast('문제가 생겼어요 😅 새로고침 해주세요', 'error');
-};
-window.onunhandledrejection = function (event) {
-  console.error('Unhandled rejection:', event.reason);
-  showToast('문제가 생겼어요 😅 새로고침 해주세요', 'error');
-};
+// ── Global error handling (see showErrorBanner below) ──
 
 // ── Offline submission queue ──
 function getPendingSubmissions() {

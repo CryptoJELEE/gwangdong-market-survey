@@ -128,15 +128,33 @@ async function init() {
 }
 
 // ── Tab switching ──
-document.querySelectorAll('.admin-tab').forEach((tab) => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.admin-tab').forEach((t) => t.classList.remove('active'));
-    document.querySelectorAll('.admin-tab-panel').forEach((p) => p.style.display = 'none');
-    tab.classList.add('active');
-    const panel = document.querySelector(`#tab-${tab.dataset.tab}`);
-    if (panel) panel.style.display = 'block';
+(function initAdminTabs() {
+  const tabs = [...document.querySelectorAll('.admin-tab')];
+  const tabContainer = tabs[0]?.parentElement;
+  if (tabContainer) tabContainer.setAttribute('role', 'tablist');
+  tabs.forEach((tab) => {
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', tab.classList.contains('active') ? 'true' : 'false');
+    const panelId = `tab-${tab.dataset.tab}`;
+    tab.setAttribute('aria-controls', panelId);
+    const panel = document.querySelector(`#${panelId}`);
+    if (panel) {
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', tab.id || panelId + '-tab');
+    }
+    tab.addEventListener('click', () => {
+      tabs.forEach((t) => {
+        t.classList.remove('active');
+        t.setAttribute('aria-selected', 'false');
+      });
+      document.querySelectorAll('.admin-tab-panel').forEach((p) => p.style.display = 'none');
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+      const activePanel = document.querySelector(`#tab-${tab.dataset.tab}`);
+      if (activePanel) activePanel.style.display = 'block';
+    });
   });
-});
+})();
 
 // ── Admin data ──
 let adminData = null;
@@ -993,7 +1011,7 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
         })
       });
       if (response.ok) {
-        showToast('지역이 변경되었어요.');
+        showToast('지역이 변경되었어요. ✓', 'success');
         await loadAdminData();
       }
     });
@@ -1029,7 +1047,7 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
         body: JSON.stringify({ submissionId: button.dataset.submissionId })
       });
       if (response.ok) {
-        showToast('삭제되었어요.');
+        showToast('삭제되었어요. ✓', 'success');
         await loadAdminData();
       } else {
         showToast('삭제에 실패했어요.', 'error');
@@ -1121,7 +1139,7 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
         const res = await authFetch('/api/submissions/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ submissionId: id }) });
         if (res.ok) successCount++;
       }
-      showToast(`${successCount}건 삭제되었어요.`);
+      showToast(`${successCount}건 삭제되었어요. ✓`, 'success');
       bulkSelectMode = false;
       selectedSubmissionIds.clear();
       await loadAdminData();
@@ -1156,7 +1174,7 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
       a.download = `ionroad-selected-${selected.length}건-${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-      showToast(`${selected.length}건 내보내기 완료.`);
+      showToast(`${selected.length}건 내보내기 완료. ✓`, 'success');
     });
   }
 }
@@ -1233,7 +1251,7 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
   a.download = `ionroad-export-${count}\uAC74-${dateStr}.csv`;
   a.click();
   URL.revokeObjectURL(url);
-  showToast('CSV 파일이 다운로드되었어요.');
+  showToast('CSV 파일이 다운로드되었어요. ✓', 'success');
 });
 
 // ── JSON Export ──
@@ -1269,7 +1287,7 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
     a.download = `ionroad-export-${submissions.length}건-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('JSON 파일이 다운로드되었어요.');
+    showToast('JSON 파일이 다운로드되었어요. ✓', 'success');
   });
 })();
 
@@ -1290,7 +1308,7 @@ document.querySelector('#backup-btn').addEventListener('click', async () => {
     a.download = `ionroad-backup-${dateStr}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('백업 파일이 다운로드되었어요.');
+    showToast('백업 파일이 다운로드되었어요. ✓', 'success');
   } catch {
     showToast('백업에 실패했어요.', 'error');
   }
@@ -1400,7 +1418,7 @@ async function saveSetting(key, value) {
     showToast('설정 저장에 실패했어요.', 'error');
     return false;
   }
-  showToast('설정이 저장되었어요.');
+  showToast('설정이 저장되었어요. ✓', 'success');
   return true;
 }
 
@@ -1615,7 +1633,7 @@ document.querySelector('#import-file').addEventListener('change', async (e) => {
       return;
     }
     const result = await res.json();
-    showToast(`${result.imported}건 가져옴, ${result.skipped}건 중복 스킵`);
+    showToast(`${result.imported}건 가져옴, ${result.skipped}건 중복 스킵 ✓`, 'success');
     if (result.imported > 0) await loadAdminData();
   } catch {
     showToast('파일을 읽을 수 없어요.', 'error');
@@ -1646,7 +1664,7 @@ document.querySelector('#change-password-btn').addEventListener('click', async (
       showToast(data.error || '변경에 실패했어요.', 'error');
       return;
     }
-    showToast('비밀번호가 변경되었어요.');
+    showToast('비밀번호가 변경되었어요. ✓', 'success');
     document.querySelector('#current-password').value = '';
     document.querySelector('#new-password').value = '';
   } catch {
