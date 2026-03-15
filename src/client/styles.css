@@ -1444,6 +1444,221 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   min-height: 44px;
 }
 
+/* ── Print Styles ── */
+@media print {
+  body {
+    background: white !important;
+    color: #000 !important;
+    padding-bottom: 0;
+  }
+  .bottom-nav,
+  .help-fab,
+  .scroll-top-btn,
+  .status-bar,
+  .onboarding-overlay,
+  .help-backdrop,
+  .help-sheet,
+  .toast,
+  .loading-skeleton {
+    display: none !important;
+  }
+  .card,
+  .submission-card,
+  .product-stat-card,
+  .achievement-card,
+  .quick-stat {
+    box-shadow: none !important;
+    border: 1px solid #ddd;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .shell {
+    max-width: 100%;
+    padding: 0;
+  }
+  #map-container {
+    height: 300px !important;
+    min-height: 300px !important;
+    max-height: 300px !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .stack {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  a { text-decoration: underline; }
+  .btn, .btn-submit, .gps-btn { border: 1px solid #999; }
+}
+
+/* ── Extra Large Screens (1440px+) ── */
+@media (min-width: 1440px) {
+  .shell {
+    max-width: 1200px;
+  }
+  .stack {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  #photo-gallery {
+    grid-template-columns: repeat(8, 1fr) !important;
+  }
+  .area-cards {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .summary-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* ── Very Small Screens (320px) ── */
+@media (max-width: 359px) {
+  html {
+    font-size: clamp(13px, 3.8vw, 15px);
+  }
+  .shell {
+    padding: 8px 10px 20px;
+  }
+  .card {
+    padding: 14px 12px;
+  }
+  .hero h1 {
+    font-size: clamp(18px, 5.5vw, 22px);
+  }
+  .store-type-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .store-type-btn {
+    padding: 10px 6px;
+    font-size: 12px;
+  }
+  .step-indicator .step-line {
+    width: 24px;
+    margin: 0 3px;
+  }
+  .step-indicator .step-num {
+    width: 26px;
+    height: 26px;
+    font-size: 12px;
+  }
+  .step-indicator .step-label {
+    font-size: 10px;
+  }
+  .quick-stat {
+    min-width: 60px;
+    padding: 8px 6px;
+  }
+  .quick-stat .qs-value {
+    font-size: 17px;
+  }
+  .btn {
+    padding: 12px 14px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+  .btn-submit {
+    padding: 14px;
+    font-size: 15px;
+    min-height: 48px;
+  }
+  .field input, .field select, .field textarea {
+    padding: 10px;
+    font-size: 14px;
+  }
+  .bottom-nav .nav-tab {
+    font-size: 10px;
+  }
+  .bottom-nav .nav-tab .nav-icon {
+    font-size: 18px;
+  }
+  .onboarding-card {
+    padding: 24px 16px 20px;
+  }
+}
+
+/* ── Dark Mode: Additional Refinements ── */
+@media (prefers-color-scheme: dark) {
+  .photo-preview,
+  .photo-thumb,
+  .sub-photo {
+    border: 1px solid var(--border);
+  }
+  .step-indicator .step-num {
+    background: #3b4261;
+    color: #8890a8;
+  }
+  .step-indicator .step.is-active .step-num {
+    background: var(--primary);
+    color: white;
+    box-shadow: 0 0 0 4px rgba(32,137,92,0.3);
+  }
+  .step-indicator .step.is-done .step-num {
+    background: var(--success);
+    color: white;
+  }
+  .ps-bar-track {
+    background: #3b4261;
+  }
+  .ps-bar-fill {
+    opacity: 0.9;
+  }
+  .trend-bar-fill {
+    opacity: 0.9;
+  }
+  .toast {
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+  .toast-success {
+    background: #059669;
+  }
+  .toast-error {
+    background: #dc2626;
+  }
+}
+
+/* ── Custom Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-light);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary) transparent;
+}
+
+/* ── Text Readability (Korean Optimized) ── */
+body {
+  line-height: 1.6;
+  letter-spacing: -0.02em;
+  word-break: keep-all;
+}
+.submission-card .store-name,
+.ps-name,
+.my-record-store,
+.area-card .area-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.submission-card .sub-meta,
+.activity-text,
+.help-step,
+.onboarding-slide p,
+.hero .subhead,
+.faq-item span {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
 /* ── Utilities ── */
 .small { font-size: 0.85rem; color: var(--text-muted); }
 .text-center { text-align: center; }

@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS submissions (
   assignment_override_reason TEXT,
   assignment_overridden_by TEXT,
   assignment_overridden_at TEXT,
-  sync_mode TEXT DEFAULT 'local'
+  sync_mode TEXT DEFAULT 'local',
+  completeness_score INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS assignment_overrides (
@@ -100,6 +101,7 @@ function rowToSubmission(row) {
       ...(row.assignment_overridden_by != null ? { overriddenBy: row.assignment_overridden_by } : {}),
       ...(row.assignment_overridden_at != null ? { overriddenAt: row.assignment_overridden_at } : {})
     },
+    completenessScore: row.completeness_score ?? 0,
     sync: { mode: row.sync_mode || 'local' }
   };
 }
@@ -229,7 +231,7 @@ export class SQLiteStore {
         prices_json, notes,
         photo_filename, photo_mime_type, photo_url,
         assignment_current_area, assignment_candidate_order, assignment_method,
-        sync_mode
+        sync_mode, completeness_score
       ) VALUES (
         ?, ?,
         ?, ?, ?, ?,
@@ -237,7 +239,7 @@ export class SQLiteStore {
         ?, ?,
         ?, ?, ?,
         ?, ?, ?,
-        ?
+        ?, ?
       )
     `).run(
       id,
@@ -261,7 +263,8 @@ export class SQLiteStore {
       payload.assignment.currentArea,
       payload.assignment.candidateOrder ? JSON.stringify(payload.assignment.candidateOrder) : null,
       payload.assignment.method,
-      'local'
+      'local',
+      payload.completenessScore ?? 0
     );
 
     return {
@@ -271,6 +274,7 @@ export class SQLiteStore {
       survey: payload.survey,
       prices: payload.prices,
       notes: payload.notes || '',
+      completenessScore: payload.completenessScore ?? 0,
       photo,
       assignment: payload.assignment,
       sync: { mode: 'local' }

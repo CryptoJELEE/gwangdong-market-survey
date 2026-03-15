@@ -760,6 +760,37 @@ async function handleSubmit(config) {
     payload.gpsLng = state.gps.lng;
   }
 
+  // Duplicate store check: same day + same store name
+  const todayStr = new Date().toDateString();
+  const existingSubs = (state.bootstrap?.submissions || []);
+  const duplicate = existingSubs.find((s) =>
+    s.survey.storeName === payload.survey.storeName &&
+    new Date(s.createdAt).toDateString() === todayStr
+  );
+  if (duplicate) {
+    const confirmed = await new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'price-reminder-overlay';
+      overlay.innerHTML = `
+        <div class="price-reminder-dialog">
+          <p>오늘 이미 <strong>${escapeHtml(payload.survey.storeName)}</strong>을(를) 기록했어요. 추가로 기록할까요?</p>
+          <div class="price-reminder-actions">
+            <button type="button" class="btn btn-secondary" id="dup-cancel">취소</button>
+            <button type="button" class="btn btn-primary" id="dup-ok">추가 기록</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      overlay.querySelector('#dup-cancel').addEventListener('click', () => { overlay.remove(); resolve(false); });
+      overlay.querySelector('#dup-ok').addEventListener('click', () => { overlay.remove(); resolve(true); });
+    });
+    if (!confirmed) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '\u2705 기록 완료!';
+      return;
+    }
+  }
+
   // Offline queue: save locally if offline
   if (!navigator.onLine) {
     const queue = getPendingSubmissions();
@@ -1138,13 +1169,15 @@ function renderMyRecords(submissions) {
         ${sorted.map((sub) => {
     const date = new Date(sub.createdAt).toLocaleDateString('ko-KR');
     const priceCount = sub.prices ? sub.prices.length : 0;
+    const score = sub.completenessScore ?? 0;
+    const cBadge = score >= 90 ? '🟢 완벽!' : score >= 60 ? '🟡 좋아요' : '🔴 보완 필요';
     return `
             <div class="my-record-item">
               <div class="my-record-main">
                 <span class="my-record-store">${escapeHtml(sub.survey.storeName)}</span>
                 <span class="my-record-date">${date}</span>
               </div>
-              <div class="my-record-meta">가격 ${priceCount}건</div>
+              <div class="my-record-meta">가격 ${priceCount}건 · <span title="완료도 ${score}점">${cBadge}</span></div>
             </div>
           `;
   }).join('')}
@@ -1396,11 +1429,13 @@ function renderDashboard(config) {
       </div>
     `;
   } else {
+    const avgCompleteness = total > 0 ? Math.round(submissions.reduce((sum, s) => sum + (s.completenessScore ?? 0), 0) / total) : 0;
     document.querySelector('#quick-stats').innerHTML = `
       <div class="quick-stat"><span class="qs-icon">🏃</span><span class="qs-value">${total}</span><span class="qs-label">총 기록</span></div>
       <div class="quick-stat"><span class="qs-icon">📅</span><span class="qs-value">${todayCount}</span><span class="qs-label">오늘</span></div>
       <div class="quick-stat"><span class="qs-icon">👤</span><span class="qs-value">${uniqueResearchers}</span><span class="qs-label">조사자</span></div>
       <div class="quick-stat"><span class="qs-icon">📍</span><span class="qs-value">${coveredAreas}/${areas.length}</span><span class="qs-label">지역</span></div>
+      <div class="quick-stat"><span class="qs-icon">✅</span><span class="qs-value">${avgCompleteness}점</span><span class="qs-label">평균 완료도</span></div>
     `;
   }
 

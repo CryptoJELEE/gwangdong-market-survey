@@ -77,6 +77,7 @@ export class LocalStore {
       survey: payload.survey,
       prices: payload.prices,
       notes: payload.notes || '',
+      completenessScore: payload.completenessScore ?? 0,
       photo,
       assignment: payload.assignment,
       sync: {

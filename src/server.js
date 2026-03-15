@@ -635,8 +635,17 @@ ${researcherRows}
               submissionCounts
             });
 
+        // Completeness score (0~100)
+        let completenessScore = 0;
+        if (payload.researcher.name && payload.survey.storeName && payload.survey.region) completenessScore += 20;
+        if (payload.prices.length > 0) completenessScore += 30;
+        if (payload.photoDataUrl) completenessScore += 20;
+        if (payload.notes) completenessScore += 10;
+        if (body.gpsLat != null && body.gpsLng != null) completenessScore += 20;
+
         const submission = await store.createSubmission({
           ...payload,
+          completenessScore,
           researcher: {
             ...payload.researcher,
             ...(residenceCoord ? { coordinates: { lat: residenceCoord.lat, lng: residenceCoord.lng } } : {})

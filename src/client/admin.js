@@ -909,7 +909,7 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
     }
   }
 
-  const headers = ['제출일시', '조사자', '거주지역', '조사지역', '매장유형', '매장명', 'POS대수', '진열위치', ...priceHeaders, '메모', '위도', '경도'];
+  const headers = ['제출일시', '조사자', '거주지역', '조사지역', '매장유형', '매장명', 'POS대수', '진열위치', ...priceHeaders, '완료도', '메모', '위도', '경도'];
 
   const rows = submissions.map((sub) => {
     const priceMap = {};
@@ -932,6 +932,7 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
       sub.survey.posCount,
       sub.survey.displayLocation || '',
       ...priceCols,
+      sub.completenessScore ?? '',
       sub.notes || '',
       gps?.lat ?? '',
       gps?.lng ?? ''
