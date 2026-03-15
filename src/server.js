@@ -23,11 +23,11 @@ const BACKUP_INTERVAL_MS = 24 * 60 * 60_000; // 24h periodic backup
 const SERVER_STARTED_AT = new Date().toISOString();
 const PKG_VERSION = JSON.parse(await readFile(path.resolve('package.json'), 'utf8')).version;
 
-// Structured logger — keeps log levels distinct for filtering/aggregation
+// Structured logger with ISO timestamp — keeps log levels distinct for filtering/aggregation
 const log = {
-  info:  (...args) => console.log('[INFO] ', ...args),
-  warn:  (...args) => console.warn('[WARN] ', ...args),
-  error: (...args) => console.error('[ERROR]', ...args)
+  info:  (...args) => console.log( `${new Date().toISOString()} [INFO] `, ...args),
+  warn:  (...args) => console.warn( `${new Date().toISOString()} [WARN] `, ...args),
+  error: (...args) => console.error(`${new Date().toISOString()} [ERROR]`, ...args)
 };
 
 /**
@@ -454,6 +454,16 @@ export function createApp(config = loadConfig(), options = {}) {
   // ── Admin auth ──
   const adminTokens = new Map();
   const TOKEN_TTL = 24 * 60 * 60 * 1000;
+
+  // Periodically purge stale tokens to prevent unbounded Map growth
+  setInterval(() => {
+    const now = Date.now();
+    let removed = 0;
+    for (const [token, createdAt] of adminTokens) {
+      if (now - createdAt > TOKEN_TTL) { adminTokens.delete(token); removed++; }
+    }
+    if (removed > 0) log.info(`[TOKEN] purged ${removed} expired token(s)`);
+  }, 60 * 60_000).unref(); // every hour
 
   function createAdminToken() {
     const token = crypto.randomUUID();
@@ -1343,14 +1353,12 @@ ${researcherRows}
           await sendJson(request, response, 400, { error: '새 비밀번호는 4자 이상이어야 합니다.' });
           return;
         }
-        // Check current password against DB override or env config
         const dbPassword = await store.getAdminPassword();
         const currentActual = dbPassword || config.adminPassword;
         if (!await verifyPassword(body.currentPassword, currentActual)) {
           await sendJson(request, response, 401, { error: '현재 비밀번호가 틀렸어요.' });
           return;
         }
-        // Store new password as scrypt hash
         await store.setAdminPassword(await hashPassword(body.newPassword));
         await sendJson(request, response, 200, { ok: true });
         return;
@@ -1387,37 +1395,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const server = createApp(config);
   const host = '0.0.0.0';
 
-  // Pre-warm the DB and perform a basic integrity check before accepting traffic
-  server._store.init().then(async () => {
-    await server._store.getSubmissionCounts();
-    log.info('[DB] integrity check passed');
-    // Initial backup after DB is confirmed healthy
-    await backupDatabase(config.dbFile);
-  }).catch((err) => {
-    log.error('[DB] integrity check failed:', err.message);
-    process.exit(1);
-  });
-
-  // Periodic DB backup every 24h
-  setInterval(() => backupDatabase(config.dbFile), BACKUP_INTERVAL_MS).unref();
-
-  server.listen(config.port, host, () => {
-    const sheetsStatus = config.googleSheets?.enabled ? '✓ 활성' : '✗ 비활성';
-    const tokenStatus  = config.adminToken ? '✓ 설정됨' : '✗ 미설정 (비밀번호 로그인만 가능)';
-    log.info([
-      '',
-      '┌─────────────────────────────────────────────────┐',
-      `│  이온로드 시장조사 v${PKG_VERSION.padEnd(6)}                         │`,
-      '├─────────────────────────────────────────────────┤',
-      `│  URL      : http://${host}:${String(config.port).padEnd(29)}│`,
-      `│  DB       : ${path.relative(process.cwd(), config.dbFile).padEnd(36)}│`,
-      `│  Sheets   : ${sheetsStatus.padEnd(36)}│`,
-      `│  AdminTkn : ${tokenStatus.padEnd(36)}│`,
-      `│  Started  : ${SERVER_STARTED_AT.padEnd(36)}│`,
-      '└─────────────────────────────────────────────────┘'
-    ].join('\n'));
-  });
-
   function shutdown(signal) {
     log.info(`${signal} received - shutting down gracefully...`);
     closeApp(server).then(() => {
@@ -1433,6 +1410,39 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
     }, 5000);
   }
 
+  // Register signal handlers before the async startup chain
   process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
+
+  // Sequential startup: DB init → integrity check → backup → bind port → print banner
+  (async () => {
+    try {
+      await server._store.init();
+      await server._store.getSubmissionCounts();
+      log.info('[DB] integrity check passed');
+
+      await backupDatabase(config.dbFile);
+      setInterval(() => backupDatabase(config.dbFile), BACKUP_INTERVAL_MS).unref();
+
+      await new Promise((resolve) => server.listen(config.port, host, resolve));
+
+      const sheetsStatus = config.googleSheets?.enabled ? '✓ 활성' : '✗ 비활성';
+      const tokenStatus  = config.adminToken ? '✓ 설정됨' : '✗ 미설정 (비밀번호 로그인만 가능)';
+      log.info([
+        '',
+        '┌─────────────────────────────────────────────────┐',
+        `│  이온로드 시장조사 v${PKG_VERSION.padEnd(6)}                         │`,
+        '├─────────────────────────────────────────────────┤',
+        `│  URL      : http://${host}:${String(config.port).padEnd(29)}│`,
+        `│  DB       : ${path.relative(process.cwd(), config.dbFile).padEnd(36)}│`,
+        `│  Sheets   : ${sheetsStatus.padEnd(36)}│`,
+        `│  AdminTkn : ${tokenStatus.padEnd(36)}│`,
+        `│  Started  : ${SERVER_STARTED_AT.padEnd(36)}│`,
+        '└─────────────────────────────────────────────────┘'
+      ].join('\n'));
+    } catch (err) {
+      log.error('[STARTUP] failed:', err.message);
+      process.exit(1);
+    }
+  })();
 }

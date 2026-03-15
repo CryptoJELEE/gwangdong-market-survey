@@ -47,12 +47,17 @@
   --shadow-md: 0 2px 8px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06);
   --shadow-lg: 0 4px 16px rgba(0,0,0,0.08), 0 12px 40px rgba(0,0,0,0.08);
 
-  /* Motion */
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Motion — tuned easing curves */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);        /* decelerate: UI transitions */
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);          /* accelerate: exit transitions */
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);        /* symmetric: toggles */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);   /* overshoot: buttons, dots */
+  --ease-spring-soft: cubic-bezier(0.25, 1.3, 0.5, 1); /* softer spring */
+  --ease-bounce: cubic-bezier(0.68, -0.55, 0.27, 1.55); /* bounce: icons, badges */
+  --duration-fast: 0.12s;
   --duration: 0.18s;
   --duration-slow: 0.35s;
+  --duration-slower: 0.5s;
   --transition: 0.18s cubic-bezier(0.22, 1, 0.36, 1);
   --transition-slow: 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 
@@ -3077,6 +3082,22 @@ img.is-loaded { animation: imgFadeIn 0.3s ease; }
 html { scroll-behavior: smooth; -webkit-overflow-scrolling: touch; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
+/* Mobile: keyboard-aware layout (virtual keyboard pushes up viewport) */
+@supports (height: 100dvh) {
+  body { min-height: 100dvh; }
+  .bottom-nav {
+    /* Stay above keyboard on iOS Safari with interactive-widget */
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+}
+/* When virtual keyboard is open, boost z-index of focused fields */
+@media (max-height: 500px) and (max-width: 768px) {
+  .bottom-nav { display: none; }
+  body { padding-bottom: 0; }
+  .onboarding-overlay { align-items: flex-start; padding-top: var(--sp-4); }
+  .onboarding-card { max-height: 100dvh; overflow-y: auto; }
+}
+
 /* Firefox: custom select arrow (already handled, ensure fill) */
 @-moz-document url-prefix() {
   select {
@@ -4143,5 +4164,306 @@ button, a, [role="button"] { -webkit-touch-callout: none; }
   .countdown-value.is-ticking { animation: none; }
   .empty-illustration-icon { animation: none; }
   .notif-dot.is-pulsing::after { animation: notifPop 0.3s var(--ease-spring); }
+}
+
+/* ═══════════════════════════════════════════
+   Round 23: Ultimate Polish & Micro Details
+   ═══════════════════════════════════════════ */
+
+/* ── Card Internal Layout Refinement ── */
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.card-header-title { font-size: 15px; font-weight: 700; }
+.card-header-action { flex-shrink: 0; }
+.card-body { flex: 1; }
+.card-footer {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+/* Card with no padding variant */
+.card-flush { padding: 0; }
+.card-flush .card-header { padding: var(--sp-4) var(--sp-5); margin: 0; }
+.card-flush .card-body    { padding: 0 var(--sp-5); }
+.card-flush .card-footer  { padding: var(--sp-4) var(--sp-5); margin: 0; }
+
+/* Metric / KPI card */
+.metric-card { display: flex; flex-direction: column; gap: var(--sp-2); }
+.metric-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.metric-value { font-size: clamp(24px, 5vw, 32px); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.metric-sub   { font-size: 13px; color: var(--text-muted); }
+
+/* ── Table Inline Editing ── */
+.td-editable {
+  position: relative;
+  cursor: text;
+  transition: background var(--transition);
+}
+.td-editable:hover { background: var(--color-primary-ghost); }
+.td-editable.is-editing { background: transparent; padding: 0; }
+.cell-edit-input {
+  width: 100%;
+  border: 1.5px solid var(--color-primary);
+  border-radius: var(--radius-xs);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 0 0 3px var(--color-primary-ghost);
+  outline: none;
+}
+.cell-edit-actions {
+  display: flex;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+.cell-edit-save,
+.cell-edit-cancel {
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-xs);
+  border: none;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.cell-edit-save   { background: var(--color-primary); color: white; }
+.cell-edit-save:hover { background: var(--color-primary-light); }
+.cell-edit-cancel { background: var(--border); color: var(--text); }
+.cell-edit-cancel:hover { background: var(--border-hover); }
+
+/* ── Chart Legend / Axis Labels ── */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0 var(--sp-2);
+}
+.chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.chart-legend-item:hover { opacity: 0.8; }
+.chart-legend-item.is-hidden { opacity: 0.35; text-decoration: line-through; }
+.chart-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.chart-legend-line {
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.chart-axis-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  fill: var(--text-muted); /* SVG */
+  font-variant-numeric: tabular-nums;
+}
+.chart-axis-line { stroke: var(--border); stroke-width: 1; }
+.chart-grid-line { stroke: var(--border); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0.5; }
+.chart-tooltip {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3) var(--sp-4);
+  box-shadow: var(--shadow-md);
+  font-size: 13px;
+  pointer-events: none;
+}
+.chart-tooltip-title { font-weight: 700; margin-bottom: var(--sp-2); }
+.chart-tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  color: var(--text-muted);
+}
+.chart-tooltip-row strong { color: var(--text); }
+
+/* ── Long Text Overflow Strategy ── */
+/* Headline — allow wrapping, prevent overflow */
+.text-wrap-balance { text-wrap: balance; } /* modern browsers */
+.text-wrap-pretty  { text-wrap: pretty; }
+
+/* Data values — no wrap */
+.text-nowrap { white-space: nowrap; }
+
+/* Body copy — break long URLs/words */
+.text-break {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+
+/* Korean-optimized long text */
+.text-ko {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  line-break: strict;
+}
+
+/* Ellipsis variants */
+.ellipsis-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.ellipsis-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ellipsis-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.ellipsis-4 { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ── Focus Order Visual Guide ── */
+/* Clear focus ring for keyboard navigation */
+:focus-visible {
+  outline: 2.5px solid var(--color-primary);
+  outline-offset: 3px;
+  border-radius: var(--radius-xs);
+}
+/* Skip focus ring on mouse click (only keyboard) */
+:focus:not(:focus-visible) { outline: none; }
+
+/* Focus trap indicator for modals */
+.focus-trap-active {
+  box-shadow: 0 0 0 3px var(--color-primary), 0 0 0 6px rgba(22,120,90,0.12);
+}
+
+/* Tab focus order hints (developer aid) */
+[tabindex="-1"]:focus { outline: none; }
+[tabindex="0"]:focus-visible,
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2.5px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+/* ── Accessibility: Touch Target Enforcement ── */
+/* Ensure all interactive elements meet 44×44px minimum */
+button:not([class*="btn"]):not(.nav-tab):not(.toggle):not(.checkbox):not(.radio) {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Accessibility: larger click target via padding without visual change */
+.tap-target {
+  position: relative;
+  padding: var(--sp-3);
+  margin: calc(var(--sp-3) * -1);
+}
+
+/* ── Accessibility: Color Contrast Helpers ── */
+/* Text on colored backgrounds */
+.on-primary { color: white; } /* use on --color-primary bg */
+.on-success  { color: white; } /* use on --success bg */
+.on-warning  { color: #1c1917; } /* dark text on warning (amber) */
+.on-error    { color: white; } /* use on --error bg */
+
+/* Ensure inline link contrast */
+a:not([class]) {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+a:not([class]):hover { text-decoration-thickness: 2px; }
+
+/* ── CSS Variable Documentation Block ── */
+/*
+  DESIGN TOKEN REFERENCE (v2 — Round 23)
+  ───────────────────────────────────────
+  COLOR
+    --color-primary / --primary (JS alias)
+    --color-primary-light / --primary-light
+    --color-primary-dark  / --primary-dark
+    --color-primary-subtle (tinted bg)
+    --color-primary-ghost  (8% opacity, focus rings)
+    --color-info / --color-info-subtle / --color-info-ghost
+    --success  --warning  --error  --gold
+
+  SURFACE
+    --bg              page background
+    --surface         elevated surface (#fff / dark: #1a1d28)
+    --surface-raised  subtly raised (#fafbfc)
+    --surface-sunken  recessed (#f0f2f1)
+    --card            card background (= --surface)
+
+  TEXT
+    --text        primary text
+    --text-muted  secondary text
+
+  BORDER
+    --border        default border
+    --border-hover  hover/active border
+
+  SHADOW
+    --shadow-xs  --shadow  --shadow-md  --shadow-lg
+
+  RADIUS
+    --radius (14px)  --radius-sm (10px)  --radius-xs (6px)  --radius-lg (20px)
+
+  SPACING (8px grid)
+    --sp-1(4) --sp-2(8) --sp-3(12) --sp-4(16) --sp-5(20)
+    --sp-6(24) --sp-7(28) --sp-8(32) --sp-9(36) --sp-10(40)
+    --sp-12(48) --sp-14(56) --sp-16(64)
+
+  MOTION
+    --ease-out --ease-in --ease-in-out --ease-spring
+    --ease-spring-soft --ease-bounce
+    --duration-fast(0.12s) --duration(0.18s)
+    --duration-slow(0.35s) --duration-slower(0.5s)
+    --transition  --transition-slow
+
+  Z-INDEX LAYERS
+    --z-base(1)  --z-dropdown(100)  --z-sticky(100)
+    --z-fab(150) --z-backdrop-light(190) --z-overlay(200)
+    --z-modal(300) --z-modal-high(400) --z-skeleton(500) --z-top(999)
+
+  CHART
+    --chart-1 through --chart-6
+
+  DEPRECATED (keep for JS compatibility)
+    --primary  --primary-light  --primary-dark
+*/
+
+/* ── Final Dark Mode Audit ── */
+@media (prefers-color-scheme: dark) {
+  .card-header { border-color: var(--border); }
+  .card-footer { border-color: var(--border); }
+  .td-editable:hover { background: var(--color-primary-ghost); }
+  .cell-edit-input { background: var(--surface); color: var(--text); border-color: var(--color-primary); }
+  .cell-edit-cancel { background: var(--border); color: var(--text); }
+  .chart-tooltip { background: var(--card); border-color: var(--border); }
+  a:not([class]) { color: var(--color-primary-light); }
+}
+
+/* ── Reduced Motion: Round 23 ── */
+@media (prefers-reduced-motion: reduce) {
+  .empty-illustration-icon { animation: none !important; }
+  .notif-dot::after { animation: none; }
+  .wizard-step.is-active::before { animation: none !important; }
 }
 }

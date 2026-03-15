@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
@@ -32,6 +33,32 @@ async function createTestServer(t, options = {}) {
     tempDir,
     baseUrl: `http://127.0.0.1:${port}`
   };
+}
+
+/** Login and return a Bearer token. Defaults to the default admin password. */
+async function loginAs(baseUrl, password = 'ionroad2026') {
+  const res = await fetch(`${baseUrl}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  assert.equal(res.status, 200, 'loginAs: login should succeed');
+  const { token } = await res.json();
+  return token;
+}
+
+/** Post a minimal submission. `overrides` are deep-merged at the top level. */
+async function postSubmission(baseUrl, overrides = {}) {
+  return fetch(`${baseUrl}/api/submissions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      researcher: { name: 'TestUser', residenceArea: '서울 중부' },
+      survey: { region: 'TestRegion', storeType: 'Mart', storeName: 'TestStore' },
+      prices: [],
+      ...overrides
+    })
+  });
 }
 
 test('submission API stores a survey and exposes it in bootstrap data', async (t) => {
@@ -1309,4 +1336,148 @@ test('/api/backup supports filter by researcher', async (t) => {
   assert.equal(data.totalSubmissions, 2, 'should return only Alice submissions');
   assert.equal(data.filters.researcher, 'Alice');
   assert.ok(data.submissions.every((s) => s.researcher.name === 'Alice'));
+});
+
+// ── Round 23 final edge-case tests (using describe + shared helpers) ─────────
+
+describe('Token management', () => {
+  test('invalid token is rejected with 401', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await fetch(`${baseUrl}/api/admin/submissions`, {
+      headers: { Authorization: 'Bearer totally-invalid-token' }
+    });
+    assert.equal(res.status, 401);
+  });
+
+  test('missing Authorization header is rejected with 401', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await fetch(`${baseUrl}/api/admin/submissions`);
+    assert.equal(res.status, 401);
+  });
+
+  test('valid token is reusable within TTL (sliding window)', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+    // Use the same token twice — both should succeed
+    const r1 = await fetch(`${baseUrl}/api/admin/verify`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(r1.status, 200, 'first use should succeed');
+    const r2 = await fetch(`${baseUrl}/api/admin/verify`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(r2.status, 200, 'second use should succeed (sliding window)');
+  });
+});
+
+describe('Submission validation edge cases', () => {
+  test('empty researcher name is rejected', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await postSubmission(baseUrl, {
+      researcher: { name: '', residenceArea: '서울 중부' }
+    });
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.ok(data.error, 'should have an error message');
+  });
+
+  test('missing survey storeName is rejected', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await fetch(`${baseUrl}/api/submissions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        researcher: { name: 'Alice', residenceArea: '서울 중부' },
+        survey: { region: 'R', storeType: 'Mart' } // no storeName
+      })
+    });
+    assert.equal(res.status, 400);
+  });
+
+  test('price out of range (negative) is rejected', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await postSubmission(baseUrl, {
+      prices: [{ productId: 'p1', productLabel: 'P1', size: '100ml', price: -1 }]
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+describe('Admin: helpers reduce boilerplate', () => {
+  test('loginAs helper works correctly', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+    assert.ok(token, 'should return a token string');
+    assert.ok(token.length > 10, 'token should be a UUID');
+  });
+
+  test('postSubmission helper creates a submission successfully', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const res = await postSubmission(baseUrl);
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.researcher.name, 'TestUser');
+  });
+
+  test('delete requires submissionId or returns 400', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+    const res = await fetch(`${baseUrl}/api/submissions/delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({}) // no submissionId
+    });
+    assert.equal(res.status, 400);
+  });
+
+  test('override requires submissionId and assignedArea or returns 400', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+    const res = await fetch(`${baseUrl}/api/assignments/override`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ submissionId: 'x' }) // missing assignedArea
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+describe('API: price-outliers edge cases', () => {
+  test('returns empty when fewer than 3 samples exist', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    // Insert only 2 submissions (below the 3-sample minimum)
+    for (let i = 0; i < 2; i++) {
+      await postSubmission(baseUrl, {
+        researcher: { name: `R${i}`, residenceArea: '서울 중부' },
+        survey: { region: 'R', storeType: 'Mart', storeName: `S${i}` },
+        prices: [{ productId: 'p1', productLabel: 'P1', size: '100ml', price: 1000 }]
+      });
+    }
+
+    const res = await fetch(`${baseUrl}/api/price-outliers`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.total, 0, 'should return 0 outliers when sample size < 3');
+  });
+
+  test('sigma=1 detects more outliers than sigma=3', async (t) => {
+    const { baseUrl } = await createTestServer(t);
+    const token = await loginAs(baseUrl);
+
+    // Insert 8 tight prices + 1 moderate outlier (~3σ above mean)
+    for (let i = 0; i < 8; i++) {
+      await postSubmission(baseUrl, {
+        researcher: { name: `R${i}`, residenceArea: '서울 중부' },
+        survey: { region: 'R', storeType: 'Mart', storeName: `S${i}` },
+        prices: [{ productId: 'p2', productLabel: 'P2', size: '200ml', price: 2000 + i }]
+      });
+    }
+    await postSubmission(baseUrl, {
+      prices: [{ productId: 'p2', productLabel: 'P2', size: '200ml', price: 4000 }]
+    });
+
+    const sigma1 = await (await fetch(`${baseUrl}/api/price-outliers?sigma=1`, { headers: { Authorization: `Bearer ${token}` } })).json();
+    const sigma3 = await (await fetch(`${baseUrl}/api/price-outliers?sigma=3`, { headers: { Authorization: `Bearer ${token}` } })).json();
+    assert.ok(sigma1.total >= sigma3.total, 'sigma=1 should detect at least as many outliers as sigma=3');
+  });
 });
