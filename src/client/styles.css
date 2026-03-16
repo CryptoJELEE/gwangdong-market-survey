@@ -1315,19 +1315,19 @@ h2 { color: var(--text); font-weight: 700; }
 /* ── Dark Mode (Toss-style) ── */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #17171c;
-    --surface: #1e1f25;
-    --card: #1e1f25;
-    --text: #ececee;
-    --text-muted: #8b95a1;
-    --text-sub: #b0b8c1;
-    --border: #2c2d35;
-    --border-hover: #3a3b45;
+    --bg: #0f1014;
+    --surface: #1a1b22;
+    --card: #222330;
+    --text: #ffffff;
+    --text-muted: #a0a6b1;
+    --text-sub: #c8cdd4;
+    --border: #363845;
+    --border-hover: #4a4d5e;
     --color-primary: #4ade80;
     --color-primary-light: #86efac;
     --color-primary-dark: #22c55e;
-    --color-primary-subtle: rgba(34,197,94,0.1);
-    --color-primary-ghost: rgba(34,197,94,0.06);
+    --color-primary-subtle: rgba(34,197,94,0.12);
+    --color-primary-ghost: rgba(34,197,94,0.08);
     --primary: var(--color-primary);
     --primary-light: var(--color-primary-light);
     --primary-dark: var(--color-primary-dark);
@@ -1336,10 +1336,10 @@ h2 { color: var(--text); font-weight: 700; }
     --warning: #f59e0b;
     --error: #ef4444;
     --gold: #f59e0b;
-    --shadow-xs: 0 1px 2px rgba(0,0,0,0.2);
-    --shadow: 0 1px 3px rgba(0,0,0,0.15);
-    --shadow-md: 0 2px 8px rgba(0,0,0,0.2);
-    --shadow-lg: 0 4px 12px rgba(0,0,0,0.25);
+    --shadow-xs: 0 1px 2px rgba(0,0,0,0.3);
+    --shadow: 0 1px 3px rgba(0,0,0,0.2);
+    --shadow-md: 0 2px 8px rgba(0,0,0,0.3);
+    --shadow-lg: 0 4px 12px rgba(0,0,0,0.35);
     --chart-1: #4ade80;
     --chart-2: #38bdf8;
     --chart-3: #a78bfa;
@@ -6151,27 +6151,41 @@ textarea:disabled {
 
 /* ── 38.8 Dark Mode Premium (Toss-style — 깨끗한 다크) ── */
 @media (prefers-color-scheme: dark) {
-  /* Card — 미니멀 다크 + 보더로 구분 */
+  /* Card — 다크 + 뚜렷한 보더 */
   .card {
     background: var(--card);
     border: 1px solid var(--border);
-    box-shadow: none;
+    box-shadow: var(--shadow);
   }
-  /* 숫자 강조 — 밝은 흰색 */
+  /* 숫자/라벨 — 밝은 흰색 */
   .quick-stat .qs-value {
     color: #ffffff;
   }
+  .quick-stat .qs-label {
+    color: var(--text-muted);
+  }
+  .quick-stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+  }
+  /* 섹션 제목 */
+  h2, h3 { color: #ffffff; }
+  /* 힌트/서브텍스트 */
+  .hint, .subhead { color: var(--text-muted); }
 
-  /* Input — 다크 배경 */
+  /* Input — 다크 배경 대비 강화 */
   input, select, textarea {
-    background: #252630;
+    background: #1a1b22;
     border-color: var(--border);
-    color: var(--text);
+    color: #ffffff;
+  }
+  input::placeholder, textarea::placeholder {
+    color: #6b7280;
   }
 
   /* Bottom nav — 다크 블러 */
   .bottom-nav {
-    background: rgba(23,23,28,0.92);
+    background: rgba(15,16,20,0.95);
     border-top-color: var(--border);
     box-shadow: none;
   }
