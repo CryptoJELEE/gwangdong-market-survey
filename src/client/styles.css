@@ -60,14 +60,14 @@
   --primary-light: var(--color-primary-light);
   --primary-dark: var(--color-primary-dark);
 
-  /* Surface — 순수 흰색 기반 (토스 스타일) */
-  --bg: #ffffff;
+  /* Surface — 연한 회색 배경 + 흰색 카드 (토스 스타일) */
+  --bg: #f7f8f9;
   --surface: #ffffff;
   --card: #ffffff;
 
   /* Text — 토스 다크 텍스트 */
   --text: #191f28;
-  --text-muted: #8b95a1;
+  --text-muted: #6b7684;
   --text-sub: #4e5968;
 
   /* Border — 매우 연한 (토스 스타일) */
@@ -181,6 +181,8 @@ select {
   background-position: right 12px center;
   padding-right: 32px;
 }
+
+h2 { color: var(--text); font-weight: 700; }
 
 /* ── Status bar (Toss-style) ── */
 .status-bar {
@@ -301,8 +303,8 @@ select {
   background: var(--card);
   border-radius: var(--radius);
   padding: var(--sp-6) var(--sp-5);
-  box-shadow: none;
-  border: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+  border: 1px solid rgba(0,0,0,0.04);
   position: relative;
   overflow: hidden;
   transition: background 0.15s ease;
@@ -794,11 +796,11 @@ select {
 .quick-stat {
   flex: 1;
   min-width: 72px;
-  background: var(--surface-sunken);
+  background: var(--card);
   border-radius: var(--radius);
   padding: var(--sp-5) var(--sp-3);
   text-align: center;
-  box-shadow: none;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1686,7 +1688,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 @media (min-width: 1024px) {
   .stack { grid-template-columns: repeat(3, 1fr); }
   #photo-gallery { grid-template-columns: repeat(6, 1fr) !important; }
-  .shell { max-width: 960px; }
+  .shell { max-width: 720px; }
 }
 
 /* ── Product Filter Chips ── */
@@ -1926,7 +1928,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 /* ── Extra Large Screens (1440px+) ── */
 @media (min-width: 1440px) {
-  .shell { max-width: 1200px; }
+  .shell { max-width: 800px; }
   .stack { grid-template-columns: repeat(3, 1fr); }
   #photo-gallery { grid-template-columns: repeat(8, 1fr) !important; }
   .area-cards { grid-template-columns: repeat(4, 1fr); }
