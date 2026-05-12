@@ -1,12 +1,12 @@
 #!/bin/bash
-# 이온로드 데이터 자동 백업 스크립트
+# 광동제약 시장 조사 시스템 데이터 자동 백업 스크립트
 # 매일 Railway 서버에서 전체 데이터를 JSON으로 다운로드
 
 BACKUP_DIR="/Users/jerry/Documents/New project/gwangdong-market-survey-webapp/backups"
 BASE_URL="https://gwangdong-market-survey-production.up.railway.app"
-ADMIN_PASSWORD="${IONROAD_ADMIN_PASSWORD:-ionroad2026}"
+ADMIN_PASSWORD="${KWANGDONG_ADMIN_PASSWORD:-${IONROAD_ADMIN_PASSWORD:-ionroad2026}}"
 DATE=$(date +%Y-%m-%d_%H%M)
-FILENAME="ionroad-backup-${DATE}.json"
+FILENAME="kwangdong-survey-backup-${DATE}.json"
 
 mkdir -p "$BACKUP_DIR"
 

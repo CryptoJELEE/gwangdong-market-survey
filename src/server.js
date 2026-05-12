@@ -1052,7 +1052,7 @@ export function createApp(config = loadConfig(), options = {}) {
           const csv = [CSV_HEADERS.join(','), ...rows].join('\r\n');
           response.writeHead(200, {
             'Content-Type': 'text/csv; charset=utf-8',
-            'Content-Disposition': `attachment; filename="ionroad-export-${new Date().toISOString().slice(0, 10)}.csv"`,
+            'Content-Disposition': `attachment; filename="kwangdong-survey-export-${new Date().toISOString().slice(0, 10)}.csv"`,
             'Content-Length': Buffer.byteLength(csv)
           });
           response.end(csv);
@@ -1292,7 +1292,7 @@ export function createApp(config = loadConfig(), options = {}) {
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
 <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff">
 <tr><td style="background:#1e40af;padding:24px;text-align:center">
-<h1 style="color:#ffffff;margin:0;font-size:22px">&#127758; 이온로드 일일 시장조사 리포트</h1>
+<h1 style="color:#ffffff;margin:0;font-size:22px">&#127758; 광동제약 시장 조사 시스템 일일 리포트</h1>
 <p style="color:#93c5fd;margin:8px 0 0;font-size:14px">${targetDate}</p>
 </td></tr>
 <tr><td style="padding:24px">
@@ -1337,7 +1337,7 @@ ${researcherRows}
 </div>
 </td></tr>
 <tr><td style="background:#f9fafb;padding:16px;text-align:center;font-size:12px;color:#9ca3af">
-이온로드 시장조사 시스템 &bull; 자동 생성 리포트
+광동제약 시장 조사 시스템 &bull; 자동 생성 리포트
 </td></tr>
 </table>
 </body>
@@ -1784,7 +1784,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
       log.info([
         '',
         '┌─────────────────────────────────────────────────┐',
-        `│  이온로드 시장조사 v${PKG_VERSION.padEnd(6)}                         │`,
+        `│  광동제약 시장 조사 시스템 v${PKG_VERSION.padEnd(6)}              │`,
         '├─────────────────────────────────────────────────┤',
         `│  URL      : http://${host}:${String(config.port).padEnd(29)}│`,
         `│  DB       : ${path.relative(process.cwd(), config.dbFile).padEnd(36)}│`,

@@ -1,4 +1,4 @@
-# FORJERRY.md — 이온로드 프로젝트 해설서 🏃
+# FORJERRY.md — 광동제약 시장 조사 시스템 프로젝트 해설서
 
 > "시장조사 앱을 하나 만들어줘" 한마디에서 시작해서, 하루 반 만에 15라운드 랄프 모드를 거쳐 프로덕션 서비스까지 도달한 이야기.
 
@@ -6,7 +6,7 @@
 
 ## 🏗️ 아키텍처 — 놀랍도록 단순한 구조
 
-이온로드는 **의존성 하나(better-sqlite3)**로 돌아가는 풀스택 앱입니다.
+광동제약 시장 조사 시스템은 **의존성 하나(better-sqlite3)**로 돌아가는 풀스택 앱입니다.
 
 ```
 ┌─────────────┐     HTTPS      ┌──────────────┐     SQLite      ┌──────────┐
@@ -495,8 +495,8 @@ const svg = createSparkline(sparklineData, 40, 16);
 ```javascript
 // 홈 화면에 설치할 때 스플래시 스크린
 {
-  "name": "이온로드 시장조사",
-  "short_name": "이온로드",
+  "name": "광동제약 시장 조사 시스템",
+  "short_name": "광동 시장조사",
   "display": "standalone",
   "scope": "/",
   "start_url": "/",
@@ -532,7 +532,7 @@ element.addEventListener('touchmove', (e) => {
 /* 한글 가독성 최적화 */
 body {
   font-family: 'Pretendard Variable', -apple-system, BlinkMacSystemFont, sans-serif;
-  word-break: keep-all;        /* "이온로드"를 줄바꿈 중간에 끊지 않음 */
+  word-break: keep-all;        /* "광동제약"을 줄바꿈 중간에 끊지 않음 */
   letter-spacing: -0.01em;     /* 한글은 자간을 약간 줄이면 읽기 편함 */
 }
 

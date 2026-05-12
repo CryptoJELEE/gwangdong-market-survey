@@ -80,7 +80,7 @@ const dashboardShareLink = document.querySelector('#dashboard-share');
 if (dashboardShareLink) {
   dashboardShareLink.addEventListener('click', (e) => {
     e.preventDefault();
-    shareIonroad('현장 시장조사를 더 쉽고 재밌게 — 이온로드 🏃');
+    shareMarketSurvey('광동제약 현장 시장조사를 더 쉽고 정확하게');
   });
 }
 
@@ -1150,7 +1150,7 @@ function showSuccess(result) {
     initMap();
   });
   successView.querySelector('#share-success').addEventListener('click', () => {
-    shareIonroad(`오늘 ${escapeHtml(storeName)}에서 시장조사 완료! 이온로드로 간편 기록 중 📋`);
+    shareMarketSurvey(`오늘 ${escapeHtml(storeName)}에서 시장조사 완료! 광동제약 시장 조사 시스템으로 간편 기록 중 📋`);
   });
 
   // Next-action suggestions
@@ -2114,9 +2114,9 @@ function showToast(message, type) {
   }, 3000);
 }
 
-async function shareIonroad(text) {
+async function shareMarketSurvey(text) {
   const shareData = {
-    title: '이온로드 🏃',
+    title: '광동제약 시장 조사 시스템',
     text,
     url: window.location.origin
   };
@@ -2554,7 +2554,7 @@ function initAppVersion() {
     document.body.appendChild(footer);
   }
   const buildDate = new Date().toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' });
-  footer.textContent = `이온로드 v24.03 · ${buildDate} 빌드`;
+  footer.textContent = `광동제약 시장 조사 시스템 v24.03 · ${buildDate} 빌드`;
 }
 
 // ── Offline submission queue ──
@@ -2731,7 +2731,7 @@ function initPwaInstall() {
       banner.remove();
       e.prompt();
       const { outcome } = await e.userChoice;
-      if (outcome === 'accepted') showToast('이온로드가 홈 화면에 추가되었어요! 🎉', 'success');
+      if (outcome === 'accepted') showToast('광동제약 시장 조사 시스템이 홈 화면에 추가되었어요! 🎉', 'success');
     });
     banner.querySelector('#pwa-install-x').addEventListener('click', () => banner.remove());
     setTimeout(() => { if (banner.isConnected) banner.remove(); }, 30000);
@@ -2872,8 +2872,8 @@ function initSplashScreen() {
   splash.setAttribute('role', 'status');
   splash.setAttribute('aria-label', '앱 불러오는 중');
   splash.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--primary,#2563eb);color:#fff;gap:16px;';
-  splash.innerHTML = '<div style="font-size:2rem;font-weight:700;letter-spacing:-.5px;">이온로드</div>'
-    + '<div style="font-size:.9rem;opacity:.8;">광동 제약 현장 조사</div>'
+  splash.innerHTML = '<div style="font-size:1.5rem;font-weight:700;letter-spacing:0;text-align:center;line-height:1.3;padding:0 24px;word-break:keep-all;">광동제약 시장 조사 시스템</div>'
+    + '<div style="font-size:.9rem;opacity:.8;">현장 조사</div>'
     + '<div class="splash-dots" aria-hidden="true" style="display:flex;gap:8px;margin-top:8px;">'
     + '<span style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.5);animation:splashDot .9s ease-in-out infinite;"></span>'
     + '<span style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.5);animation:splashDot .9s ease-in-out .2s infinite;"></span>'

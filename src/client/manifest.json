@@ -1,7 +1,7 @@
 {
-  "name": "이온로드",
-  "short_name": "이온로드",
-  "description": "현장 시장조사 기록 도구",
+  "name": "광동제약 시장 조사 시스템",
+  "short_name": "광동 시장조사",
+  "description": "광동제약 현장 시장조사 기록 도구",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f8faf9",

@@ -1540,7 +1540,7 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `ionroad-selected-${selected.length}건-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `kwangdong-survey-selected-${selected.length}건-${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
       showToast(`${selected.length}건 내보내기 완료. ✓`, 'success');
@@ -1610,7 +1610,7 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
   const dateStr = new Date().toISOString().slice(0, 10);
   const count = submissions.length;
   a.href = url;
-  a.download = `ionroad-export-${count}\uAC74-${dateStr}.csv`;
+  a.download = `kwangdong-survey-export-${count}\uAC74-${dateStr}.csv`;
   a.click();
   URL.revokeObjectURL(url);
   showToast('CSV 파일이 다운로드되었어요. ✓', 'success');
@@ -1647,7 +1647,7 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `ionroad-export-${submissions.length}건-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `kwangdong-survey-export-${submissions.length}건-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     showToast('JSON 파일이 다운로드되었어요. ✓', 'success');
@@ -1668,7 +1668,7 @@ document.querySelector('#backup-btn').addEventListener('click', async () => {
     const a = document.createElement('a');
     const dateStr = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
     a.href = url;
-    a.download = `ionroad-backup-${dateStr}.json`;
+    a.download = `kwangdong-survey-backup-${dateStr}.json`;
     a.click();
     URL.revokeObjectURL(url);
     showToast('백업 파일이 다운로드되었어요. ✓', 'success');
