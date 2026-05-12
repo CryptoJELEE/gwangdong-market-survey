@@ -8,6 +8,7 @@ import { loadConfig } from './config.js';
 import { assignArea, assignAreaByDistance } from './assignment.js';
 import { createGeocoder } from './geocoding.js';
 import { SurveyStore } from './storage/index.js';
+import { availabilityFromPrices, getSubmissionAvailability } from './availability.js';
 import { collectJsonBody } from './utils.js';
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB — for submissions/import (includes photos)
@@ -174,31 +175,37 @@ function filterSubmissionsByDate(submissions, targetDate) {
 }
 
 /**
- * Aggregate price data across submissions and return per-product averages.
- * Ignores zero/non-numeric prices. Products are keyed by `label|size`.
+ * Aggregate product availability data across submissions.
  *
  * @param {object[]} submissions
- * @returns {{ label: string, size: string, avg: number, count: number }[]}
+ * @param {object[]} products
+ * @returns {{ productId: string, label: string, size: string, count: number, total: number, rate: number }[]}
  */
-function buildAveragePrices(submissions) {
-  const priceMap = {};
-  for (const s of submissions) {
-    if (!s.prices) continue;
-    for (const p of s.prices) {
-      const key = `${p.productLabel || p.productId}|${p.size}`;
-      if (!priceMap[key]) priceMap[key] = { label: p.productLabel || p.productId, size: p.size, prices: [] };
-      const num = Number(String(p.price).replace(/[^0-9]/g, ''));
-      if (num > 0) priceMap[key].prices.push(num);
+function buildAvailabilityStats(submissions, products) {
+  const counts = new Map();
+  for (const submission of submissions) {
+    for (const item of getSubmissionAvailability(submission)) {
+      if (item.present !== false) {
+        const key = `${item.productId}__${item.size}`;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
     }
   }
-  return Object.values(priceMap)
-    .filter((v) => v.prices.length > 0)
-    .map((v) => ({
-      label: v.label,
-      size: v.size,
-      avg: Math.round(v.prices.reduce((a, b) => a + b, 0) / v.prices.length),
-      count: v.prices.length
-    }));
+
+  const total = submissions.length;
+  return products.flatMap((product) =>
+    product.sizes.map((size) => {
+      const count = counts.get(`${product.id}__${size}`) || 0;
+      return {
+        productId: product.id,
+        label: product.label,
+        size,
+        count,
+        total,
+        rate: total ? Math.round((count / total) * 100) : 0
+      };
+    })
+  );
 }
 
 /**
@@ -336,11 +343,11 @@ function getClientIp(request) {
  *   - Required fields present (researcher name/area, store region/type/name)
  *   - Field length limits (name ≤50, storeName ≤100, region ≤200, notes ≤2000)
  *   - Photo size ≤ MAX_PHOTO_BYTES (estimated from base64 length)
- *   - Price values in range 0–999 999
+ *   - Availability entries must match the active product catalog
  *
  * @param {object} body    Raw request body (already JSON-parsed)
  * @param {object} config  App config; must include `areas` array
- * @returns {{ researcher, survey, prices, photoDataUrl, notes }} Normalised payload
+ * @returns {{ researcher, survey, prices, availability, photoDataUrl, notes }} Normalised payload
  */
 function validateSubmission(body, config) {
   const required = [
@@ -373,14 +380,28 @@ function validateSubmission(body, config) {
     if (estimatedBytes > MAX_PHOTO_BYTES) throw new ValidationError('사진은 최대 500KB입니다.');
   }
 
-  const prices = (body.prices || []).filter((item) => item.price !== '' && item.price !== null && item.price !== undefined);
+  const catalog = new Map((config.products || []).map((product) => [product.id, product]));
+  const availabilitySource = Array.isArray(body.availability)
+    ? body.availability
+    : availabilityFromPrices(body.prices || []);
+  const availability = [];
+  const seenAvailability = new Set();
 
-  // Price validation
-  for (const item of prices) {
-    const price = Number(item.price);
-    if (!Number.isFinite(price) || price < 0 || price > 999999) {
-      throw new ValidationError('가격은 0~999999 범위의 숫자여야 합니다.');
+  for (const item of availabilitySource) {
+    if (item.present === false) continue;
+    const product = catalog.get(item.productId);
+    if (!product || !product.sizes.includes(item.size)) {
+      throw new ValidationError('등록된 제품/사이즈만 입점 체크할 수 있습니다.');
     }
+    const key = `${product.id}__${item.size}`;
+    if (seenAvailability.has(key)) continue;
+    seenAvailability.add(key);
+    availability.push({
+      productId: product.id,
+      productLabel: product.label,
+      size: item.size,
+      present: true
+    });
   }
 
   return {
@@ -395,12 +416,8 @@ function validateSubmission(body, config) {
       posCount: Number(body.survey.posCount || 0),
       displayLocation: String(body.survey.displayLocation || '').trim()
     },
-    prices: prices.map((item) => ({
-      productId: item.productId,
-      productLabel: item.productLabel,
-      size: item.size,
-      price: Number(item.price)
-    })),
+    prices: [],
+    availability,
     photoDataUrl,
     notes
   };
@@ -805,11 +822,9 @@ export function createApp(config = loadConfig(), options = {}) {
             { method: 'GET',  path: '/api/stats',   auth: true,  description: '기간별/조사자별 집계 통계',
               queryParams: { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' },
               responseExample: { success: true, total: 100, byResearcher: [{ name: '홍길동', count: 20 }], byArea: [], byDay: [] } },
-            { method: 'GET',  path: '/api/price-outliers', auth: true, description: '가격 이상치 감지 (±Nσ)',
-              queryParams: { sigma: '표준편차 배수 (기본 2, 범위 1~5)' },
-              responseExample: { success: true, sigma: 2, total: 3, outliers: [{ product: 'Vita500', price: 9999, deviation: 3.2 }] } },
+            { method: 'GET',  path: '/api/price-outliers', auth: true, description: '종료된 가격 이상치 API (410 반환)' },
             { method: 'POST', path: '/api/submissions', auth: false, description: '새 시장조사 제출 (중복 감지 포함)',
-              requestExample: { researcher: { name: '홍길동', residenceArea: '서울 중부' }, survey: { region: '강남구', storeType: '약국', storeName: '서울약국' }, prices: [{ productId: 'vita500', size: '100ml', price: 1200 }] },
+              requestExample: { researcher: { name: '홍길동', residenceArea: '서울 중부' }, survey: { region: '강남구', storeType: '약국', storeName: '서울약국' }, availability: [{ productId: 'ion-kick', productLabel: '이온킥', size: '캔 240ml', present: true }] },
               responseExample: { success: true, id: 'uuid-string', sync: { mode: 'local' } } },
             { method: 'POST', path: '/api/admin/login', auth: false, description: '관리자 로그인 → Bearer 토큰 발급',
               requestExample: { password: 'your-password' },
@@ -855,7 +870,11 @@ export function createApp(config = loadConfig(), options = {}) {
         }
         const statsFrom = url.searchParams.get('from');
         const statsTo = url.searchParams.get('to');
-        const allSubmissions = await store.listSubmissions();
+        const [allSubmissions, customProducts] = await Promise.all([
+          store.listSubmissions(),
+          store.getSetting('customProducts')
+        ]);
+        const activeProducts = customProducts || config.products;
         const filtered = allSubmissions.filter((s) => {
           const date = s.createdAt?.slice(0, 10) || '';
           if (statsFrom && date < statsFrom) return false;
@@ -903,7 +922,8 @@ export function createApp(config = loadConfig(), options = {}) {
           byResearcher,
           byArea,
           byDay,
-          averagePrices: buildAveragePrices(filtered)
+          availabilityStats: buildAvailabilityStats(filtered, activeProducts),
+          averagePrices: []
         });
         return;
       }
@@ -913,50 +933,7 @@ export function createApp(config = loadConfig(), options = {}) {
           await sendJson(request, response, 401, { error: '인증이 필요합니다.' });
           return;
         }
-        const sigma = Math.max(1, Math.min(5, Number(url.searchParams.get('sigma') || 2)));
-        const allSubs = await store.listSubmissions();
-
-        // Build price distributions per product+size key
-        const priceMap = {};
-        for (const s of allSubs) {
-          for (const p of (s.prices || [])) {
-            const key = `${p.productLabel || p.productId}|${p.size}`;
-            if (!priceMap[key]) priceMap[key] = { label: p.productLabel || p.productId, size: p.size, entries: [] };
-            const num = Number(String(p.price).replace(/[^0-9]/g, ''));
-            if (num > 0) {
-              priceMap[key].entries.push({
-                submissionId: s.id, price: num,
-                researcher: s.researcher?.name, storeName: s.survey?.storeName, createdAt: s.createdAt
-              });
-            }
-          }
-        }
-
-        const outliers = [];
-        for (const group of Object.values(priceMap)) {
-          if (group.entries.length < 3) continue; // too few samples for meaningful stats
-          const prices = group.entries.map((e) => e.price);
-          const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
-          const variance = prices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / prices.length;
-          const stdDev = Math.sqrt(variance);
-          if (stdDev === 0) continue; // all prices identical
-          const lower = mean - sigma * stdDev;
-          const upper = mean + sigma * stdDev;
-          for (const entry of group.entries) {
-            if (entry.price < lower || entry.price > upper) {
-              outliers.push({
-                product: group.label, size: group.size,
-                price: entry.price,
-                mean: Math.round(mean), stdDev: Math.round(stdDev), sigma,
-                deviation: Number(((entry.price - mean) / stdDev).toFixed(2)),
-                submissionId: entry.submissionId, researcher: entry.researcher,
-                storeName: entry.storeName, createdAt: entry.createdAt
-              });
-            }
-          }
-        }
-        outliers.sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
-        await sendJson(request, response, 200, { sigma, total: outliers.length, outliers });
+        await sendJson(request, response, 410, { error: '가격 이상치 기능은 입점 체크 방식 전환으로 종료되었습니다.' });
         return;
       }
 
@@ -1060,7 +1037,7 @@ export function createApp(config = loadConfig(), options = {}) {
         if (exportArea) submissions = submissions.filter((s) => s.assignment?.currentArea === exportArea);
 
         if (format === 'csv') {
-          const CSV_HEADERS = ['id', 'createdAt', 'researcherName', 'residenceArea', 'region', 'storeType', 'storeName', 'posCount', 'assignedArea', 'completenessScore', 'notes', 'priceCount'];
+          const CSV_HEADERS = ['id', 'createdAt', 'researcherName', 'residenceArea', 'region', 'storeType', 'storeName', 'posCount', 'assignedArea', 'completenessScore', 'notes', 'availabilityCount'];
           const escCsv = (v) => {
             const s = v == null ? '' : String(v);
             return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s;
@@ -1070,7 +1047,7 @@ export function createApp(config = loadConfig(), options = {}) {
             s.researcher?.name, s.researcher?.residenceArea,
             s.survey?.region, s.survey?.storeType, s.survey?.storeName, s.survey?.posCount ?? '',
             s.assignment?.currentArea, s.completenessScore ?? '',
-            s.notes || '', (s.prices || []).length
+            s.notes || '', getSubmissionAvailability(s).length
           ].map(escCsv).join(','));
           const csv = [CSV_HEADERS.join(','), ...rows].join('\r\n');
           response.writeHead(200, {
@@ -1083,13 +1060,13 @@ export function createApp(config = loadConfig(), options = {}) {
         }
 
         if (format === 'xlsx-ready') {
-          const HEADERS = ['id', 'createdAt', 'researcherName', 'residenceArea', 'region', 'storeType', 'storeName', 'posCount', 'assignedArea', 'completenessScore', 'notes', 'priceCount'];
+          const HEADERS = ['id', 'createdAt', 'researcherName', 'residenceArea', 'region', 'storeType', 'storeName', 'posCount', 'assignedArea', 'completenessScore', 'notes', 'availabilityCount'];
           const rows = submissions.map((s) => [
             s.id, s.createdAt,
             s.researcher?.name || '', s.researcher?.residenceArea || '',
             s.survey?.region || '', s.survey?.storeType || '', s.survey?.storeName || '', s.survey?.posCount ?? 0,
             s.assignment?.currentArea || '', s.completenessScore ?? 0,
-            s.notes || '', (s.prices || []).length
+            s.notes || '', getSubmissionAvailability(s).length
           ]);
           await sendJson(request, response, 200, { format: 'xlsx-ready', headers: HEADERS, rows, total: rows.length });
           return;
@@ -1240,13 +1217,17 @@ export function createApp(config = loadConfig(), options = {}) {
       if (request.method === 'GET' && url.pathname === '/api/daily-summary') {
         const dateParam = url.searchParams.get('date');
         const targetDate = dateParam || new Date().toISOString().slice(0, 10);
-        const submissions = await store.listSubmissions();
+        const [submissions, customProducts] = await Promise.all([
+          store.listSubmissions(),
+          store.getSetting('customProducts')
+        ]);
+        const activeProducts = customProducts || config.products;
         const daySubs = filterSubmissionsByDate(submissions, targetDate);
 
         const totalSubmissions = daySubs.length;
         const uniqueResearchers = new Set(daySubs.map((s) => s.researcher.name)).size;
         const areasCovered = new Set(daySubs.map((s) => s.assignment?.currentArea).filter(Boolean)).size;
-        const averagePrices = buildAveragePrices(daySubs);
+        const availabilityStats = buildAvailabilityStats(daySubs, activeProducts);
 
         // Top researcher
         const researcherCounts = {};
@@ -1260,30 +1241,43 @@ export function createApp(config = loadConfig(), options = {}) {
         const topStoreEntry = Object.entries(storeCounts).sort((a, b) => b[1] - a[1])[0];
         const topStore = topStoreEntry ? { name: topStoreEntry[0], count: topStoreEntry[1] } : null;
 
-        await sendJson(request, response, 200, { date: targetDate, totalSubmissions, uniqueResearchers, areasCovered, averagePrices, topResearcher, topStore });
+        await sendJson(request, response, 200, {
+          date: targetDate,
+          totalSubmissions,
+          uniqueResearchers,
+          areasCovered,
+          availabilityStats,
+          averagePrices: [],
+          topResearcher,
+          topStore
+        });
         return;
       }
 
       if (request.method === 'GET' && url.pathname === '/api/daily-report') {
         const dateParam = url.searchParams.get('date');
         const targetDate = dateParam || new Date().toISOString().slice(0, 10);
-        const submissions = await store.listSubmissions();
+        const [submissions, customProducts] = await Promise.all([
+          store.listSubmissions(),
+          store.getSetting('customProducts')
+        ]);
+        const activeProducts = customProducts || config.products;
         const daySubs = filterSubmissionsByDate(submissions, targetDate);
 
         const totalSubmissions = daySubs.length;
         const uniqueResearchers = new Set(daySubs.map((s) => s.researcher.name)).size;
         const regionsCovered = new Set(daySubs.map((s) => s.survey.region).filter(Boolean)).size;
-        const avgPrices = buildAveragePrices(daySubs);
+        const availabilityStats = buildAvailabilityStats(daySubs, activeProducts);
 
         // Researcher contributions
         const researcherCounts = {};
         daySubs.forEach((s) => { researcherCounts[s.researcher.name] = (researcherCounts[s.researcher.name] || 0) + 1; });
         const researcherList = Object.entries(researcherCounts).sort((a, b) => b[1] - a[1]);
 
-        const priceRows = avgPrices.map((p) =>
+        const availabilityRows = availabilityStats.filter((p) => p.count > 0).map((p) =>
           `<tr><td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${p.label}</td>` +
           `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">${p.size}</td>` +
-          `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">${p.avg.toLocaleString()}원</td>` +
+          `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right">${p.rate}%</td>` +
           `<td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center">${p.count}</td></tr>`
         ).join('');
 
@@ -1320,16 +1314,16 @@ export function createApp(config = loadConfig(), options = {}) {
 </td>
 </tr>
 </table>
-${avgPrices.length > 0 ? `<h2 style="font-size:16px;color:#1f2937;margin:0 0 12px;border-bottom:2px solid #1e40af;padding-bottom:8px">제품별 평균 가격</h2>
+${availabilityRows.length > 0 ? `<h2 style="font-size:16px;color:#1f2937;margin:0 0 12px;border-bottom:2px solid #1e40af;padding-bottom:8px">제품별 입점 현황</h2>
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;font-size:14px">
 <tr style="background:#f9fafb">
 <th style="padding:8px 12px;text-align:left;font-weight:600;border-bottom:2px solid #d1d5db">제품</th>
 <th style="padding:8px 12px;text-align:left;font-weight:600;border-bottom:2px solid #d1d5db">규격</th>
-<th style="padding:8px 12px;text-align:right;font-weight:600;border-bottom:2px solid #d1d5db">평균가</th>
-<th style="padding:8px 12px;text-align:center;font-weight:600;border-bottom:2px solid #d1d5db">샘플</th>
+<th style="padding:8px 12px;text-align:right;font-weight:600;border-bottom:2px solid #d1d5db">입점률</th>
+<th style="padding:8px 12px;text-align:center;font-weight:600;border-bottom:2px solid #d1d5db">입점</th>
 </tr>
-${priceRows}
-</table>` : '<p style="color:#6b7280;font-size:14px">오늘 가격 데이터가 없습니다.</p>'}
+${availabilityRows}
+</table>` : '<p style="color:#6b7280;font-size:14px">오늘 입점 체크 데이터가 없습니다.</p>'}
 ${researcherList.length > 0 ? `<h2 style="font-size:16px;color:#1f2937;margin:0 0 12px;border-bottom:2px solid #1e40af;padding-bottom:8px">조사자별 기여도</h2>
 <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;font-size:14px">
 <tr style="background:#f9fafb">
@@ -1421,9 +1415,13 @@ ${researcherRows}
 
       if (request.method === 'POST' && url.pathname === '/api/submissions') {
         const body = await collectJsonBody(request, MAX_BODY_BYTES);
-        const customAreas = await store.getSetting('customAreas');
+        const [customAreas, customProducts] = await Promise.all([
+          store.getSetting('customAreas'),
+          store.getSetting('customProducts')
+        ]);
         const activeAreas = customAreas || config.areas;
-        const dynamicConfig = { ...config, areas: activeAreas };
+        const activeProducts = customProducts || config.products;
+        const dynamicConfig = { ...config, areas: activeAreas, products: activeProducts };
         const payload = validateSubmission(body, dynamicConfig);
 
         // Fetch existing submissions once — reuse for both duplicate detection and
@@ -1469,7 +1467,7 @@ ${researcherRows}
         // Completeness score (0~100)
         let completenessScore = 0;
         if (payload.researcher.name && payload.survey.storeName && payload.survey.region) completenessScore += 20;
-        if (payload.prices.length > 0) completenessScore += 30;
+        if (payload.availability.length > 0) completenessScore += 30;
         if (payload.photoDataUrl) completenessScore += 20;
         if (payload.notes) completenessScore += 10;
         if (body.gpsLat != null && body.gpsLng != null) completenessScore += 20;
@@ -1509,7 +1507,7 @@ ${researcherRows}
                 researcher: payload.researcher.name,
                 store: payload.survey.storeName,
                 region: payload.survey.region,
-                priceCount: payload.prices.length,
+                availabilityCount: payload.availability.length,
                 timestamp: new Date().toISOString()
               }
             }, fetchFn);

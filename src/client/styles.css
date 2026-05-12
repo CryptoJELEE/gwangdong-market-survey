@@ -668,6 +668,41 @@ h2 { color: var(--text); font-weight: 700; }
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-ghost);
 }
+.availability-field {
+  cursor: pointer;
+  justify-content: space-between;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: white;
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition);
+}
+.availability-field:hover { border-color: var(--border-hover); }
+.availability-field:has(input:checked) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-ghost);
+  box-shadow: 0 0 0 2px var(--color-primary-ghost);
+}
+.availability-field input {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  accent-color: var(--color-primary);
+}
+.availability-field .size-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-weight: 600;
+}
+.availability-state {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.availability-field:has(input:checked) .availability-state { color: var(--color-primary); }
 
 /* ── Camera / Photo ── */
 .camera-btn {

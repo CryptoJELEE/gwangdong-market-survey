@@ -64,9 +64,8 @@ export function buildPriceColumnHeaders(products) {
   const headers = [];
   for (const product of products) {
     for (const size of product.sizes) {
-      headers.push(`${product.label} ${size}`);
+      headers.push(`${product.label} ${size} 입점`);
     }
   }
   return headers;
 }
-

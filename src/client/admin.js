@@ -183,6 +183,38 @@ let lastFilteredCount = 0;
 let bulkSelectMode = false;
 const selectedSubmissionIds = new Set();
 
+function getSubmissionAvailability(submission) {
+  if (Array.isArray(submission?.availability)) return submission.availability;
+  return (submission?.prices || [])
+    .map((item) => ({
+      productId: item.productId,
+      productLabel: item.productLabel,
+      size: item.size,
+      present: Number(String(item.price).replace(/[^0-9]/g, '')) > 0
+    }))
+    .filter((item) => item.productId && item.size && item.present);
+}
+
+function availabilityCount(submission) {
+  return getSubmissionAvailability(submission).filter((item) => item.present !== false).length;
+}
+
+function availabilityProductSet(submission) {
+  return new Set(
+    getSubmissionAvailability(submission)
+      .filter((item) => item.present !== false)
+      .map((item) => item.productLabel)
+  );
+}
+
+function availabilityKeySet(submission) {
+  return new Set(
+    getSubmissionAvailability(submission)
+      .filter((item) => item.present !== false)
+      .map((item) => `${item.productLabel} ${item.size}`)
+  );
+}
+
 function debounce(fn, delay) {
   let timer;
   return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
@@ -373,10 +405,10 @@ function renderCharts() {
 
   // 4. Data quality metrics
   const total = submissions.length;
-  const withPrice = submissions.filter((s) => (s.prices || []).length > 0).length;
-  const priceRate = total ? Math.round((withPrice / total) * 100) : 0;
-  const totalPrices = submissions.reduce((sum, s) => sum + (s.prices || []).length, 0);
-  const avgPrices = total ? (totalPrices / total).toFixed(1) : '0';
+  const withAvailability = submissions.filter((s) => availabilityCount(s) > 0).length;
+  const availabilityRate = total ? Math.round((withAvailability / total) * 100) : 0;
+  const totalAvailability = submissions.reduce((sum, s) => sum + availabilityCount(s), 0);
+  const avgAvailability = total ? (totalAvailability / total).toFixed(1) : '0';
   const withPhoto = submissions.filter((s) => s.photo).length;
   const photoRate = total ? Math.round((withPhoto / total) * 100) : 0;
 
@@ -384,12 +416,12 @@ function renderCharts() {
     <h2>📊 데이터 품질</h2>
     <div style="display:grid;gap:12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-radius:var(--radius-sm);">
-        <span style="font-size:14px;font-weight:600;">가격 입력률</span>
-        <span style="font-size:18px;font-weight:800;color:var(--primary);">${priceRate}%</span>
+        <span style="font-size:14px;font-weight:600;">입점 체크율</span>
+        <span style="font-size:18px;font-weight:800;color:var(--primary);">${availabilityRate}%</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-radius:var(--radius-sm);">
-        <span style="font-size:14px;font-weight:600;">평균 가격 입력 수</span>
-        <span style="font-size:18px;font-weight:800;color:var(--primary);">${avgPrices}개/건</span>
+        <span style="font-size:14px;font-weight:600;">평균 입점 체크 수</span>
+        <span style="font-size:18px;font-weight:800;color:var(--primary);">${avgAvailability}개/건</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-radius:var(--radius-sm);">
         <span style="font-size:14px;font-weight:600;">사진 첨부율</span>
@@ -733,8 +765,8 @@ function buildResearcherDetail(name) {
   const total = mine.length;
   if (total === 0) return '<p>데이터 없음</p>';
 
-  const withPrice = mine.filter((s) => (s.prices || []).length > 0).length;
-  const priceRate = Math.round((withPrice / total) * 100);
+  const withAvailability = mine.filter((s) => availabilityCount(s) > 0).length;
+  const availabilityRate = Math.round((withAvailability / total) * 100);
   const withPhoto = mine.filter((s) => s.photo).length;
   const photoRate = Math.round((withPhoto / total) * 100);
 
@@ -784,9 +816,8 @@ function buildResearcherDetail(name) {
     </div>`;
   }).join('');
 
-  // Avg prices per submission
-  const totalPrices = mine.reduce((sum, s) => sum + (s.prices || []).length, 0);
-  const avgPrices = total > 0 ? (totalPrices / total).toFixed(1) : 0;
+  const totalAvailability = mine.reduce((sum, s) => sum + availabilityCount(s), 0);
+  const avgAvailability = total > 0 ? (totalAvailability / total).toFixed(1) : 0;
 
   return `
     <div style="padding:8px 0;">
@@ -795,8 +826,8 @@ function buildResearcherDetail(name) {
     </div>
     <div class="rd-grid" style="margin-top:8px;">
       <div class="rd-item"><div class="rd-label">총 제출</div><div class="rd-value">${total}건</div></div>
-      <div class="rd-item"><div class="rd-label">가격 입력률</div><div class="rd-value">${priceRate}%</div></div>
-      <div class="rd-item"><div class="rd-label">평균 가격수</div><div class="rd-value">${avgPrices}개</div></div>
+      <div class="rd-item"><div class="rd-label">입점 체크율</div><div class="rd-value">${availabilityRate}%</div></div>
+      <div class="rd-item"><div class="rd-label">평균 입점수</div><div class="rd-value">${avgAvailability}개</div></div>
       <div class="rd-item"><div class="rd-label">사진 첨부율</div><div class="rd-value">${photoRate}%</div></div>
     </div>
     <div style="font-size:.75rem;color:var(--text-muted);margin:4px 0 8px;">활동 기간: ${firstDate} ~ ${lastDate}</div>
@@ -816,7 +847,7 @@ function buildResearcherDetail(name) {
   `;
 }
 
-// ── Price trend ──
+// ── Availability trend ──
 function renderPriceTrendDropdowns() {
   if (!adminData) return;
   const products = adminData.products || [];
@@ -855,55 +886,51 @@ function renderPriceTrend(productId, size) {
   const prod = products.find((p) => p.id === productId);
   if (!prod) { chart.innerHTML = ''; return; }
 
-  // Gather matching price entries with timestamps
-  const entries = [];
+  const daily = new Map();
   adminData.submissions.forEach((s) => {
-    (s.prices || []).forEach((p) => {
-      if (p.productLabel === prod.label && p.size === size && p.price) {
-        entries.push({
-          date: new Date(s.createdAt),
-          price: Number(String(p.price).replace(/[^0-9]/g, '')),
-          store: s.survey.storeName,
-          area: s.assignment?.currentArea || ''
-        });
-      }
-    });
+    const dateKey = new Date(s.createdAt).toISOString().slice(0, 10);
+    const row = daily.get(dateKey) || { date: new Date(dateKey), total: 0, count: 0 };
+    row.total++;
+    const present = getSubmissionAvailability(s).some((item) =>
+      item.present !== false &&
+      item.size === size &&
+      (item.productId === prod.id || item.productLabel === prod.label)
+    );
+    if (present) row.count++;
+    daily.set(dateKey, row);
   });
 
+  const entries = [...daily.values()].filter((row) => row.total > 0).sort((a, b) => a.date - b.date);
   if (entries.length === 0) {
-    chart.innerHTML = '<div class="notice">해당 제품/사이즈의 가격 데이터가 없어요.</div>';
+    chart.innerHTML = '<div class="notice">해당 제품/사이즈의 입점 데이터가 없어요.</div>';
     return;
   }
 
-  // Sort by date
-  entries.sort((a, b) => a.date - b.date);
-
-  const prices = entries.map((e) => e.price);
-  const avg = prices.reduce((s, p) => s + p, 0) / prices.length;
-  const minP = Math.min(...prices);
-  const maxP = Math.max(...prices);
-  const barMax = maxP * 1.1 || 1;
+  const totalCount = entries.reduce((sum, row) => sum + row.count, 0);
+  const totalStores = entries.reduce((sum, row) => sum + row.total, 0);
+  const overallRate = totalStores ? Math.round((totalCount / totalStores) * 100) : 0;
+  const maxRate = Math.max(...entries.map((row) => row.total ? Math.round((row.count / row.total) * 100) : 0), 1);
 
   chart.innerHTML = `
     <div style="max-height:300px;overflow-y:auto;">
       ${entries.map((e) => {
-        const pct = Math.round((e.price / barMax) * 100);
-        const isOutlier = Math.abs(e.price - avg) > avg * 0.3;
+        const rate = e.total ? Math.round((e.count / e.total) * 100) : 0;
+        const pct = Math.max(2, Math.round((rate / maxRate) * 100));
         const dateStr = e.date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
         return `
         <div class="trend-bar-row">
-          <span class="trend-bar-label" title="${escapeHtml(e.store)}">${dateStr} ${escapeHtml(e.store)}</span>
+          <span class="trend-bar-label">${dateStr}</span>
           <div class="trend-bar-track">
-            <div class="trend-bar-fill ${isOutlier ? 'outlier' : ''}" style="width:${pct}%;background:${isOutlier ? 'var(--error)' : 'var(--primary)'};"></div>
+            <div class="trend-bar-fill" style="width:${pct}%;background:var(--primary);"></div>
           </div>
-          <span class="trend-bar-value" style="${isOutlier ? 'color:var(--error);' : ''}">\u20A9${e.price.toLocaleString()}</span>
+          <span class="trend-bar-value">${e.count}/${e.total} · ${rate}%</span>
         </div>`;
       }).join('')}
     </div>
     <div class="trend-stats">
-      <div class="trend-stat"><div class="ts-label">최저가</div><div class="ts-value">\u20A9${minP.toLocaleString()}</div></div>
-      <div class="trend-stat"><div class="ts-label">최고가</div><div class="ts-value">\u20A9${maxP.toLocaleString()}</div></div>
-      <div class="trend-stat"><div class="ts-label">평균가</div><div class="ts-value">\u20A9${Math.round(avg).toLocaleString()}</div></div>
+      <div class="trend-stat"><div class="ts-label">입점 수</div><div class="ts-value">${totalCount}건</div></div>
+      <div class="trend-stat"><div class="ts-label">표본 수</div><div class="ts-value">${totalStores}건</div></div>
+      <div class="trend-stat"><div class="ts-label">입점률</div><div class="ts-value">${overallRate}%</div></div>
     </div>
   `;
 }
@@ -926,9 +953,9 @@ function renderStoreProductChart() {
     if (!st) return;
     if (!storeTypes[st]) storeTypes[st] = { total: 0, products: {} };
     storeTypes[st].total++;
-    const priceProducts = new Set((s.prices || []).map((p) => p.productLabel));
+    const presentProducts = availabilityProductSet(s);
     products.forEach((prod) => {
-      if (priceProducts.has(prod.label)) {
+      if (presentProducts.has(prod.label)) {
         storeTypes[st].products[prod.label] = (storeTypes[st].products[prod.label] || 0) + 1;
       }
     });
@@ -1042,27 +1069,22 @@ function renderRegionCompare() {
     const total = mine.length;
     const researchers = new Set(mine.map((s) => s.researcher.name)).size;
 
-    // Average ionkick price
-    const ionkickPrices = [];
-    mine.forEach((s) => {
-      (s.prices || []).forEach((p) => {
-        if (p.productLabel && p.productLabel.includes('이온킥') && p.price) {
-          const num = Number(String(p.price).replace(/[^0-9]/g, ''));
-          if (num > 0) ionkickPrices.push(num);
-        }
-      });
-    });
-    const avgPrice = ionkickPrices.length ? Math.round(ionkickPrices.reduce((a, b) => a + b, 0) / ionkickPrices.length) : 0;
+    const ionkickStores = mine.filter((s) =>
+      getSubmissionAvailability(s).some((item) =>
+        item.present !== false && (item.productId === 'ion-kick' || item.productLabel?.includes('이온킥'))
+      )
+    ).length;
+    const ionKickRate = total ? Math.round((ionkickStores / total) * 100) : 0;
 
     // Photo rate
     const withPhoto = mine.filter((s) => s.photo).length;
     const photoRate = total ? Math.round((withPhoto / total) * 100) : 0;
 
-    return { area, total, researchers, avgPrice, photoRate };
+    return { area, total, researchers, ionKickRate, photoRate };
   }).filter((a) => a.total > 0);
 
   // Sort
-  const cols = ['area', 'total', 'researchers', 'avgPrice', 'photoRate'];
+  const cols = ['area', 'total', 'researchers', 'ionKickRate', 'photoRate'];
   const sortKey = cols[regionSortCol] || 'total';
   areaStats.sort((a, b) => {
     const va = a[sortKey];
@@ -1081,7 +1103,7 @@ function renderRegionCompare() {
           <th data-col="0">지역 <span class="sort-arrow">${arrows[0]}</span></th>
           <th data-col="1">총 제출 <span class="sort-arrow">${arrows[1]}</span></th>
           <th data-col="2">조사자 수 <span class="sort-arrow">${arrows[2]}</span></th>
-          <th data-col="3">평균 가격(이온킥) <span class="sort-arrow">${arrows[3]}</span></th>
+          <th data-col="3">이온킥 입점률 <span class="sort-arrow">${arrows[3]}</span></th>
           <th data-col="4">사진 첨부율 <span class="sort-arrow">${arrows[4]}</span></th>
         </tr></thead>
         <tbody>
@@ -1090,7 +1112,7 @@ function renderRegionCompare() {
               <td style="font-weight:600;">${escapeHtml(a.area)}</td>
               <td>${a.total}건</td>
               <td>${a.researchers}명</td>
-              <td>${a.avgPrice ? '₩' + a.avgPrice.toLocaleString() : '-'}</td>
+              <td>${a.ionKickRate}%</td>
               <td>${a.photoRate}%</td>
             </tr>
           `).join('')}
@@ -1137,33 +1159,7 @@ function renderIntegrityCheck(submissions) {
     }
   });
 
-  // Find price outliers: per product+size, flag price > mean + 2*stdev
-  const priceGroups = {};
-  submissions.forEach((s) => {
-    (s.prices || []).forEach((p) => {
-      const key = `${p.productLabel}|${p.size}`;
-      const num = Number(String(p.price).replace(/[^0-9]/g, ''));
-      if (num > 0) {
-        if (!priceGroups[key]) priceGroups[key] = [];
-        priceGroups[key].push({ num, storeName: s.survey.storeName, date: s.createdAt });
-      }
-    });
-  });
-  const outliers = [];
-  Object.entries(priceGroups).forEach(([key, vals]) => {
-    if (vals.length < 3) return;
-    const mean = vals.reduce((a, b) => a + b.num, 0) / vals.length;
-    const variance = vals.reduce((a, b) => a + Math.pow(b.num - mean, 2), 0) / vals.length;
-    const stdev = Math.sqrt(variance);
-    if (stdev < 1) return;
-    vals.forEach((v) => {
-      if (Math.abs(v.num - mean) > 2 * stdev) {
-        outliers.push({ key, price: v.num, storeName: v.storeName, mean: Math.round(mean) });
-      }
-    });
-  });
-
-  const issues = duplicates.length + outliers.length;
+  const issues = duplicates.length;
   if (issues === 0) {
     container.innerHTML = `<div style="padding:10px;background:var(--bg-alt,#f5f5f5);border-radius:8px;font-size:.85rem;color:var(--success,#27ae60);">✅ 데이터 무결성 이상 없음</div>`;
     return;
@@ -1178,19 +1174,10 @@ function renderIntegrityCheck(submissions) {
       </div>
     </div>` : '';
 
-  const outlierHtml = outliers.length > 0 ? `
-    <div>
-      <strong>📊 가격 이상값 ${outliers.length}건</strong>
-      <div style="font-size:.82rem;color:var(--text-muted);margin-top:4px;">
-        ${outliers.slice(0, 5).map((o) => `${escapeHtml(o.key)}: ₩${o.price.toLocaleString()} (평균 ₩${o.mean.toLocaleString()}) — ${escapeHtml(o.storeName)}`).join('<br>')}
-        ${outliers.length > 5 ? `<span> 외 ${outliers.length - 5}건</span>` : ''}
-      </div>
-    </div>` : '';
-
   container.innerHTML = `
     <details style="background:var(--bg-alt,#f5f5f5);border-radius:8px;padding:10px;">
       <summary style="cursor:pointer;font-size:.88rem;font-weight:600;color:#e67e22;">⚠️ 데이터 이상 ${issues}건 감지됨</summary>
-      <div style="margin-top:8px;font-size:.85rem;">${dupHtml}${outlierHtml}</div>
+      <div style="margin-top:8px;font-size:.85rem;">${dupHtml}</div>
     </details>`;
 }
 
@@ -1233,8 +1220,8 @@ function showSubmissionDetailModal(sub, areas) {
   const savedNote = getAdminNotes()[sub.id] || '';
   const gps = sub.gps || sub.location;
   const gpsText = gps ? `${gps.lat?.toFixed(5)}, ${gps.lng?.toFixed(5)}` : '-';
-  const priceRows = (sub.prices || []).map((p) =>
-    `<tr><td style="padding:5px 4px;">${escapeHtml(p.productLabel)}</td><td style="padding:5px 4px;">${escapeHtml(p.size)}</td><td style="padding:5px 4px;text-align:right;">\u20A9${Number(p.price).toLocaleString()}</td></tr>`
+  const availabilityRows = getSubmissionAvailability(sub).filter((item) => item.present !== false).map((item) =>
+    `<tr><td style="padding:5px 4px;">${escapeHtml(item.productLabel)}</td><td style="padding:5px 4px;">${escapeHtml(item.size)}</td><td style="padding:5px 4px;text-align:center;">Y</td></tr>`
   ).join('');
 
   const overlay = document.createElement('div');
@@ -1253,13 +1240,13 @@ function showSubmissionDetailModal(sub, areas) {
         ${new Date(sub.createdAt).toLocaleString('ko-KR')} \u00B7 ${escapeHtml(sub.survey.region)} \u00B7 ${escapeHtml(sub.survey.storeType)} \u00B7 POS ${sub.survey.posCount}
         ${sub.survey.displayLocation ? `<br/>\uC9C4\uC5F4\uC704\uCE58: ${escapeHtml(sub.survey.displayLocation)}` : ''}
       </p>
-      ${priceRows ? `
+      ${availabilityRows ? `
       <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px;">
         <thead><tr style="border-bottom:1.5px solid var(--border,#eee);text-align:left;">
-          <th style="padding:5px 4px;">\uC81C\uD488</th><th style="padding:5px 4px;">\uC0AC\uC774\uC988</th><th style="padding:5px 4px;text-align:right;">\uAC00\uACA9</th>
+          <th style="padding:5px 4px;">\uC81C\uD488</th><th style="padding:5px 4px;">\uC0AC\uC774\uC988</th><th style="padding:5px 4px;text-align:center;">\uC785\uC810</th>
         </tr></thead>
-        <tbody>${priceRows}</tbody>
-      </table>` : '<p style="font-size:.83rem;color:var(--text-muted);margin-bottom:12px;">\uAC00\uACA9 \uB370\uC774\uD130 \uC5C6\uC74C</p>'}
+        <tbody>${availabilityRows}</tbody>
+      </table>` : '<p style="font-size:.83rem;color:var(--text-muted);margin-bottom:12px;">\uC785\uC810 \uC81C\uD488 \uC5C6\uC74C</p>'}
       ${sub.photo ? `<img src="${sub.photo.url}" alt="${escapeHtml(sub.survey.storeName)}" loading="lazy" style="width:100%;border-radius:8px;margin-bottom:12px;display:block;" />` : ''}
       ${sub.notes ? `<div style="font-size:.83rem;background:var(--bg-alt,#f5f5f5);border-radius:6px;padding:8px 12px;margin-bottom:12px;">\uD83D\uDCAC \uC870\uC0AC\uC790 \uBA54\uBAA8: ${escapeHtml(sub.notes)}</div>` : ''}
       <p style="font-size:.82rem;color:var(--text-muted);margin:0 0 12px;">GPS: ${gpsText}</p>
@@ -1395,7 +1382,7 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
     ? paginated.map((sub) => {
         const isSelected = selectedSubmissionIds.has(sub.id);
         const hasNote = !!adminNotes[sub.id];
-        const priceCount = (sub.prices || []).length;
+        const checkedCount = availabilityCount(sub);
         const score = sub.completenessScore ?? 0;
         const scoreDot = score >= 90 ? '\uD83D\uDFE2' : score >= 60 ? '\uD83D\uDFE1' : '\uD83D\uDD34';
         const checkboxHtml = bulkSelectMode
@@ -1410,7 +1397,7 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
           <span class="sub-date" style="margin-left:auto;">${new Date(sub.createdAt).toLocaleDateString('ko-KR')}</span>
         </div>
         <div class="sub-meta">${escapeHtml(sub.researcher.name)} \u00B7 ${escapeHtml(sub.researcher.residenceArea)} \u2192 <strong>${escapeHtml(sub.assignment?.currentArea || '')}</strong></div>
-        <div class="sub-meta">${escapeHtml(sub.survey.region)} \u00B7 ${escapeHtml(sub.survey.storeType)} \u00B7 POS ${sub.survey.posCount} \u00B7 ${scoreDot} ${score}\uC810 \u00B7 \uAC00\uACA9 ${priceCount}\uAC74</div>
+        <div class="sub-meta">${escapeHtml(sub.survey.region)} \u00B7 ${escapeHtml(sub.survey.storeType)} \u00B7 POS ${sub.survey.posCount} \u00B7 ${scoreDot} ${score}\uC810 \u00B7 \uC785\uC810 ${checkedCount}\uAC74</div>
       </article>
     `;
       }).join('')
@@ -1535,16 +1522,15 @@ function renderSubmissionList(dateFilter, researcherFilter, areaFilter, storeFil
       if (selectedSubmissionIds.size === 0) return;
       const { submissions, products } = adminData;
       const selected = submissions.filter((s) => selectedSubmissionIds.has(s.id));
-      const priceHeaders = [];
+      const availabilityHeaders = [];
       for (const product of (products || [])) {
-        for (const size of product.sizes) priceHeaders.push(`${product.label} ${size}`);
+        for (const size of product.sizes) availabilityHeaders.push(`${product.label} ${size} 입점`);
       }
-      const headers = ['제출일시', '조사자', '조사지역', '매장유형', '매장명', 'POS대수', ...priceHeaders, '메모'];
+      const headers = ['제출일시', '조사자', '조사지역', '매장유형', '매장명', 'POS대수', ...availabilityHeaders, '메모'];
       const rows = selected.map((sub) => {
-        const priceMap = {};
-        (sub.prices || []).forEach((p) => { priceMap[`${p.productLabel} ${p.size}`] = p.price; });
-        const priceCols = priceHeaders.map((h) => String(priceMap[h] || '').replace(/[^0-9]/g, ''));
-        return [formatDateCSV(sub.createdAt), sub.researcher.name, sub.assignment?.currentArea || '', sub.survey.storeType, sub.survey.storeName, sub.survey.posCount, ...priceCols, sub.notes || ''];
+        const present = availabilityKeySet(sub);
+        const availabilityCols = availabilityHeaders.map((h) => present.has(h.replace(/ 입점$/, '')) ? 'Y' : '');
+        return [formatDateCSV(sub.createdAt), sub.researcher.name, sub.assignment?.currentArea || '', sub.survey.storeType, sub.survey.storeName, sub.survey.posCount, ...availabilityCols, sub.notes || ''];
       });
       const csvContent = [headers, ...rows].map((row) => row.map((cell) => {
         const str = String(cell);
@@ -1577,25 +1563,18 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
   if (!adminData) return;
   const { submissions, products } = adminData;
 
-  const priceHeaders = [];
+  const availabilityHeaders = [];
   for (const product of products) {
     for (const size of product.sizes) {
-      priceHeaders.push(`${product.label} ${size}`);
+      availabilityHeaders.push(`${product.label} ${size} 입점`);
     }
   }
 
-  const headers = ['제출일시', '조사자', '거주지역', '조사지역', '매장유형', '매장명', 'POS대수', '진열위치', ...priceHeaders, '완료도', '메모', '위도', '경도'];
+  const headers = ['제출일시', '조사자', '거주지역', '조사지역', '매장유형', '매장명', 'POS대수', '진열위치', ...availabilityHeaders, '완료도', '메모', '위도', '경도'];
 
   const rows = submissions.map((sub) => {
-    const priceMap = {};
-    (sub.prices || []).forEach((p) => {
-      priceMap[`${p.productLabel} ${p.size}`] = p.price;
-    });
-    const priceCols = priceHeaders.map((h) => {
-      const v = priceMap[h];
-      if (v === undefined || v === null) return '';
-      return String(v).replace(/[^0-9]/g, '');
-    });
+    const present = availabilityKeySet(sub);
+    const availabilityCols = availabilityHeaders.map((h) => present.has(h.replace(/ 입점$/, '')) ? 'Y' : '');
     const gps = sub.gps || sub.location;
     return [
       formatDateCSV(sub.createdAt),
@@ -1606,7 +1585,7 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
       sub.survey.storeName,
       sub.survey.posCount,
       sub.survey.displayLocation || '',
-      ...priceCols,
+      ...availabilityCols,
       sub.completenessScore ?? '',
       sub.notes || '',
       gps?.lat ?? '',
@@ -1658,6 +1637,7 @@ document.querySelector('#csv-btn').addEventListener('click', () => {
       researcher: sub.researcher,
       assignment: sub.assignment,
       survey: sub.survey,
+      availability: getSubmissionAvailability(sub),
       prices: sub.prices || [],
       notes: sub.notes || '',
       completenessScore: sub.completenessScore,

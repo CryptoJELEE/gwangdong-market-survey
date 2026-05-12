@@ -10,6 +10,8 @@ import { closeApp, createApp } from '../src/server.js';
 import { loadConfig } from '../src/config.js';
 
 const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aT0sAAAAASUVORK5CYII=';
+const ionKickAvailability = [{ productId: 'ion-kick', productLabel: '이온킥', size: '캔 240ml', present: true }];
+const ionKickLegacyPrice = (price = 1200) => [{ productId: 'ion-kick', productLabel: '이온킥', size: '캔 240ml', price }];
 
 async function createTestServer(t, options = {}) {
   const { envOverrides = {}, ...serverOptions } = options;
@@ -107,9 +109,7 @@ test('submission API stores a survey and exposes it in bootstrap data', async (t
         posCount: 2,
         displayLocation: 'Front counter'
       },
-      prices: [
-        { productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 1200 }
-      ],
+      availability: ionKickAvailability,
       photoDataUrl: tinyPng,
       notes: 'Promo stand present'
     })
@@ -118,6 +118,8 @@ test('submission API stores a survey and exposes it in bootstrap data', async (t
   assert.equal(createResponse.status, 201);
   const created = await createResponse.json();
   assert.equal(created.assignment.currentArea, '서울 중부');
+  assert.deepEqual(created.availability, ionKickAvailability);
+  assert.deepEqual(created.prices, []);
   assert.match(created.photo.url, /^\/uploads\//);
   assert.equal(created.sync.mode, 'local');
 
@@ -125,6 +127,8 @@ test('submission API stores a survey and exposes it in bootstrap data', async (t
   const bootstrap = await bootstrapResponse.json();
   assert.equal(bootstrap.submissions.length, 1);
   assert.equal(bootstrap.submissions[0].survey.storeName, 'Healthy Drug');
+  assert.deepEqual(bootstrap.submissions[0].availability, ionKickAvailability);
+  assert.deepEqual(bootstrap.submissions[0].prices, []);
   assert.equal(bootstrap.assignmentOverrides.length, 0);
   assert.equal(bootstrap.adminTokenConfigured, false);
 });
@@ -148,6 +152,7 @@ test('legacy SQLite submissions table is migrated before accepting new writes', 
     assert.equal(columns.has('researcher_residence_lat'), true);
     assert.equal(columns.has('survey_location_lng'), true);
     assert.equal(columns.has('completeness_score'), true);
+    assert.equal(columns.has('availability_json'), true);
 
     const stored = db.prepare('SELECT completeness_score, sync_mode FROM submissions WHERE id = ?').get(created.id);
     assert.deepEqual(stored, { completeness_score: created.completenessScore, sync_mode: 'local' });
@@ -171,9 +176,7 @@ test('override API requires auth and updates assignment area', async (t) => {
         posCount: 1,
         displayLocation: 'Fridge'
       },
-      prices: [
-        { productId: 'cornsilk', productLabel: '옥수수수염차', size: '500ml', price: 2200 }
-      ]
+      availability: ionKickAvailability
     })
   });
   const created = await createResponse.json();
@@ -229,7 +232,7 @@ test('bootstrap reflects admin token configuration', async (t) => {
   assert.ok(Array.isArray(payload.products));
 });
 
-test('submission API accepts payloads without product prices', async (t) => {
+test('submission API accepts empty availability', async (t) => {
   const { baseUrl } = await createTestServer(t);
 
   const response = await fetch(`${baseUrl}/api/submissions`, {
@@ -242,12 +245,13 @@ test('submission API accepts payloads without product prices', async (t) => {
         storeType: 'Pharmacy',
         storeName: 'Healthy Drug'
       },
-      prices: []
+      availability: []
     })
   });
 
   assert.equal(response.status, 201);
   const payload = await response.json();
+  assert.deepStrictEqual(payload.availability, []);
   assert.deepStrictEqual(payload.prices, []);
 });
 
@@ -312,9 +316,7 @@ test('survey stats include per-area counts and coordinates', async (t) => {
         storeType: 'Mart',
         storeName: 'Center Mart'
       },
-      prices: [
-        { productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 1300 }
-      ]
+      availability: ionKickAvailability
     })
   });
 
@@ -361,9 +363,7 @@ test('submission API uses distance-based assignment when coordinates are availab
         storeType: 'Pharmacy',
         storeName: 'Distance Test'
       },
-      prices: [
-        { productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 1400 }
-      ]
+      availability: ionKickAvailability
     })
   });
 
@@ -464,7 +464,7 @@ test('submission API rejects missing required fields', async (t) => {
   assert.ok(payload.error);
 });
 
-test('submission API rejects price out of valid range', async (t) => {
+test('submission API rejects unregistered product availability', async (t) => {
   const { baseUrl } = await createTestServer(t);
   const response = await fetch(`${baseUrl}/api/submissions`, {
     method: 'POST',
@@ -472,7 +472,7 @@ test('submission API rejects price out of valid range', async (t) => {
     body: JSON.stringify({
       researcher: { name: 'Kim', residenceArea: '서울 중부' },
       survey: { region: 'Gangnam', storeType: 'Pharmacy', storeName: 'Test Store' },
-      prices: [{ productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 9999999 }]
+      availability: [{ productId: 'vita500', productLabel: 'Vita 500', size: '100ml', present: true }]
     })
   });
   assert.equal(response.status, 400);
@@ -490,7 +490,7 @@ test('daily summary aggregates submissions for a date', async (t) => {
     body: JSON.stringify({
       researcher: { name: 'Alice', residenceArea: '서울 중부' },
       survey: { region: 'Gangnam', storeType: 'Mart', storeName: 'Mart A' },
-      prices: [{ productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 1200 }]
+      availability: ionKickAvailability
     })
   });
   await fetch(`${baseUrl}/api/submissions`, {
@@ -499,7 +499,7 @@ test('daily summary aggregates submissions for a date', async (t) => {
     body: JSON.stringify({
       researcher: { name: 'Bob', residenceArea: '서울 서부' },
       survey: { region: 'Mapo', storeType: 'Pharmacy', storeName: 'Pharmacy B' },
-      prices: [{ productId: 'vita500', productLabel: 'Vita 500', size: '100ml', price: 1400 }]
+      availability: ionKickAvailability
     })
   });
 
@@ -509,11 +509,11 @@ test('daily summary aggregates submissions for a date', async (t) => {
   const payload = await response.json();
   assert.equal(payload.totalSubmissions, 2);
   assert.equal(payload.uniqueResearchers, 2);
-  assert.ok(Array.isArray(payload.averagePrices));
-  const vita = payload.averagePrices.find((p) => p.label === 'Vita 500');
-  assert.ok(vita);
-  assert.equal(vita.avg, 1300); // (1200+1400)/2
-  assert.equal(vita.count, 2);
+  assert.ok(Array.isArray(payload.availabilityStats));
+  const ionKick = payload.availabilityStats.find((p) => p.label === '이온킥' && p.size === '캔 240ml');
+  assert.ok(ionKick);
+  assert.equal(ionKick.count, 2);
+  assert.equal(ionKick.rate, 100);
 });
 
 test('admin settings stores and retrieves custom areas', async (t) => {
@@ -1205,7 +1205,7 @@ test('/api/stats returns aggregated data (auth required)', async (t) => {
       body: JSON.stringify({
         researcher: { name, residenceArea: '서울 중부' },
         survey: { region: 'TestRegion', storeType: 'Mart', storeName: `Store-${name}` },
-        prices: [{ productId: 'p1', productLabel: 'Product 1', size: '100ml', price: 1000 }]
+        prices: ionKickLegacyPrice(1000)
       })
     });
   }
@@ -1220,7 +1220,8 @@ test('/api/stats returns aggregated data (auth required)', async (t) => {
   assert.ok(Array.isArray(data.byResearcher), 'byResearcher should be array');
   assert.ok(Array.isArray(data.byArea), 'byArea should be array');
   assert.ok(Array.isArray(data.byDay), 'byDay should be array');
-  assert.ok(Array.isArray(data.averagePrices), 'averagePrices should be array');
+  assert.ok(Array.isArray(data.availabilityStats), 'availabilityStats should be array');
+  assert.deepEqual(data.averagePrices, []);
   assert.equal(data.byResearcher.length, 2, 'should have 2 researchers');
   // Alice should be first (higher count)
   assert.equal(data.byResearcher[0].name, 'Alice');
@@ -1263,49 +1264,16 @@ test('/api/stats filters by date range', async (t) => {
   assert.equal(pastData.total, 1);
 });
 
-test('/api/price-outliers detects statistical outliers', async (t) => {
+test('/api/price-outliers returns 410 after price feature sunset', async (t) => {
   const { baseUrl } = await createTestServer(t);
-
-  const loginRes = await fetch(`${baseUrl}/api/admin/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: 'ionroad2026' })
-  });
-  const { token } = await loginRes.json();
-
-  // Insert 8 submissions with consistent price ~1000, then 1 clear outlier at 8000.
-  // With 8 tight samples, stdDev is small, so 8000 comfortably exceeds mean+2σ.
-  for (let i = 0; i < 8; i++) {
-    await fetch(`${baseUrl}/api/submissions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        researcher: { name: `R${i}`, residenceArea: '서울 중부' },
-        survey: { region: 'R', storeType: 'Mart', storeName: `S${i}` },
-        prices: [{ productId: 'p1', productLabel: 'Product1', size: '100ml', price: 1000 + i }]
-      })
-    });
-  }
-  // The outlier — clearly outside mean±2σ when the normal group is tight around 1000
-  await fetch(`${baseUrl}/api/submissions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      researcher: { name: 'Outlier', residenceArea: '서울 중부' },
-      survey: { region: 'R', storeType: 'Mart', storeName: 'OutlierStore' },
-      prices: [{ productId: 'p1', productLabel: 'Product1', size: '100ml', price: 8000 }]
-    })
-  });
+  const token = await loginAs(baseUrl);
 
   const outRes = await fetch(`${baseUrl}/api/price-outliers?sigma=2`, {
     headers: { Authorization: `Bearer ${token}` }
   });
-  assert.equal(outRes.status, 200);
+  assert.equal(outRes.status, 410);
   const data = await outRes.json();
-  assert.equal(data.sigma, 2);
-  assert.ok(data.total >= 1, 'should detect at least 1 outlier');
-  assert.ok(data.outliers[0].price === 8000, 'outlier price should be 8000');
-  assert.ok(data.outliers[0].deviation > 0, 'deviation should be positive for high outlier');
+  assert.match(data.error, /가격 이상치 기능/);
 });
 
 test('/api/admin/refresh issues a new token', async (t) => {
@@ -1456,10 +1424,10 @@ describe('Submission validation edge cases', () => {
     assert.equal(res.status, 400);
   });
 
-  test('price out of range (negative) is rejected', async (t) => {
+  test('unknown availability size is rejected', async (t) => {
     const { baseUrl } = await createTestServer(t);
     const res = await postSubmission(baseUrl, {
-      prices: [{ productId: 'p1', productLabel: 'P1', size: '100ml', price: -1 }]
+      availability: [{ productId: 'ion-kick', productLabel: '이온킥', size: '없는 사이즈', present: true }]
     });
     assert.equal(res.status, 400);
   });
@@ -1505,46 +1473,26 @@ describe('Admin: helpers reduce boilerplate', () => {
 });
 
 describe('API: price-outliers edge cases', () => {
-  test('returns empty when fewer than 3 samples exist', async (t) => {
+  test('returns 410 when fewer than 3 samples exist', async (t) => {
     const { baseUrl } = await createTestServer(t);
     const token = await loginAs(baseUrl);
-
-    // Insert only 2 submissions (below the 3-sample minimum)
-    for (let i = 0; i < 2; i++) {
-      await postSubmission(baseUrl, {
-        researcher: { name: `R${i}`, residenceArea: '서울 중부' },
-        survey: { region: 'R', storeType: 'Mart', storeName: `S${i}` },
-        prices: [{ productId: 'p1', productLabel: 'P1', size: '100ml', price: 1000 }]
-      });
-    }
 
     const res = await fetch(`${baseUrl}/api/price-outliers`, {
       headers: { Authorization: `Bearer ${token}` }
     });
-    assert.equal(res.status, 200);
+    assert.equal(res.status, 410);
     const data = await res.json();
-    assert.equal(data.total, 0, 'should return 0 outliers when sample size < 3');
+    assert.match(data.error, /가격 이상치 기능/);
   });
 
-  test('sigma=1 detects more outliers than sigma=3', async (t) => {
+  test('sigma query still returns 410', async (t) => {
     const { baseUrl } = await createTestServer(t);
     const token = await loginAs(baseUrl);
 
-    // Insert 8 tight prices + 1 moderate outlier (~3σ above mean)
-    for (let i = 0; i < 8; i++) {
-      await postSubmission(baseUrl, {
-        researcher: { name: `R${i}`, residenceArea: '서울 중부' },
-        survey: { region: 'R', storeType: 'Mart', storeName: `S${i}` },
-        prices: [{ productId: 'p2', productLabel: 'P2', size: '200ml', price: 2000 + i }]
-      });
-    }
-    await postSubmission(baseUrl, {
-      prices: [{ productId: 'p2', productLabel: 'P2', size: '200ml', price: 4000 }]
-    });
-
-    const sigma1 = await (await fetch(`${baseUrl}/api/price-outliers?sigma=1`, { headers: { Authorization: `Bearer ${token}` } })).json();
-    const sigma3 = await (await fetch(`${baseUrl}/api/price-outliers?sigma=3`, { headers: { Authorization: `Bearer ${token}` } })).json();
-    assert.ok(sigma1.total >= sigma3.total, 'sigma=1 should detect at least as many outliers as sigma=3');
+    const sigma1 = await fetch(`${baseUrl}/api/price-outliers?sigma=1`, { headers: { Authorization: `Bearer ${token}` } });
+    const sigma3 = await fetch(`${baseUrl}/api/price-outliers?sigma=3`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(sigma1.status, 410);
+    assert.equal(sigma3.status, 410);
   });
 });
 
@@ -1634,7 +1582,7 @@ describe('Round 24: gzip compression', () => {
       await postSubmission(baseUrl, {
         researcher: { name: `Researcher${i}`, residenceArea: '서울 중부' },
         survey: { region: `Region${i}`, storeType: 'Mart', storeName: `StoreName${i}` },
-        prices: [{ productId: 'p1', productLabel: 'Product One', size: '100ml', price: 1000 + i }]
+        prices: ionKickLegacyPrice(1000 + i)
       });
     }
 
@@ -2083,7 +2031,7 @@ describe('Round 26: /api/admin/researchers', () => {
     await postSubmission(baseUrl, {
       researcher: { name: 'Alice', residenceArea: '서울 중부' },
       survey: { region: '강남', storeType: 'Mart', storeName: 'Store A' },
-      prices: [{ productId: 'p1', productLabel: 'P1', size: '100ml', price: 1000 }]
+      prices: ionKickLegacyPrice(1000)
     });
     await postSubmission(baseUrl, {
       researcher: { name: 'Alice', residenceArea: '서울 중부' },
@@ -2242,7 +2190,7 @@ describe('Round 26: /api/export', () => {
     await postSubmission(baseUrl, {
       researcher: { name: 'Bob', residenceArea: '서울 중부' },
       survey: { region: '강서', storeType: 'Pharmacy', storeName: 'My Store' },
-      prices: [{ productId: 'p1', productLabel: 'P1', size: '100ml', price: 999 }]
+      prices: ionKickLegacyPrice(999)
     });
 
     const res = await fetch(`${baseUrl}/api/export?format=xlsx-ready`, {
@@ -2452,7 +2400,7 @@ describe('Round 27: /api/daily-report HTML output', () => {
     await postSubmission(baseUrl, {
       researcher: { name: 'HTMLTester', residenceArea: '서울 중부' },
       survey: { region: '강남', storeType: 'Mart', storeName: 'HTML Store' },
-      prices: [{ productId: 'p1', productLabel: 'Product One', size: '100ml', price: 1500 }]
+      prices: ionKickLegacyPrice(1500)
     });
 
     const today = new Date().toISOString().slice(0, 10);
@@ -2470,7 +2418,7 @@ describe('Round 28: /api/admin/dashboard', () => {
     await postSubmission(baseUrl, {
       researcher: { name: 'Alice', residenceArea: '서울 중부' },
       survey: { region: '강남', storeType: 'Mart', storeName: 'Store A' },
-      prices: [{ productId: 'p1', productLabel: 'P1', size: '100ml', price: 1000 }]
+      prices: ionKickLegacyPrice(1000)
     });
     await postSubmission(baseUrl, {
       researcher: { name: 'Bob', residenceArea: '서울 중부' },
@@ -2776,30 +2724,31 @@ describe('Round 29: dashboard areaCoverage includes all areas', () => {
   });
 });
 
-describe('Round 29: /api/stats averagePrices', () => {
-  test('averagePrices aggregated correctly in stats', async (t) => {
+describe('Round 29: /api/stats availabilityStats', () => {
+  test('availabilityStats aggregates legacy price submissions in stats', async (t) => {
     const { baseUrl } = await createTestServer(t);
     const token = await loginAs(baseUrl);
 
     await postSubmission(baseUrl, {
       researcher: { name: 'A', residenceArea: '서울 중부' },
       survey: { region: 'R', storeType: 'Mart', storeName: 'S1' },
-      prices: [{ productId: 'p1', productLabel: 'Vita500', size: '100ml', price: 1000 }]
+      prices: ionKickLegacyPrice(1000)
     });
     await postSubmission(baseUrl, {
       researcher: { name: 'B', residenceArea: '서울 중부' },
       survey: { region: 'R', storeType: 'Mart', storeName: 'S2' },
-      prices: [{ productId: 'p1', productLabel: 'Vita500', size: '100ml', price: 2000 }]
+      prices: ionKickLegacyPrice(2000)
     });
 
     const res = await fetch(`${baseUrl}/api/stats`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     const data = await res.json();
-    const vita = data.averagePrices?.find((p) => p.label === 'Vita500');
-    assert.ok(vita, 'should include Vita500 in averagePrices');
-    assert.equal(vita.avg, 1500, 'average should be (1000+2000)/2 = 1500');
-    assert.equal(vita.count, 2);
+    const ionKick = data.availabilityStats?.find((p) => p.label === '이온킥' && p.size === '캔 240ml');
+    assert.ok(ionKick, 'should include 이온킥 in availabilityStats');
+    assert.equal(ionKick.count, 2);
+    assert.equal(ionKick.rate, 100);
+    assert.deepEqual(data.averagePrices, []);
   });
 });
 

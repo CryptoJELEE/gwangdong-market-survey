@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { availabilityFromPrices, getSubmissionAvailability } from '../availability.js';
 import { createId, decodeDataUrl, ensureDir, nowIso, slugify } from '../utils.js';
 
 const SCHEMA = `
@@ -19,6 +20,7 @@ CREATE TABLE IF NOT EXISTS submissions (
   survey_location_lat REAL,
   survey_location_lng REAL,
   prices_json TEXT NOT NULL,
+  availability_json TEXT DEFAULT '[]',
   notes TEXT DEFAULT '',
   photo_filename TEXT,
   photo_mime_type TEXT,
@@ -61,8 +63,18 @@ const SUBMISSION_COLUMN_MIGRATIONS = [
   ['researcher_residence_lng', 'ALTER TABLE submissions ADD COLUMN researcher_residence_lng REAL'],
   ['survey_location_lat', 'ALTER TABLE submissions ADD COLUMN survey_location_lat REAL'],
   ['survey_location_lng', 'ALTER TABLE submissions ADD COLUMN survey_location_lng REAL'],
-  ['completeness_score', 'ALTER TABLE submissions ADD COLUMN completeness_score INTEGER DEFAULT 0']
+  ['completeness_score', 'ALTER TABLE submissions ADD COLUMN completeness_score INTEGER DEFAULT 0'],
+  ['availability_json', "ALTER TABLE submissions ADD COLUMN availability_json TEXT DEFAULT '[]'"]
 ];
+
+function parseJsonArray(value) {
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 
 function buildCoordinates(lat, lng) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
@@ -89,7 +101,10 @@ function rowToSubmission(row) {
       displayLocation: row.survey_display_location,
       ...(surveyCoordinates ? { coordinates: surveyCoordinates } : {})
     },
-    prices: JSON.parse(row.prices_json),
+    prices: parseJsonArray(row.prices_json),
+    availability: parseJsonArray(row.availability_json).length > 0
+      ? parseJsonArray(row.availability_json)
+      : availabilityFromPrices(parseJsonArray(row.prices_json)),
     notes: row.notes || '',
     photo: row.photo_filename
       ? { filename: row.photo_filename, mimeType: row.photo_mime_type, url: row.photo_url }
@@ -229,7 +244,7 @@ export class SQLiteStore {
         id, created_at,
         researcher_name, researcher_residence_area, researcher_residence_lat, researcher_residence_lng,
         survey_region, survey_store_type, survey_store_name, survey_pos_count, survey_display_location, survey_location_lat, survey_location_lng,
-        prices_json, notes,
+        prices_json, availability_json, notes,
         photo_filename, photo_mime_type, photo_url,
         assignment_current_area, assignment_candidate_order, assignment_method,
         sync_mode, completeness_score
@@ -237,7 +252,7 @@ export class SQLiteStore {
         ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?,
-        ?, ?,
+        ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?,
         ?, ?
@@ -256,7 +271,8 @@ export class SQLiteStore {
       payload.survey.displayLocation,
       payload.survey.coordinates?.lat ?? null,
       payload.survey.coordinates?.lng ?? null,
-      JSON.stringify(payload.prices),
+      JSON.stringify([]),
+      JSON.stringify(getSubmissionAvailability(payload)),
       payload.notes || '',
       photo?.filename || null,
       photo?.mimeType || null,
@@ -273,7 +289,8 @@ export class SQLiteStore {
       createdAt,
       researcher: payload.researcher,
       survey: payload.survey,
-      prices: payload.prices,
+      prices: [],
+      availability: getSubmissionAvailability(payload),
       notes: payload.notes || '',
       completenessScore: payload.completenessScore ?? 0,
       photo,
@@ -318,7 +335,7 @@ export class SQLiteStore {
         id, created_at,
         researcher_name, researcher_residence_area, researcher_residence_lat, researcher_residence_lng,
         survey_region, survey_store_type, survey_store_name, survey_pos_count, survey_display_location, survey_location_lat, survey_location_lng,
-        prices_json, notes,
+        prices_json, availability_json, notes,
         photo_filename, photo_mime_type, photo_url,
         assignment_current_area, assignment_candidate_order, assignment_method,
         assignment_override_reason, assignment_overridden_by, assignment_overridden_at,
@@ -327,7 +344,7 @@ export class SQLiteStore {
         ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?,
-        ?, ?,
+        ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?,
@@ -351,7 +368,8 @@ export class SQLiteStore {
           s.survey?.displayLocation || '',
           s.survey?.coordinates?.lat ?? null,
           s.survey?.coordinates?.lng ?? null,
-          JSON.stringify(s.prices || []),
+          JSON.stringify([]),
+          JSON.stringify(getSubmissionAvailability(s)),
           s.notes || '',
           s.photo?.filename || null,
           s.photo?.mimeType || null,

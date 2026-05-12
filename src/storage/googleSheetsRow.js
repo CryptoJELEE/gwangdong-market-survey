@@ -1,8 +1,12 @@
-export function flattenSubmissionForSheet(submission, products) {
-  const priceMap = new Map();
+import { getSubmissionAvailability } from '../availability.js';
 
-  for (const price of submission.prices || []) {
-    priceMap.set(`${price.productLabel} ${price.size}`, price.price);
+export function flattenSubmissionForSheet(submission, products) {
+  const availabilitySet = new Set();
+
+  for (const item of getSubmissionAvailability(submission)) {
+    if (item.present !== false) {
+      availabilitySet.add(`${item.productLabel} ${item.size}`);
+    }
   }
 
   const row = [
@@ -22,10 +26,9 @@ export function flattenSubmissionForSheet(submission, products) {
 
   for (const product of products) {
     for (const size of product.sizes) {
-      row.push(priceMap.get(`${product.label} ${size}`) ?? '');
+      row.push(availabilitySet.has(`${product.label} ${size}`) ? 'Y' : '');
     }
   }
 
   return row;
 }
-

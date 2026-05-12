@@ -138,16 +138,40 @@ function addFavoriteStore(store) {
   saveFavoriteStores(stores);
 }
 
-// ── Price field naming ──
-function priceFieldName(productId, size) {
+// ── Availability field naming ──
+function availabilityFieldName(productId, size) {
   return `${productId}__${size}`;
+}
+
+function getSubmissionAvailability(submission) {
+  if (Array.isArray(submission?.availability)) return submission.availability;
+  return (submission?.prices || [])
+    .map((item) => ({
+      productId: item.productId,
+      productLabel: item.productLabel,
+      size: item.size,
+      present: Number(String(item.price).replace(/[^0-9]/g, '')) > 0
+    }))
+    .filter((item) => item.productId && item.size && item.present);
+}
+
+function availabilityCount(submission) {
+  return getSubmissionAvailability(submission).filter((item) => item.present !== false).length;
+}
+
+function availabilitySet(submission) {
+  return new Set(
+    getSubmissionAvailability(submission)
+      .filter((item) => item.present !== false)
+      .map((item) => `${item.productId}__${item.size}`)
+  );
 }
 
 // ── Step indicator ──
 function renderStepIndicator() {
   const steps = [
     { num: 1, label: '기본정보' },
-    { num: 2, label: '가격' },
+    { num: 2, label: '입점' },
     { num: 3, label: '마무리' }
   ];
   stepIndicator.innerHTML = steps.map((s, i) => {
@@ -530,18 +554,11 @@ function renderStep1(config) {
 }
 
 function renderStep2(config) {
-  // Build placeholder map from last entered prices
-  const lastPrices = {};
-  try {
-    const saved = JSON.parse(loadLocal('_lastEnteredPrices') || '{}');
-    Object.assign(lastPrices, saved);
-  } catch { /* ignore */ }
-
   formStepContainer.innerHTML = `
     <div class="card stack">
       <div>
-        <h3>가격 체크 💰 <span id="price-input-count" style="font-size:.8rem;font-weight:normal;color:var(--text-muted);margin-left:6px;">0개 입력됨</span></h3>
-        <p class="small">없는 건 그냥 넘어가세요~ 있는 것만 적어주면 돼요 👌</p>
+        <h3>입점 체크 <span id="availability-input-count" style="font-size:.8rem;font-weight:normal;color:var(--text-muted);margin-left:6px;">0개 체크됨</span></h3>
+        <p class="small">매장에 입점된 제품/사이즈만 체크하세요. 없으면 비워도 저장할 수 있어요.</p>
       </div>
       <div class="stack" id="product-list">
         ${config.products.map((product, idx) => `
@@ -555,14 +572,13 @@ function renderStep2(config) {
             </div>
             <div class="product-body">
               ${product.sizes.map((size) => {
-    const fieldName = priceFieldName(product.id, size);
-    const lastVal = lastPrices[fieldName];
-    const ph = lastVal ? `지난번: \u20A9${Number(lastVal).toLocaleString()}` : '\u20A9 가격';
+    const fieldName = availabilityFieldName(product.id, size);
     return `
-                <div class="price-field">
+                <label class="price-field availability-field">
+                  <input type="checkbox" name="${fieldName}" data-product-id="${product.id}" data-product-label="${product.label}" data-size="${size}" />
                   <span class="size-label">${size}</span>
-                  <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" step="10" name="${fieldName}" placeholder="${ph}" />
-                </div>
+                  <span class="availability-state">입점</span>
+                </label>
               `;
   }).join('')}
             </div>
@@ -584,14 +600,15 @@ function renderStep2(config) {
     });
   });
 
-  // Enter key navigation: move to next price field, auto-open next accordion
-  const allPriceInputs = [...formStepContainer.querySelectorAll('.price-field input')];
+  const allAvailabilityInputs = [...formStepContainer.querySelectorAll('.availability-field input')];
   const allAccordions = [...formStepContainer.querySelectorAll('.product-accordion')];
-  allPriceInputs.forEach((input, i) => {
+  allAvailabilityInputs.forEach((input, i) => {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        const nextInput = allPriceInputs[i + 1];
+        input.checked = !input.checked;
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        const nextInput = allAvailabilityInputs[i + 1];
         if (nextInput) {
           const nextAccordion = nextInput.closest('.product-accordion');
           if (nextAccordion && !nextAccordion.classList.contains('is-open')) {
@@ -601,12 +618,11 @@ function renderStep2(config) {
         }
       }
     });
-    // Auto-open next accordion when last field in current accordion is filled
-    input.addEventListener('input', () => {
+    input.addEventListener('change', () => {
       const accordion = input.closest('.product-accordion');
-      const inputs = [...accordion.querySelectorAll('.price-field input')];
+      const inputs = [...accordion.querySelectorAll('.availability-field input')];
       const isLast = inputs[inputs.length - 1] === input;
-      if (isLast && input.value.replace(/[^0-9]/g, '')) {
+      if (isLast && input.checked) {
         const idx = allAccordions.indexOf(accordion);
         const next = allAccordions[idx + 1];
         if (next && !next.classList.contains('is-open')) {
@@ -616,85 +632,60 @@ function renderStep2(config) {
     });
   });
 
-  // Won formatting on price inputs
-  formStepContainer.querySelectorAll('.price-field input').forEach((input) => {
-    input.addEventListener('blur', () => {
-      const raw = input.value.replace(/[^0-9]/g, '');
-      if (raw) {
-        input.dataset.rawValue = raw;
-        input.type = 'text';
-        input.value = '\u20A9' + Number(raw).toLocaleString();
-      }
-    });
-    input.addEventListener('focus', () => {
-      if (input.dataset.rawValue) {
-        input.type = 'number';
-        input.value = input.dataset.rawValue;
-        delete input.dataset.rawValue;
-      }
-    });
-  });
-
-  function updatePriceCount() {
-    const inputs = [...formStepContainer.querySelectorAll('.price-field input')];
-    const filled = inputs.filter((i) => (i.dataset.rawValue || i.value.replace(/[^0-9]/g, '')).length > 0).length;
-    const badge = formStepContainer.querySelector('#price-input-count');
+  function updateAvailabilityCount() {
+    const inputs = [...formStepContainer.querySelectorAll('.availability-field input')];
+    const filled = inputs.filter((i) => i.checked).length;
+    const badge = formStepContainer.querySelector('#availability-input-count');
     if (badge) {
-      badge.textContent = `${filled}개 입력됨`;
+      badge.textContent = filled > 0 ? `${filled}개 입점` : '0개 체크됨';
       badge.style.color = filled > 0 ? 'var(--color-primary)' : 'var(--text-muted)';
     }
   }
-  formStepContainer.querySelectorAll('.price-field input').forEach((input) => {
-    input.addEventListener('input', updatePriceCount);
-    input.addEventListener('blur', () => setTimeout(updatePriceCount, 50));
+  formStepContainer.querySelectorAll('.availability-field input').forEach((input) => {
+    input.addEventListener('change', updateAvailabilityCount);
   });
-  updatePriceCount();
+  updateAvailabilityCount();
 
-  function savePrices() {
-    const inputs = formStepContainer.querySelectorAll('.price-field input');
-    const prices = {};
+  function saveAvailability() {
+    const inputs = formStepContainer.querySelectorAll('.availability-field input');
+    const availability = {};
     inputs.forEach((i) => {
-      const val = i.dataset.rawValue || i.value.replace(/[^0-9]/g, '');
-      if (val) prices[i.name] = val;
+      if (i.checked) availability[i.name] = true;
     });
-    saveLocal('_step2_prices', JSON.stringify(prices));
-    // Persist for next-session placeholders
-    if (Object.keys(prices).length > 0) {
-      saveLocal('_lastEnteredPrices', JSON.stringify(prices));
-    }
+    saveLocal('_step2_availability', JSON.stringify(availability));
   }
 
-  function restorePrices() {
+  function restoreAvailability() {
     try {
-      const saved = JSON.parse(loadLocal('_step2_prices') || '{}');
+      const saved = JSON.parse(loadLocal('_step2_availability') || '{}');
       Object.entries(saved).forEach(([name, val]) => {
         const input = formStepContainer.querySelector(`input[name="${name}"]`);
-        if (input) input.value = val;
+        if (input) input.checked = Boolean(val);
       });
     } catch { /* ignore */ }
   }
 
-  restorePrices();
+  restoreAvailability();
+  updateAvailabilityCount();
 
-  // Auto-focus first price input in first open accordion
   const firstOpenAccordion = formStepContainer.querySelector('.product-accordion.is-open');
   if (firstOpenAccordion) {
-    const firstInput = firstOpenAccordion.querySelector('.price-field input');
+    const firstInput = firstOpenAccordion.querySelector('.availability-field input');
     if (firstInput) setTimeout(() => firstInput.focus(), 100);
   }
 
   formStepContainer.querySelector('#prev-step2').addEventListener('click', () => {
-    savePrices();
+    saveAvailability();
     state.currentStep = 1;
     renderCurrentStep(config);
   });
 
   formStepContainer.querySelector('#next-step2').addEventListener('click', () => {
-    savePrices();
-    const inputs = formStepContainer.querySelectorAll('.price-field input');
-    const hasAnyPrice = [...inputs].some((i) => i.dataset.rawValue || i.value.replace(/[^0-9]/g, ''));
-    if (!hasAnyPrice) {
-      showPriceReminder(config);
+    saveAvailability();
+    const inputs = formStepContainer.querySelectorAll('.availability-field input');
+    const hasAnyAvailability = [...inputs].some((i) => i.checked);
+    if (!hasAnyAvailability) {
+      showAvailabilityReminder(config);
       return;
     }
     state.currentStep = 3;
@@ -702,15 +693,15 @@ function renderStep2(config) {
   });
 }
 
-function showPriceReminder(config) {
+function showAvailabilityReminder(config) {
   const overlay = document.createElement('div');
   overlay.className = 'price-reminder-overlay';
   overlay.innerHTML = `
     <div class="price-reminder-dialog" role="dialog" aria-modal="true" aria-labelledby="reminder-title">
-      <p id="reminder-title">가격을 입력하지 않았어요. 괜찮으시면 다음으로 넘어갈게요 👌</p>
+      <p id="reminder-title">입점 제품 없음으로 저장할까요?</p>
       <div class="price-reminder-actions">
-        <button type="button" class="btn btn-secondary" id="reminder-skip">네, 넘어갈게요</button>
-        <button type="button" class="btn btn-primary" id="reminder-input">가격 입력할게요</button>
+        <button type="button" class="btn btn-secondary" id="reminder-input">체크할게요</button>
+        <button type="button" class="btn btn-primary" id="reminder-skip">네, 저장할게요</button>
       </div>
     </div>
   `;
@@ -730,7 +721,7 @@ function showPriceReminder(config) {
     const firstAccordion = formStepContainer.querySelector('.product-accordion');
     if (firstAccordion) {
       firstAccordion.classList.add('is-open');
-      const firstInput = firstAccordion.querySelector('.price-field input');
+      const firstInput = firstAccordion.querySelector('.availability-field input');
       if (firstInput) firstInput.focus();
     }
   });
@@ -823,9 +814,9 @@ function showSubmitPreview(config, notes) {
   const region = s.region || loadLocal('_step1_region') || '';
   const storeType = s.storeType || loadLocal('_step1_storeType') || '';
   const posCount = s.posCount || loadLocal('_step1_posCount') || '1';
-  let savedPrices = {};
-  try { savedPrices = JSON.parse(loadLocal('_step2_prices') || '{}'); } catch { /* ignore */ }
-  const priceCount = Object.values(savedPrices).filter(v => String(v).replace(/[^0-9]/g, '') > 0).length;
+  let savedAvailability = {};
+  try { savedAvailability = JSON.parse(loadLocal('_step2_availability') || '{}'); } catch { /* ignore */ }
+  const checkedCount = Object.values(savedAvailability).filter(Boolean).length;
   const photoCount = state.photos.filter(Boolean).length;
 
   const overlay = document.createElement('div');
@@ -838,7 +829,7 @@ function showSubmitPreview(config, notes) {
         <tr><td style="color:var(--text-muted);">지역</td><td>${escapeHtml(region)}</td></tr>
         <tr><td style="color:var(--text-muted);">유형</td><td>${escapeHtml(storeType)}</td></tr>
         <tr><td style="color:var(--text-muted);">POS</td><td>${escapeHtml(String(posCount))}대</td></tr>
-        <tr><td style="color:var(--text-muted);">가격</td><td>${priceCount}개 입력</td></tr>
+        <tr><td style="color:var(--text-muted);">입점</td><td>${checkedCount}개 체크</td></tr>
         <tr><td style="color:var(--text-muted);">사진</td><td>${photoCount}장</td></tr>
         ${notes ? `<tr><td style="color:var(--text-muted);vertical-align:top;">메모</td><td style="word-break:break-all;">${escapeHtml(notes.slice(0, 80))}${notes.length > 80 ? '…' : ''}</td></tr>` : ''}
       </table>
@@ -905,27 +896,22 @@ async function handleSubmit(config) {
   submitBtn.innerHTML = '<span class="spinner spinner-inline"></span> 저장 중...';
 
   const formData = new FormData(surveyForm);
-  let savedPrices = {};
-  try { savedPrices = JSON.parse(loadLocal('_step2_prices') || '{}'); } catch { /* ignore */ }
-  const prices = [];
+  let savedAvailability = {};
+  try { savedAvailability = JSON.parse(loadLocal('_step2_availability') || '{}'); } catch { /* ignore */ }
+  const availability = [];
   for (const product of config.products) {
     for (const size of product.sizes) {
-      const name = priceFieldName(product.id, size);
-      const price = formData.get(name) || savedPrices[name] || '';
-      if (price) {
-        prices.push({ productId: product.id, productLabel: product.label, size, price });
+      const name = availabilityFieldName(product.id, size);
+      const present = formData.get(name) === 'on' || savedAvailability[name] === true;
+      if (present) {
+        availability.push({ productId: product.id, productLabel: product.label, size, present: true });
       }
     }
   }
 
   const s = state.step1Data || {};
 
-  // Sanitize: trim whitespace, filter negative prices
   const sanitize = (v) => String(v || '').trim();
-  const validPrices = prices.filter((p) => {
-    const num = Number(String(p.price).replace(/[^0-9]/g, ''));
-    return num > 0;
-  });
 
   const payload = {
     researcher: {
@@ -942,7 +928,7 @@ async function handleSubmit(config) {
     notes: sanitize(formData.get('notes') || loadLocal('_step3_notes')),
     photoDataUrl: state.photos[0] || state.photoDataUrl || '',
     photos: state.photos.filter(Boolean),
-    prices: validPrices
+    availability
   };
 
   if (state.gps.status === 'ready') {
@@ -1025,7 +1011,7 @@ async function handleSubmit(config) {
     // Vibration feedback on success
     if (navigator.vibrate) navigator.vibrate(200);
     // Clear temporary localStorage keys (keep researcherName, residenceArea)
-    ['_step1_region', '_step1_storeType', '_step1_storeName', '_step1_posCount', '_step1_displayLocation', '_step2_prices', '_step3_notes'].forEach((k) => {
+    ['_step1_region', '_step1_storeType', '_step1_storeName', '_step1_posCount', '_step1_displayLocation', '_step2_availability', '_step2_prices', '_step3_notes'].forEach((k) => {
       try { localStorage.removeItem('kwangdong_' + k); } catch {}
     });
     state.photoDataUrl = '';
@@ -1190,29 +1176,16 @@ function calcProductStats(submissions, products) {
 
   return products.map((product) => {
     const storesWithProduct = submissions.filter((sub) =>
-      sub.prices && sub.prices.some((p) => p.productId === product.id)
+      getSubmissionAvailability(sub).some((item) => item.productId === product.id && item.present !== false)
     );
     const discoveryRate = totalStores > 0 ? storesWithProduct.length / totalStores : 0;
 
     const sizeStats = {};
     product.sizes.forEach((size) => {
-      const pricesForSize = [];
-      storesWithProduct.forEach((sub) => {
-        sub.prices.forEach((p) => {
-          if (p.productId === product.id && p.size === size && p.price) {
-            const num = Number(String(p.price).replace(/[^0-9]/g, ''));
-            if (num > 0) pricesForSize.push(num);
-          }
-        });
-      });
-      if (pricesForSize.length > 0) {
-        sizeStats[size] = {
-          avg: Math.round(pricesForSize.reduce((a, b) => a + b, 0) / pricesForSize.length),
-          min: Math.min(...pricesForSize),
-          max: Math.max(...pricesForSize),
-          count: pricesForSize.length
-        };
-      }
+      const count = submissions.filter((sub) =>
+        availabilitySet(sub).has(`${product.id}__${size}`)
+      ).length;
+      if (count > 0) sizeStats[size] = { count, rate: Math.round((count / totalStores) * 100) };
     });
 
     return {
@@ -1236,11 +1209,13 @@ function calcAreaStats(submissions, areas) {
     if (!area) return;
     if (!areaMap[area]) areaMap[area] = { name: area, count: 0, products: {} };
     areaMap[area].count++;
-    if (sub.prices) {
-      sub.prices.forEach((p) => {
-        areaMap[area].products[p.productLabel] = (areaMap[area].products[p.productLabel] || 0) + 1;
-      });
-    }
+    const seenProducts = new Set();
+    getSubmissionAvailability(sub).forEach((item) => {
+      if (item.present !== false && item.productLabel && !seenProducts.has(item.productLabel)) {
+        seenProducts.add(item.productLabel);
+        areaMap[area].products[item.productLabel] = (areaMap[area].products[item.productLabel] || 0) + 1;
+      }
+    });
   });
 
   return Object.values(areaMap).map((a) => {
@@ -1257,12 +1232,12 @@ function calcTodayCount(submissions) {
 function calcRecentActivity(submissions, limit) {
   const sorted = [...submissions].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   return sorted.slice(0, limit).map((sub) => {
-    const priceCount = sub.prices ? sub.prices.length : 0;
+    const checkedCount = availabilityCount(sub);
     return {
       name: sub.researcher.name,
       storeName: sub.survey.storeName,
       storeType: sub.survey.storeType,
-      priceCount,
+      checkedCount,
       createdAt: sub.createdAt
     };
   });
@@ -1407,7 +1382,8 @@ function renderMyRecords(submissions) {
     : groups.map((g) => `
       <div class="timeline-date-header" style="font-size:13px;color:var(--text-muted);font-weight:600;padding:12px 0 8px;">${escapeHtml(g.label)}</div>
       ${g.items.map((sub) => {
-    const priceCount = sub.prices ? sub.prices.length : 0;
+    const checkedCount = availabilityCount(sub);
+    const checkedItems = getSubmissionAvailability(sub).filter((item) => item.present !== false);
     const score = sub.completenessScore ?? 0;
     const d = new Date(sub.createdAt);
     const dayNum = d.getDate();
@@ -1417,12 +1393,12 @@ function renderMyRecords(submissions) {
           <div style="width:44px;height:44px;border-radius:50%;background:var(--primary-light,#e8f0fe);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:var(--color-primary);flex-shrink:0;">${dayNum}</div>
           <div style="flex:1;min-width:0;">
             <div style="font-size:15px;font-weight:600;color:var(--text);">${escapeHtml(sub.survey.storeName)}</div>
-            <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${escapeHtml(sub.survey.storeType)} · 가격 ${priceCount}건 · ${relativeTime(sub.createdAt)}</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${escapeHtml(sub.survey.storeType)} · 입점 ${checkedCount}건 · ${relativeTime(sub.createdAt)}</div>
           </div>
           <div style="font-size:20px;font-weight:800;color:var(--color-primary);flex-shrink:0;">${score}<span style="font-size:12px;font-weight:500;color:var(--text-muted);">점</span></div>
         </div>
         <div id="${uid}" class="hidden" style="margin:0 0 8px 58px;font-size:.83rem;color:var(--text-muted);">
-          ${sub.prices && sub.prices.length > 0 ? sub.prices.map((p) => `<span style="margin-right:8px;">${escapeHtml(p.productLabel)} ${escapeHtml(p.size)}: ₩${Number(p.price).toLocaleString()}</span>`).join('') : '가격 없음'}
+          ${checkedItems.length > 0 ? checkedItems.map((item) => `<span style="margin-right:8px;">${escapeHtml(item.productLabel)} ${escapeHtml(item.size)} 입점</span>`).join('') : '입점 제품 없음'}
           ${sub.notes ? `<div style="margin-top:4px;color:var(--text);">💬 ${escapeHtml(sub.notes)}</div>` : ''}
         </div>`;
   }).join('')}`).join('');
@@ -1643,7 +1619,7 @@ async function renderTodayHighlight() {
   try {
     const res = await fetch('/api/daily-summary');
     const data = await res.json();
-    const { totalSubmissions, uniqueResearchers, topResearcher, topStore, averagePrices } = data;
+    const { totalSubmissions, uniqueResearchers, topResearcher, topStore, availabilityStats = [] } = data;
 
     const streakDays = updateStreak(totalSubmissions > 0);
 
@@ -1662,9 +1638,11 @@ async function renderTodayHighlight() {
     if (topResearcher) lines.push(`가장 열심히 한 사람: ${escapeHtml(topResearcher.name)} (${topResearcher.count}건) 🏆`);
     if (topStore) lines.push(`가장 많이 조사된 매장: ${escapeHtml(topStore.name)}`);
 
-    const ionKickPrice = averagePrices.find((p) => p.label && p.label.includes('이온킥'));
-    if (ionKickPrice) {
-      lines.push(`이온킥 평균가: ₩${ionKickPrice.avg.toLocaleString()} (${ionKickPrice.size} 기준)`);
+    const ionKickAvailability = availabilityStats
+      .filter((p) => p.label && p.label.includes('이온킥'))
+      .sort((a, b) => (b.rate || 0) - (a.rate || 0))[0];
+    if (ionKickAvailability) {
+      lines.push(`이온킥 입점률: ${ionKickAvailability.rate}% (${ionKickAvailability.size} 기준)`);
     }
 
     const streakHtml = streakDays > 0
@@ -1730,19 +1708,13 @@ function renderMyStatCard(submissions) {
     : 0;
   const streakDays = getStreakData().days || 0;
 
-  // Price trend sparkline for most recent ion-kick prices
-  const ionSubs = [...mySubs]
-    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-    .filter((s) => (s.prices || []).some((p) => p.productId === 'ion-kick' || p.productLabel?.includes('이온킥')));
-  const ionPrices = ionSubs
-    .map((s) => {
-      const p = (s.prices || []).find((p) => p.productId === 'ion-kick' || p.productLabel?.includes('이온킥'));
-      return p ? Number(String(p.price).replace(/[^0-9]/g, '')) : null;
-    })
-    .filter(Boolean)
-    .slice(-10);
-  const sparkHtml = ionPrices.length >= 2
-    ? `<div style="margin-top:6px;font-size:.78rem;color:var(--text-muted);">내 이온킥 가격 추이 ${sparkline(ionPrices)}</div>`
+  const ionKickChecks = mySubs.filter((s) =>
+    getSubmissionAvailability(s).some((item) =>
+      item.present !== false && (item.productId === 'ion-kick' || item.productLabel?.includes('이온킥'))
+    )
+  ).length;
+  const sparkHtml = ionKickChecks > 0
+    ? `<div style="margin-top:6px;font-size:.78rem;color:var(--text-muted);">내 이온킥 입점 기록 ${ionKickChecks}건</div>`
     : '';
 
   container.innerHTML = `
@@ -1855,17 +1827,6 @@ function renderDashboard(config) {
   const productStats = calcProductStats(submissions, products);
   const medals = ['🥇', '🥈', '🥉'];
 
-  // Build per-size competitor average map (excluding ion-kick)
-  const competitorAvgBySize = {};
-  productStats.forEach((ps) => {
-    if (ps.id === 'ion-kick') return;
-    Object.entries(ps.sizeStats).forEach(([size, stats]) => {
-      if (!competitorAvgBySize[size]) competitorAvgBySize[size] = { total: 0, count: 0 };
-      competitorAvgBySize[size].total += stats.avg;
-      competitorAvgBySize[size].count += 1;
-    });
-  });
-
   const leaderboard = document.querySelector('#product-leaderboard');
   const activeFilter = state._productFilter || 'all';
   const filteredStats = productStats.filter((ps) => {
@@ -1879,7 +1840,7 @@ function renderDashboard(config) {
     <div style="margin-bottom:16px;">
         <div style="font-size:32px;margin-bottom:4px;">🏆</div>
         <div style="font-size:22px;font-weight:700;color:var(--text);">제품 현황판</div>
-        <div style="font-size:14px;color:var(--text-muted);">제품별 발견률과 가격을 비교해요</div>
+        <div style="font-size:14px;color:var(--text-muted);">제품별·사이즈별 입점률을 비교해요</div>
       </div>
     <div class="product-filter-chips">
       <button type="button" class="filter-chip ${activeFilter === 'all' ? 'is-active' : ''}" data-filter="all">전체</button>
@@ -1890,30 +1851,8 @@ function renderDashboard(config) {
       const pct = Math.round(ps.discoveryRate * 100);
       const medal = i < 3 ? medals[i] : '';
       const isIonKick = ps.id === 'ion-kick';
-      const barColor = isIonKick ? 'var(--gold)' : 'var(--primary)';
-
-      // Price comparison badges for ion-kick
-      let priceCompareHtml = '';
-      if (isIonKick) {
-        const badges = [];
-        Object.entries(ps.sizeStats).forEach(([size, stats]) => {
-          const comp = competitorAvgBySize[size];
-          if (!comp || comp.count === 0) return;
-          const compAvg = Math.round(comp.total / comp.count);
-          const diff = stats.avg - compAvg;
-          if (diff < 0) {
-            badges.push(`<span style="display:inline-block;padding:6px 12px;border-radius:12px;font-size:13px;font-weight:600;background:#d4edda;color:#155724;margin:2px 0;">💪 ${size} 이온킥이 평균 ₩${Math.abs(diff).toLocaleString()} 저렴해요!</span>`);
-          } else if (diff > 0) {
-            badges.push(`<span style="display:inline-block;padding:6px 12px;border-radius:12px;font-size:13px;font-weight:600;background:#fff3cd;color:#856404;margin:2px 0;">📊 ${size} 경쟁사 대비 ₩${diff.toLocaleString()} 비싸요</span>`);
-          }
-        });
-        if (badges.length > 0) {
-          priceCompareHtml = `<div style="display:flex;flex-direction:column;gap:4px;margin-top:8px;">${badges.join('')}</div>`;
-        }
-      }
-
       const sizesHtml = Object.entries(ps.sizeStats).map(([size, stats]) =>
-        `<div class="ps-size"><span class="ps-size-label">${size}</span> 평균 ₩${stats.avg.toLocaleString()} <span class="ps-range">(₩${stats.min.toLocaleString()}~₩${stats.max.toLocaleString()})</span></div>`
+        `<div class="ps-size"><span class="ps-size-label">${size}</span> 입점 ${stats.count}/${ps.totalStores} · ${stats.rate}%</div>`
       ).join('');
 
       const emojiIcon = isIonKick ? '⚡' : (medal || '🧃');
@@ -1924,7 +1863,6 @@ function renderDashboard(config) {
             <div style="font-size:15px;font-weight:600;">${ps.label}</div>
             <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${ps.storeCount}/${ps.totalStores}개 매장 · ${ps.brand || ''}</div>
             ${sizesHtml ? `<div class="ps-sizes" style="margin-top:4px;">${sizesHtml}</div>` : ''}
-            ${priceCompareHtml}
           </div>
           <div style="font-size:22px;font-weight:800;color:var(--color-primary);flex-shrink:0;">${pct}<span style="font-size:12px;font-weight:500;color:var(--text-muted);">%</span></div>
         </div>
@@ -2079,7 +2017,7 @@ function showShortcutsPanel() {
       <h3 style="margin:0 0 12px;font-size:1rem;">⌨️ 키보드 단축키</h3>
       <table style="width:100%;border-collapse:collapse;font-size:.85rem;line-height:1.8;">
         <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">← →</td><td>탭 전환 (탭에 포커스 시)</td></tr>
-        <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">Enter</td><td>가격 필드 → 다음 필드 이동</td></tr>
+        <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">Enter</td><td>입점 체크 선택/해제</td></tr>
         <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">Space / Enter</td><td>아코디언 열기/닫기</td></tr>
         <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">Esc</td><td>팝업/시트 닫기</td></tr>
         <tr><td style="color:var(--text-muted);white-space:nowrap;padding-right:12px;">← → (사진)</td><td>라이트박스 사진 전환</td></tr>
@@ -2273,12 +2211,12 @@ async function renderMapData() {
     hasMarkers = true;
 
     const marker = new kakao.maps.Marker({ position, image: createMarkerImage(color) });
-    const priceCount = sub.prices ? sub.prices.length : 0;
+    const checkedCount = availabilityCount(sub);
     const date = new Date(sub.createdAt).toLocaleDateString('ko-KR');
     const content = `<div style="padding:8px 12px;font-size:13px;line-height:1.6;max-width:220px;">
       <strong>${sub.survey.storeName}</strong><br/>
       ${sub.researcher.name} \u00B7 ${date}<br/>
-      ${sub.survey.storeType} \u00B7 가격 ${priceCount}건
+      ${sub.survey.storeType} \u00B7 입점 ${checkedCount}건
     </div>`;
 
     const infoWindow = new kakao.maps.InfoWindow({ content });
@@ -3066,19 +3004,11 @@ function initPullToRefresh() {
   }, { passive: true });
 }
 
-// ── Premium UI: Live price update with bounce ──
-function initLivePriceUpdate() {
-  // Listen to price input changes and update dashboard quick stats in real-time
-  document.addEventListener('input', (e) => {
+// ── Premium UI: Live availability update with bounce ──
+function initLiveAvailabilityUpdate() {
+  document.addEventListener('change', (e) => {
     const input = e.target;
-    if (!input.matches || !input.matches('.price-field input')) return;
-    // Count filled prices
-    const allPriceInputs = [...document.querySelectorAll('.price-field input')];
-    const filledCount = allPriceInputs.filter((i) => {
-      const val = i.dataset.rawValue || i.value.replace(/[^0-9]/g, '');
-      return val.length > 0;
-    }).length;
-    // Update any visible price count in dashboard
+    if (!input.matches || !input.matches('.availability-field input')) return;
     const productLabels = document.querySelectorAll('#product-leaderboard .ps-detail');
     productLabels.forEach((el) => {
       if (el._prevText !== el.textContent) {
@@ -3088,8 +3018,7 @@ function initLivePriceUpdate() {
         el._prevText = el.textContent;
       }
     });
-    // Bounce the price input count badge
-    const badge = document.querySelector('#price-input-count');
+    const badge = document.querySelector('#availability-input-count');
     if (badge) {
       badge.classList.remove('price-bounce');
       void badge.offsetWidth;
@@ -3127,4 +3056,4 @@ initAppVersion();
 renderOfflineQueue();
 initCardAnimations();
 initPullToRefresh();
-initLivePriceUpdate();
+initLiveAvailabilityUpdate();

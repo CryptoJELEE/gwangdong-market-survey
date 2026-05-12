@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DEFAULT_PRODUCTS } from '../src/catalog.js';
 import { flattenSubmissionForSheet } from '../src/storage/googleSheetsRow.js';
 
-test('flattenSubmissionForSheet expands product prices into wide sheet columns', () => {
+test('flattenSubmissionForSheet expands product availability into wide sheet columns', () => {
   const row = flattenSubmissionForSheet(
     {
       id: 'submission_1',
@@ -19,10 +19,10 @@ test('flattenSubmissionForSheet expands product prices into wide sheet columns',
       },
       photo: { url: '/uploads/store-a.png' },
       notes: 'memo',
-      prices: [
-        { productLabel: '이온킥', size: '캔 240ml', price: 1200 },
-        { productLabel: '포카리스웨트', size: 'PET 620ml', price: 2400 },
-        { productLabel: '썬키스트', size: '매실 1.35L', price: 3980 }
+      availability: [
+        { productLabel: '이온킥', size: '캔 240ml', present: true },
+        { productLabel: '포카리스웨트', size: 'PET 620ml', present: true },
+        { productLabel: '썬키스트', size: '매실 1.35L', present: true }
       ]
     },
     DEFAULT_PRODUCTS,
@@ -30,7 +30,7 @@ test('flattenSubmissionForSheet expands product prices into wide sheet columns',
 
   assert.equal(row[0], 'submission_1');
   assert.equal(row[7], 'Store A');
-  assert.equal(row[12], 1200);
-  assert.equal(row[17], 2400);
-  assert.equal(row.at(-1), 3980);
+  assert.equal(row[12], 'Y');
+  assert.equal(row[17], 'Y');
+  assert.equal(row.at(-1), 'Y');
 });
