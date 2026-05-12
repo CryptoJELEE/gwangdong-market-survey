@@ -245,7 +245,7 @@ function renderStep1(config) {
   if (savedStoreType) state.selectedStoreType = savedStoreType;
 
   formStepContainer.innerHTML = `
-    <div class="card stack">
+    <div class="card stack survey-step-card">
       <div class="field">
         <label for="researcher-name-input">이름 (누구세요? 😊)</label>
         <input id="researcher-name-input" name="researcherName" required aria-required="true" value="${escapeHtml(savedName)}" placeholder="이름을 입력하세요" autocomplete="name" />
@@ -555,10 +555,14 @@ function renderStep1(config) {
 
 function renderStep2(config) {
   formStepContainer.innerHTML = `
-    <div class="card stack">
-      <div>
-        <h3>입점 체크 <span id="availability-input-count" style="font-size:.8rem;font-weight:normal;color:var(--text-muted);margin-left:6px;">0개 체크됨</span></h3>
+    <div class="card stack survey-step-card">
+      <div class="form-section-heading">
+        <h3>입점 체크 <span id="availability-input-count" class="availability-count-badge">0개 체크됨</span></h3>
         <p class="small">매장에 입점된 제품/사이즈만 체크하세요. 없으면 비워도 저장할 수 있어요.</p>
+        <div class="availability-toolbar" aria-label="제품 목록 보기 옵션">
+          <button type="button" class="mini-action-btn" id="expand-products">모두 펼치기</button>
+          <button type="button" class="mini-action-btn" id="collapse-products">모두 접기</button>
+        </div>
       </div>
       <div class="stack" id="product-list">
         ${config.products.map((product, idx) => `
@@ -568,7 +572,10 @@ function renderStep2(config) {
                 <span class="product-name">${product.label}</span>
                 <span class="product-brand">${product.brand}</span>
               </div>
-              <span class="accordion-arrow">\u25BC</span>
+              <span class="product-header-actions">
+                <span class="product-count-badge" data-count-for="${product.id}">0개</span>
+                <span class="accordion-arrow">\u25BC</span>
+              </span>
             </div>
             <div class="product-body">
               ${product.sizes.map((size) => {
@@ -592,16 +599,34 @@ function renderStep2(config) {
     </div>
   `;
 
+  function setAccordionOpen(accordion, open) {
+    if (!accordion) return;
+    accordion.classList.toggle('is-open', open);
+    const header = accordion.querySelector('.product-header');
+    if (header) header.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
   formStepContainer.querySelectorAll('.product-header').forEach((header) => {
     header.addEventListener('click', () => {
       const accordion = header.closest('.product-accordion');
-      accordion.classList.toggle('is-open');
-      header.setAttribute('aria-expanded', accordion.classList.contains('is-open'));
+      setAccordionOpen(accordion, !accordion.classList.contains('is-open'));
+    });
+    header.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      const accordion = header.closest('.product-accordion');
+      setAccordionOpen(accordion, !accordion.classList.contains('is-open'));
     });
   });
 
   const allAvailabilityInputs = [...formStepContainer.querySelectorAll('.availability-field input')];
   const allAccordions = [...formStepContainer.querySelectorAll('.product-accordion')];
+  formStepContainer.querySelector('#expand-products')?.addEventListener('click', () => {
+    allAccordions.forEach((accordion) => setAccordionOpen(accordion, true));
+  });
+  formStepContainer.querySelector('#collapse-products')?.addEventListener('click', () => {
+    allAccordions.forEach((accordion, idx) => setAccordionOpen(accordion, idx === 0));
+  });
   allAvailabilityInputs.forEach((input, i) => {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -611,9 +636,7 @@ function renderStep2(config) {
         const nextInput = allAvailabilityInputs[i + 1];
         if (nextInput) {
           const nextAccordion = nextInput.closest('.product-accordion');
-          if (nextAccordion && !nextAccordion.classList.contains('is-open')) {
-            nextAccordion.classList.add('is-open');
-          }
+          if (nextAccordion && !nextAccordion.classList.contains('is-open')) setAccordionOpen(nextAccordion, true);
           nextInput.focus();
         }
       }
@@ -625,9 +648,7 @@ function renderStep2(config) {
       if (isLast && input.checked) {
         const idx = allAccordions.indexOf(accordion);
         const next = allAccordions[idx + 1];
-        if (next && !next.classList.contains('is-open')) {
-          next.classList.add('is-open');
-        }
+        if (next && !next.classList.contains('is-open')) setAccordionOpen(next, true);
       }
     });
   });
@@ -638,8 +659,16 @@ function renderStep2(config) {
     const badge = formStepContainer.querySelector('#availability-input-count');
     if (badge) {
       badge.textContent = filled > 0 ? `${filled}개 입점` : '0개 체크됨';
-      badge.style.color = filled > 0 ? 'var(--color-primary)' : 'var(--text-muted)';
+      badge.classList.toggle('has-value', filled > 0);
     }
+    allAccordions.forEach((accordion) => {
+      const count = [...accordion.querySelectorAll('.availability-field input')].filter((input) => input.checked).length;
+      const productBadge = accordion.querySelector('.product-count-badge');
+      if (productBadge) {
+        productBadge.textContent = count > 0 ? `${count}개` : '0개';
+        productBadge.classList.toggle('has-value', count > 0);
+      }
+    });
   }
   formStepContainer.querySelectorAll('.availability-field input').forEach((input) => {
     input.addEventListener('change', updateAvailabilityCount);
@@ -660,7 +689,10 @@ function renderStep2(config) {
       const saved = JSON.parse(loadLocal('_step2_availability') || '{}');
       Object.entries(saved).forEach(([name, val]) => {
         const input = formStepContainer.querySelector(`input[name="${name}"]`);
-        if (input) input.checked = Boolean(val);
+        if (input) {
+          input.checked = Boolean(val);
+          if (input.checked) setAccordionOpen(input.closest('.product-accordion'), true);
+        }
       });
     } catch { /* ignore */ }
   }
@@ -721,6 +753,7 @@ function showAvailabilityReminder(config) {
     const firstAccordion = formStepContainer.querySelector('.product-accordion');
     if (firstAccordion) {
       firstAccordion.classList.add('is-open');
+      firstAccordion.querySelector('.product-header')?.setAttribute('aria-expanded', 'true');
       const firstInput = firstAccordion.querySelector('.availability-field input');
       if (firstInput) firstInput.focus();
     }
@@ -773,7 +806,7 @@ function renderPhotoSlots() {
 
 function renderStep3(config) {
   formStepContainer.innerHTML = `
-    <div class="card stack">
+    <div class="card stack survey-step-card">
       <div>
         <h3>마무리 📸</h3>
       </div>

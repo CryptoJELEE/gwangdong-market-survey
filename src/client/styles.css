@@ -6255,6 +6255,283 @@ textarea:disabled {
   .content-fade-in { animation: none; }
 }
 
+/* ── §40 UI/UX Optimization Pass ── */
+:root {
+  --bg-card: var(--card);
+  --bg-alt: var(--surface-raised);
+  --color-error-subtle: rgba(239,68,68,0.08);
+}
+
+body,
+button,
+input,
+select,
+textarea,
+.hero h1,
+.hero .eyebrow,
+.quick-stat .qs-value,
+.section-title,
+.card-header-title {
+  letter-spacing: 0;
+}
+
+.hero .eyebrow,
+.status-bar > span {
+  overflow-wrap: anywhere;
+}
+
+.hero .eyebrow {
+  line-height: 1.35;
+}
+
+.survey-step-card {
+  overflow: visible;
+}
+
+.form-section-heading {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.availability-count-badge,
+.product-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 2px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.availability-count-badge {
+  margin-left: 6px;
+}
+
+.availability-count-badge.has-value,
+.product-count-badge.has-value {
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+}
+
+.availability-toolbar {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-top: var(--sp-1);
+}
+
+.mini-action-btn {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface);
+  color: var(--text-sub);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mini-action-btn:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-raised);
+}
+
+.product-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+.availability-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 52px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.availability-field input {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border-hover);
+  border-radius: 50%;
+  background: var(--card);
+  transition: background var(--transition), border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+}
+
+.availability-field input::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  transform: scale(0);
+  transition: transform var(--transition);
+}
+
+.availability-field input:checked {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-ghost);
+}
+
+.availability-field input:checked::after {
+  transform: scale(1);
+}
+
+.availability-field .size-label {
+  min-width: 0;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.availability-state {
+  color: var(--text-muted);
+}
+
+.availability-field:has(input:checked) .availability-state::before {
+  content: '✓ ';
+}
+
+.survey-step-card .form-nav {
+  position: sticky;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  z-index: 90;
+  margin: var(--sp-2) calc(var(--sp-3) * -1) calc(var(--sp-2) * -1);
+  padding: var(--sp-3);
+  border-top: 1px solid color-mix(in srgb, var(--border), transparent 25%);
+  background: linear-gradient(to top, var(--card) 78%, color-mix(in srgb, var(--card), transparent 8%) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.survey-step-card > .btn-submit {
+  position: sticky;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  z-index: 91;
+}
+
+.admin-tabs {
+  display: flex;
+  gap: var(--sp-2);
+  margin-top: 12px;
+  position: sticky;
+  top: calc(44px + env(safe-area-inset-top, 0px));
+  z-index: 70;
+  padding: 6px;
+  background: color-mix(in srgb, var(--bg), transparent 5%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.admin-tab {
+  min-height: 42px;
+  border-radius: 9px;
+  border-bottom: 0 !important;
+}
+
+.admin-tab.active {
+  background: var(--color-primary-subtle);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.field:has(#password-input) {
+  position: relative;
+}
+
+#password-input {
+  padding-right: 76px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-sub);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#dark-mode-toggle {
+  right: auto !important;
+  left: 16px !important;
+  bottom: calc(140px + env(safe-area-inset-bottom, 0px)) !important;
+  background: var(--bg-card) !important;
+}
+
+.help-fab {
+  bottom: calc(140px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+@media (max-width: 420px) {
+  .shell { padding-left: var(--sp-4); padding-right: var(--sp-4); }
+  .hero { padding: var(--sp-5) var(--sp-2) var(--sp-3); }
+  .hero h1 { font-size: 22px; }
+  .hero .subhead { font-size: 14px; }
+  .store-type-grid { grid-template-columns: 1fr 1fr; }
+  .availability-field { min-height: 50px; padding: 10px; }
+  .survey-step-card .form-nav { margin-left: calc(var(--sp-2) * -1); margin-right: calc(var(--sp-2) * -1); }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-card: var(--card);
+    --bg-alt: var(--surface-raised);
+    --color-error-subtle: rgba(248,113,113,0.12);
+  }
+
+  .availability-field {
+    background: var(--surface);
+    border-color: var(--border);
+  }
+
+  .availability-field:hover {
+    border-color: var(--border-hover);
+  }
+
+  .availability-field input {
+    background: var(--bg);
+    border-color: var(--border-hover);
+  }
+
+  .availability-field:has(input:checked) {
+    background: var(--color-primary-subtle);
+  }
+
+  .mini-action-btn,
+  .password-toggle {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .admin-tabs {
+    background: rgba(15,16,20,0.82);
+  }
+}
+
 /* ── §41 Round 30: Final File Summary ── */
 /*
   광동 시장조사 UI System — Completed Rounds 1–30

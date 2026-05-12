@@ -36,8 +36,8 @@ if (loginError) {
 (function addPasswordToggle() {
   const toggleBtn = document.createElement('button');
   toggleBtn.type = 'button';
+  toggleBtn.className = 'password-toggle';
   toggleBtn.textContent = '표시';
-  toggleBtn.style.cssText = 'margin-left:8px;padding:6px 12px;background:none;border:1px solid var(--border,#ddd);border-radius:6px;cursor:pointer;font-size:.85rem;color:var(--text-muted,#666);';
   toggleBtn.setAttribute('aria-label', '비밀번호 표시/숨기기');
   toggleBtn.addEventListener('click', () => {
     const isText = passwordInput.type === 'text';
