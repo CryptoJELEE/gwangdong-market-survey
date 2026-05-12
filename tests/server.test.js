@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { mkdtemp } from 'node:fs/promises';
+import Database from 'better-sqlite3';
 import { closeApp, createApp } from '../src/server.js';
 import { loadConfig } from '../src/config.js';
 
@@ -61,6 +62,36 @@ async function postSubmission(baseUrl, overrides = {}) {
   });
 }
 
+function createLegacySubmissionDatabase(dbFile) {
+  const db = new Database(dbFile);
+  db.exec(`
+    CREATE TABLE submissions (
+      id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL,
+      researcher_name TEXT NOT NULL,
+      researcher_residence_area TEXT NOT NULL,
+      survey_region TEXT NOT NULL,
+      survey_store_type TEXT NOT NULL,
+      survey_store_name TEXT NOT NULL,
+      survey_pos_count INTEGER DEFAULT 0,
+      survey_display_location TEXT DEFAULT '',
+      prices_json TEXT NOT NULL,
+      notes TEXT DEFAULT '',
+      photo_filename TEXT,
+      photo_mime_type TEXT,
+      photo_url TEXT,
+      assignment_current_area TEXT NOT NULL,
+      assignment_candidate_order TEXT,
+      assignment_method TEXT,
+      assignment_override_reason TEXT,
+      assignment_overridden_by TEXT,
+      assignment_overridden_at TEXT,
+      sync_mode TEXT DEFAULT 'local'
+    );
+  `);
+  db.close();
+}
+
 test('submission API stores a survey and exposes it in bootstrap data', async (t) => {
   const { tempDir, baseUrl } = await createTestServer(t);
 
@@ -96,6 +127,33 @@ test('submission API stores a survey and exposes it in bootstrap data', async (t
   assert.equal(bootstrap.submissions[0].survey.storeName, 'Healthy Drug');
   assert.equal(bootstrap.assignmentOverrides.length, 0);
   assert.equal(bootstrap.adminTokenConfigured, false);
+});
+
+test('legacy SQLite submissions table is migrated before accepting new writes', async (t) => {
+  const legacyDir = await mkdtemp(path.join(os.tmpdir(), 'market-survey-legacy-'));
+  const dbFile = path.join(legacyDir, 'survey.db');
+  createLegacySubmissionDatabase(dbFile);
+
+  const { baseUrl } = await createTestServer(t, { envOverrides: { DB_FILE: dbFile } });
+  const response = await postSubmission(baseUrl);
+  const responseBody = await response.text();
+
+  assert.equal(response.status, 201, responseBody);
+  const created = JSON.parse(responseBody);
+  assert.equal(typeof created.completenessScore, 'number');
+
+  const db = new Database(dbFile, { readonly: true });
+  try {
+    const columns = new Set(db.prepare('PRAGMA table_info(submissions)').all().map((row) => row.name));
+    assert.equal(columns.has('researcher_residence_lat'), true);
+    assert.equal(columns.has('survey_location_lng'), true);
+    assert.equal(columns.has('completeness_score'), true);
+
+    const stored = db.prepare('SELECT completeness_score, sync_mode FROM submissions WHERE id = ?').get(created.id);
+    assert.deepEqual(stored, { completeness_score: created.completenessScore, sync_mode: 'local' });
+  } finally {
+    db.close();
+  }
 });
 
 test('override API requires auth and updates assignment area', async (t) => {

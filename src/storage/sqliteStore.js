@@ -60,7 +60,8 @@ const SUBMISSION_COLUMN_MIGRATIONS = [
   ['researcher_residence_lat', 'ALTER TABLE submissions ADD COLUMN researcher_residence_lat REAL'],
   ['researcher_residence_lng', 'ALTER TABLE submissions ADD COLUMN researcher_residence_lng REAL'],
   ['survey_location_lat', 'ALTER TABLE submissions ADD COLUMN survey_location_lat REAL'],
-  ['survey_location_lng', 'ALTER TABLE submissions ADD COLUMN survey_location_lng REAL']
+  ['survey_location_lng', 'ALTER TABLE submissions ADD COLUMN survey_location_lng REAL'],
+  ['completeness_score', 'ALTER TABLE submissions ADD COLUMN completeness_score INTEGER DEFAULT 0']
 ];
 
 function buildCoordinates(lat, lng) {
